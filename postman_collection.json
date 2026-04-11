@@ -1,0 +1,372 @@
+{
+  "info": {
+    "name": "cxJobs API",
+    "description": "Call Center Recruitment Platform API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "token",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Authentication",
+      "item": [
+        {
+          "name": "Register Candidate",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"candidate@test.com\",\n    \"password\": \"Password123\",\n    \"name\": \"John Candidate\",\n    \"role\": \"CANDIDATE\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/auth/register" }
+          }
+        },
+        {
+          "name": "Register Company",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"company@test.com\",\n    \"password\": \"Password123\",\n    \"name\": \"Tech Company\",\n    \"role\": \"COMPANY\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/auth/register" }
+          }
+        },
+        {
+          "name": "Register Admin",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"admin@test.com\",\n    \"password\": \"AdminPass123\",\n    \"name\": \"Admin User\",\n    \"role\": \"ADMIN\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/auth/register" }
+          }
+        },
+        {
+          "name": "Forgot Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"candidate@test.com\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/auth/forgot-password" }
+          }
+        },
+        {
+          "name": "Reset Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"token\": \"YOUR_TOKEN_FROM_FORGOT_PASSWORD\",\n    \"password\": \"NewPassword123\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/auth/reset-password" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Profile",
+      "item": [
+        {
+          "name": "Get Current Profile",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/profile" }
+          }
+        },
+        {
+          "name": "Update Candidate Profile",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"phone\": \"+216 12 345 678\",\n    \"location\": \"Tunis, Tunisia\",\n    \"title\": \"Call Center Agent\",\n    \"bio\": \"Experienced customer service professional with 3 years in call center operations.\",\n    \"skills\": [\n        { \"name\": \"Customer Service\", \"level\": \"ADVANCED\" },\n        { \"name\": \"French\", \"level\": \"INTERMEDIATE\" }\n    ],\n    \"experiences\": [\n        {\n            \"title\": \"Call Center Agent\",\n            \"company\": \"Telecom Tunisia\",\n            \"location\": \"Tunis\",\n            \"startDate\": \"2021-01-01\",\n            \"current\": true,\n            \"description\": \"Handling customer inquiries\"\n        }\n    ],\n    \"languages\": [\n        { \"name\": \"Arabic\", \"level\": \"NATIVE\" },\n        { \"name\": \"French\", \"level\": \"FLUENT\" }\n    ],\n    \"education\": [\n        {\n            \"institution\": \"University of Tunis\",\n            \"degree\": \"Bachelor\",\n            \"field\": \"Business Administration\",\n            \"startDate\": \"2016-09-01\",\n            \"endDate\": \"2020-06-30\"\n        }\n    ]\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/profile" }
+          }
+        },
+        {
+          "name": "Update Company Profile",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"name\": \"Tech Call Center\",\n    \"slug\": \"tech-call-center\",\n    \"description\": \"Leading call center company in Tunisia\",\n    \"website\": \"https://techcallcenter.tn\",\n    \"industry\": \"Customer Service\",\n    \"companySize\": \"MEDIUM\",\n    \"location\": \"Tunis, Tunisia\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/profile" }
+          }
+        },
+        {
+          "name": "List All Companies",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/profile/allCompanies?page=1&limit=10" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Job Offers",
+      "item": [
+        {
+          "name": "List Job Offers",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/job-offers?page=1&limit=10" }
+          }
+        },
+        {
+          "name": "Create Job Offer",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"title\": \"Call Center Agent - French Speaker\",\n    \"description\": \"We are looking for experienced call center agents fluent in French to join our team. You will handle customer inquiries, provide product information, and resolve customer complaints professionally.\",\n    \"location\": \"Tunis, Tunisia\",\n    \"contractType\": \"CDI\",\n    \"workMode\": \"ON_SITE\",\n    \"salary\": \"800-1200 TND\",\n    \"salaryMin\": 800,\n    \"salaryMax\": 1200,\n    \"requirements\": [\"Fluent in French\", \"Good communication skills\"],\n    \"benefits\": [\"Health insurance\", \"Transportation allowance\"],\n    \"status\": \"PUBLISHED\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/job-offers" }
+          }
+        },
+        {
+          "name": "Get Single Job Offer",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/job-offers/JOB_ID_HERE" }
+          }
+        },
+        {
+          "name": "Update Job Offer",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"title\": \"Senior Call Center Agent\",\n    \"status\": \"PUBLISHED\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/job-offers/JOB_ID_HERE" }
+          }
+        },
+        {
+          "name": "Delete Job Offer",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/api/job-offers/JOB_ID_HERE" }
+          }
+        },
+        {
+          "name": "Get Job Applications",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/job-offers/JOB_ID_HERE/applications" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Applications",
+      "item": [
+        {
+          "name": "List My Applications",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/application" }
+          }
+        },
+        {
+          "name": "Submit Application",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"jobOfferId\": \"JOB_ID_HERE\",\n    \"coverLetter\": \"I am very interested in this position and believe my experience makes me a great fit.\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/application" }
+          }
+        },
+        {
+          "name": "Get Single Application",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/application/APP_ID_HERE" }
+          }
+        },
+        {
+          "name": "Update Application Status",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"status\": \"ENTRETIEN\",\n    \"notes\": \"Strong candidate, schedule interview\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/application/APP_ID_HERE" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Dashboard",
+      "item": [
+        {
+          "name": "Candidate Dashboard",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/dashboard/candidate" }
+          }
+        },
+        {
+          "name": "Company Dashboard",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/dashboard/company" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Admin",
+      "item": [
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/admin/users?page=1&limit=20" }
+          }
+        },
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"newuser@test.com\",\n    \"password\": \"Password123\",\n    \"name\": \"New User\",\n    \"role\": \"CANDIDATE\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/admin/users" }
+          }
+        },
+        {
+          "name": "List Invitations",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/admin/invitation" }
+          }
+        },
+        {
+          "name": "Create Invitation",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"email\": \"newcompany@test.com\"\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/admin/invitation" }
+          }
+        },
+        {
+          "name": "Validate Invitation",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/admin/validate?token=TOKEN_HERE" }
+          }
+        },
+        {
+          "name": "Platform Statistics",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/stats" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Blog",
+      "item": [
+        {
+          "name": "List Blogs",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/blogs?page=1&limit=10" }
+          }
+        },
+        {
+          "name": "Create Blog",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"title\": \"10 Tips for Call Center Success\",\n    \"content\": \"Working in a call center can be challenging but rewarding. Here are 10 tips to help you succeed...\",\n    \"excerpt\": \"Essential tips for call center professionals\",\n    \"published\": true,\n    \"tags\": [\"career\", \"call-center\"]\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/blogs" }
+          }
+        },
+        {
+          "name": "Get Single Blog",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/api/blogs/BLOG_ID_OR_SLUG" }
+          }
+        },
+        {
+          "name": "Update Blog",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"title\": \"Updated Title\",\n    \"published\": true\n}"
+            },
+            "url": { "raw": "{{base_url}}/api/blogs/BLOG_ID" }
+          }
+        },
+        {
+          "name": "Delete Blog",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/api/blogs/BLOG_ID" }
+          }
+        },
+        {
+          "name": "Increment Blog Views",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/blogs/BLOG_ID/views" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Onboarding",
+      "item": [
+        {
+          "name": "Complete Onboarding",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/api/onboarding" }
+          }
+        }
+      ]
+    }
+  ]
+}
