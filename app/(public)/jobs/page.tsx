@@ -38,7 +38,7 @@ export default async function JobsPage() {
     },
   });
 
-  const transformedJobs = jobs.map((job) => ({
+  const transformedJobs = jobs.map((job: typeof jobs[number]) => ({
     id: job.id,
     title: job.title,
     slug: job.slug,
