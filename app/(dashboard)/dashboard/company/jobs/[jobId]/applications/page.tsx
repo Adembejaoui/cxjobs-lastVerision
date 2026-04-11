@@ -87,11 +87,11 @@ export default async function JobApplicationsPage({ params }: PageProps) {
 
   // Calculate stats by status
   const statusCounts = {
-    NOUVEAU: applications.filter((a) => a.status === "NOUVEAU").length,
-    EN_COURS_EXAMEN: applications.filter((a) => a.status === "EN_COURS_EXAMEN").length,
-    ENTRETIEN: applications.filter((a) => a.status === "ENTRETIEN").length,
-    EMBAUCHES: applications.filter((a) => a.status === "EMBAUCHES").length,
-    REFUSE: applications.filter((a) => a.status === "REFUSE").length,
+    NOUVEAU: applications.filter((a: typeof applications[number]) => a.status === "NOUVEAU").length,
+    EN_COURS_EXAMEN: applications.filter((a: typeof applications[number]) => a.status === "EN_COURS_EXAMEN").length,
+    ENTRETIEN: applications.filter((a: typeof applications[number]) => a.status === "ENTRETIEN").length,
+    EMBAUCHES: applications.filter((a: typeof applications[number]) => a.status === "EMBAUCHES").length,
+    REFUSE: applications.filter((a: typeof applications[number]) => a.status === "REFUSE").length,
   };
 
   const stats = {
