@@ -34,7 +34,7 @@ export default async function CompanyJobsPage() {
   });
 
   // Calculate stats
-  const activeJobsCount = jobs.filter(j => j.status === "PUBLISHED").length;
+  const activeJobsCount = jobs.filter((j: typeof jobs[number]) => j.status === "PUBLISHED").length;
   const totalApplicants = await prisma.application.count({
     where: {
       jobOffer: { companyId: company.id },
