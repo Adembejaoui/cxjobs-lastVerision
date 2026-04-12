@@ -8,7 +8,6 @@ import {
   getPublicUrl,
   deleteFile,
 } from "@/lib/supabase";
-import { rateLimitResponse, RATE_LIMIT_PRESETS } from "@/lib/rate-limit";
 import { getClientIp } from "@/lib/utils";
 
 /**
@@ -42,10 +41,6 @@ const UPLOAD_CONFIG: Record<
  */
 export async function POST(request: NextRequest) {
   try {
-    // Rate limiting
-    const clientIp = getClientIp(request);
-    const rateLimitResult = rateLimitResponse(clientIp, RATE_LIMIT_PRESETS.API_WRITE);
-    if (rateLimitResult) return rateLimitResult;
 
     // Get upload type from query
     const { searchParams } = new URL(request.url);
@@ -169,10 +164,6 @@ export async function POST(request: NextRequest) {
  */
 export async function DELETE(request: NextRequest) {
   try {
-    // Rate limiting
-    const clientIp = getClientIp(request);
-    const rateLimitResult = rateLimitResponse(clientIp, RATE_LIMIT_PRESETS.API_WRITE);
-    if (rateLimitResult) return rateLimitResult;
 
     const session = await auth();
 
