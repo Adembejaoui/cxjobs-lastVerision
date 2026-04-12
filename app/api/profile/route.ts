@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { candidateProfileSchema, companyProfileSchema } from "@/lib/validations/profile";
 
+type InteractiveTx = Omit<typeof prisma, "$connect" | "$disconnect" | "$on" | "$transaction" | "$extends">;
+
 // GET /api/profile - Get current user's profile
 export async function GET() {
   try {
@@ -131,7 +133,7 @@ async function upsertCandidateProfile(userId: string, data: unknown) {
   };
 
   // Use transaction to ensure atomicity
-  const candidate = await prisma.$transaction(async (tx) => {
+  const candidate = await prisma.$transaction(async (tx: InteractiveTx) => {
     // Create or update candidate profile
     const existingCandidate = await tx.candidate.findUnique({
       where: { userId },
@@ -331,7 +333,7 @@ async function upsertCompanyProfile(userId: string, data: unknown) {
     culture: cultureJson,
   };
 
-  const company = await prisma.$transaction(async (tx) => {
+  const company = await prisma.$transaction(async (tx: InteractiveTx) => {
     const existingCompany = await tx.company.findUnique({
       where: { userId },
     });
