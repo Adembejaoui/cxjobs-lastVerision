@@ -164,7 +164,7 @@ async function upsertCandidateProfile(userId: string, data: unknown) {
     // Create new related data
     if (skills && skills.length > 0) {
       await tx.candidateSkill.createMany({
-        data: skills.map((skill) => ({
+        data: skills.map((skill: { name: string; level?: string }) => ({
           candidateId: candidate.id,
           name: skill.name,
           level: skill.level,
@@ -175,7 +175,7 @@ async function upsertCandidateProfile(userId: string, data: unknown) {
 
     if (experiences && experiences.length > 0) {
       await tx.experience.createMany({
-        data: experiences.map((exp) => {
+        data: experiences.map((exp: { title: string; company: string; location?: string; startDate: string | Date; endDate?: string | Date | null; current?: boolean; description?: string }) => {
           // Handle dates - handle both string and Date types from Zod
           let startDateStr: string | undefined;
           let endDateStr: string | undefined;
@@ -210,7 +210,7 @@ async function upsertCandidateProfile(userId: string, data: unknown) {
 
     if (languages && languages.length > 0) {
       await tx.language.createMany({
-        data: languages.map((lang) => ({
+        data: languages.map((lang: { name: string; level?: string }) => ({
           candidateId: candidate.id,
           name: lang.name,
           proficiency: lang.level || "BASIC",
@@ -221,7 +221,7 @@ async function upsertCandidateProfile(userId: string, data: unknown) {
 
     if (education && education.length > 0) {
       await tx.education.createMany({
-        data: education.map((edu) => {
+        data: education.map((edu: { institution: string; degree: string; field?: string; startDate: string | Date; endDate?: string | Date | null }) => {
           // Handle dates - handle both string and Date types from Zod
           let startDateStr: string | undefined;
           let endDateStr: string | undefined;
@@ -365,7 +365,7 @@ async function upsertCompanyProfile(userId: string, data: unknown) {
 
       // Create new benefits
       await tx.companyBenefit.createMany({
-        data: benefits.map((b) => ({
+        data: benefits.map((b: { name: string; description?: string | null; icon?: string | null; category?: "HEALTH" | "FINANCIAL" | "WORK_ENVIRONMENT" | "CAREER_GROWTH" | "WORK_LIFE_BALANCE" | "OTHER"; scope?: "CORE" | "ADDITIONAL" }) => ({
           companyId: company.id,
           name: b.name,
           description: b.description || null,
