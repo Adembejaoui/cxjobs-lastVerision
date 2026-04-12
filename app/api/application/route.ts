@@ -3,7 +3,6 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createApplicationSchema } from "@/lib/validations/job";
 import { parsePaginationParams } from "@/lib/utils";
-import { notifyNewApplication } from "@/lib/notifications";
 
 // GET /api/application - List applications (role-filtered)
 export async function GET(request: NextRequest) {
@@ -266,13 +265,7 @@ export async function POST(request: NextRequest) {
 
     // Send notification to company
     try {
-      await notifyNewApplication(
-        application.jobOffer.company.userId,
-        application.jobOffer.title,
-        session.user.name || "A candidate",
-        application.id,
-        jobOfferId
-      );
+     
     } catch (notificationError) {
       // Log but don't fail the request
       console.error("Failed to send notification:", notificationError);

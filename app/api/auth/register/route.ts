@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { registerSchema } from "@/lib/validations/auth";
-import { notifyWelcome, notifyAdminsNewCompany, notifyAdminsNewCandidate } from "@/lib/notifications";
 import crypto from "crypto";
 
 export async function POST(request: NextRequest) {
@@ -83,19 +82,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Send welcome notification (but not until email is verified - optional)
-    try {
-      await notifyWelcome(user.id, user.name || "there");
-      
-      // Notify admins about new registration
-      if (role === "COMPANY") {
-        await notifyAdminsNewCompany(user.name || "New Company", user.id);
-      } else if (role === "CANDIDATE") {
-        await notifyAdminsNewCandidate(user.name || "New Candidate", user.id);
-      }
-    } catch (notificationError) {
-      // Log but don't fail registration
-      console.error("Failed to send registration notifications:", notificationError);
-    }
+    
 
     return NextResponse.json(
       {

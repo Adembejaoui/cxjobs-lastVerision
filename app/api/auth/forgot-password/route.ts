@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { forgotPasswordSchema } from "@/lib/validations/auth";
 import crypto from "crypto";
-import { getClientIp } from "@/lib/utils";
 
 export async function POST(request: NextRequest) {
   try {
