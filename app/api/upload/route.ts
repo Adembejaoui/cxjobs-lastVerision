@@ -8,7 +8,6 @@ import {
   getPublicUrl,
   deleteFile,
 } from "@/lib/supabase";
-import { getClientIp } from "@/lib/utils";
 
 /**
  * Upload type configuration

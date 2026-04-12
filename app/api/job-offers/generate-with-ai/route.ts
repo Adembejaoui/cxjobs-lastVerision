@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { generateJobDescription, isAIConfigured } from "@/lib/ai-service";
 import { jobGenerationSchema } from "@/lib/validations/ai";
-import { rateLimitResponse, RATE_LIMIT_PRESETS } from "@/lib/rate-limit";
-import { getClientIp } from "@/lib/utils";
+
+
 
 /**
  * POST /api/job-offers/generate-with-ai
@@ -35,12 +35,6 @@ export async function POST(request: NextRequest) {
     }
 
     // Rate limiting (stricter for AI endpoints)
-    const clientIp = getClientIp(request);
-    const rateLimitResult = rateLimitResponse(clientIp, {
-      maxRequests: 10,
-      windowMs: 60 * 1000, // 10 requests per minute
-    });
-    if (rateLimitResult) return rateLimitResult;
 
     // Authentication check
     const session = await auth();
