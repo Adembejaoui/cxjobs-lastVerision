@@ -78,7 +78,7 @@ export async function GET() {
         status: "PUBLISHED",
         deletedAt: null,
         ...(skillNames.length > 0 && {
-          OR: skillNames.map((skill) => ({
+          OR: skillNames.map((skill: string) => ({
             description: { contains: skill, mode: "insensitive" as const },
           })),
         }),
