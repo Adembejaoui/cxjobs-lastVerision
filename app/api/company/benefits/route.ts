@@ -29,8 +29,8 @@ export async function GET() {
       );
     }
 
-    const coreBenefits = company.benefits.filter((b) => b.scope === "CORE");
-    const additionalBenefits = company.benefits.filter((b) => b.scope === "ADDITIONAL");
+    const coreBenefits = company.benefits.filter((b: typeof company.benefits[number]) => b.scope === "CORE");
+    const additionalBenefits = company.benefits.filter((b: typeof company.benefits[number]) => b.scope === "ADDITIONAL");
 
     return NextResponse.json({
       success: true,
