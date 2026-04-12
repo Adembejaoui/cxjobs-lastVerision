@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { unstable_cache } from "next/cache";
-import { revalidateJobOffers } from "@/lib/cache";
 
 // Cached function for fetching a single published job offer by slug
 const getPublicJobOfferBySlug = unstable_cache(

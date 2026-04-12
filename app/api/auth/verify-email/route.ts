@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 import { z } from "zod";
-import { rateLimitResponse, RATE_LIMIT_PRESETS } from "@/lib/rate-limit";
 import { getClientIp } from "@/lib/utils";
 
 const verifyEmailSchema = z.object({
@@ -13,9 +12,6 @@ const verifyEmailSchema = z.object({
 export async function POST(request: NextRequest) {
   try {
     // Rate limiting
-    const clientIp = getClientIp(request);
-    const rateLimitResult = rateLimitResponse(clientIp, RATE_LIMIT_PRESETS.AUTH);
-    if (rateLimitResult) return rateLimitResult;
 
     const body = await request.json();
     const validationResult = verifyEmailSchema.safeParse(body);
@@ -96,9 +92,6 @@ const resendSchema = z.object({
 export async function PUT(request: NextRequest) {
   try {
     // Rate limiting
-    const clientIp = getClientIp(request);
-    const rateLimitResult = rateLimitResponse(clientIp, RATE_LIMIT_PRESETS.PASSWORD_RESET);
-    if (rateLimitResult) return rateLimitResult;
 
     const body = await request.json();
     const validationResult = resendSchema.safeParse(body);

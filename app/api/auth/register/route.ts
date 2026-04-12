@@ -2,17 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { registerSchema } from "@/lib/validations/auth";
-import { getClientIp } from "@/lib/utils";
-import { rateLimitResponse, RATE_LIMIT_PRESETS } from "@/lib/rate-limit";
 import { notifyWelcome, notifyAdminsNewCompany, notifyAdminsNewCandidate } from "@/lib/notifications";
 import crypto from "crypto";
 
 export async function POST(request: NextRequest) {
   try {
-    // Rate limiting for registration endpoint
-    const clientIp = getClientIp(request);
-    const rateLimitResult = rateLimitResponse(clientIp, RATE_LIMIT_PRESETS.AUTH);
-    if (rateLimitResult) return rateLimitResult;
 
     const body = await request.json();
 

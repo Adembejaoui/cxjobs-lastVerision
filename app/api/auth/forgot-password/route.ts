@@ -3,14 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { forgotPasswordSchema } from "@/lib/validations/auth";
 import crypto from "crypto";
 import { getClientIp } from "@/lib/utils";
-import { rateLimitResponse, RATE_LIMIT_PRESETS } from "@/lib/rate-limit";
 
 export async function POST(request: NextRequest) {
   try {
-    // Rate limiting for password reset endpoint
-    const clientIp = getClientIp(request);
-    const rateLimitResult = rateLimitResponse(clientIp, RATE_LIMIT_PRESETS.PASSWORD_RESET);
-    if (rateLimitResult) return rateLimitResult;
 
     const body = await request.json();
 
