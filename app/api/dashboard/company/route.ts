@@ -165,8 +165,8 @@ export async function GET() {
       EXPIRED: 0,
     };
 
-    jobStats.forEach((stat) => {
-      jobStatsMap[stat.status] = stat._count;
+    jobStats.forEach((stat: { status: string; _count: number }) => {
+      jobStatsMap[stat.status as keyof typeof jobStatsMap] = stat._count;
     });
 
     const applicationStatsMap: Record<string, number> = {
@@ -177,8 +177,8 @@ export async function GET() {
       REFUSE: 0,
     };
 
-    applicationStats.forEach((stat) => {
-      applicationStatsMap[stat.status] = stat._count;
+    applicationStats.forEach((stat: { status: string; _count: number }) => {
+      applicationStatsMap[stat.status as keyof typeof applicationStatsMap] = stat._count;
     });
 
     return NextResponse.json({
@@ -209,7 +209,7 @@ export async function GET() {
         },
         recentApplications,
         activeJobs,
-        applicationsPerDay: applicationsPerDay.map((item) => ({
+        applicationsPerDay: applicationsPerDay.map((item: { date: Date; count: bigint }) => ({
           date: item.date,
           count: Number(item.count),
         })),

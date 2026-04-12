@@ -99,9 +99,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Parse CV
-    console.log("Starting CV parsing, file:", file.name, "size:", file.size);
     const parsedCV = await parseCV(buffer, { useAI, language });
-    console.log("CV parsed successfully, result:", JSON.stringify(parsedCV).substring(0, 200));
+  
 
     return NextResponse.json({
       success: true,

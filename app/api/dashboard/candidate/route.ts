@@ -123,8 +123,8 @@ export async function GET() {
       REFUSE: 0,
     };
 
-    applicationStats.forEach((stat) => {
-      statsMap[stat.status] = stat._count;
+    applicationStats.forEach((stat: { status: string; _count: number }) => {
+      statsMap[stat.status as keyof typeof statsMap] = stat._count;
     });
 
     return NextResponse.json({
