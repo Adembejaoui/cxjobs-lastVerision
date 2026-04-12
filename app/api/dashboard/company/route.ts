@@ -3,7 +3,6 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { isValidUuid } from "@/lib/utils";
 import { z } from "zod";
-import { Prisma } from "@prisma/client";
 
 // Validation schema for company profile update
 const updateCompanySchema = z.object({

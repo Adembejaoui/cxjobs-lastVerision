@@ -71,7 +71,7 @@ export async function GET() {
     });
 
     // Get recommended jobs based on skills
-    const skillNames = candidate.skills.map((s) => s.name.toLowerCase());
+    const skillNames = candidate.skills.map((s: { name: string }) => s.name.toLowerCase());
 
     const recommendedJobs = await prisma.jobOffer.findMany({
       where: {
