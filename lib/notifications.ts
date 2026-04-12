@@ -1,5 +1,5 @@
-import { prisma } from "@/lib/prisma";
 import { Notification, Prisma } from "@prisma/client";
+import prisma from "./prisma";
 
 export type NotificationType = 
   | "JOB_RECOMMENDATION"
