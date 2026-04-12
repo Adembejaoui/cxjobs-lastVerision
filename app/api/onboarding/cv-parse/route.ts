@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { parseCV, isValidPDF, getFileSizeMB } from "@/lib/cv-parser";
-import { rateLimitResponse, RATE_LIMIT_PRESETS } from "@/lib/rate-limit";
-import { getClientIp } from "@/lib/utils";
 
 // Maximum file size: 5MB
 const MAX_FILE_SIZE_MB = 5;
@@ -18,10 +16,6 @@ const MAX_FILE_SIZE_MB = 5;
  */
 export async function POST(request: NextRequest) {
   try {
-    // Rate limiting
-    const clientIp = getClientIp(request);
-    const rateLimitResult = rateLimitResponse(clientIp, RATE_LIMIT_PRESETS.API_WRITE);
-    if (rateLimitResult) return rateLimitResult;
 
     // Authentication check
     const session = await auth();
