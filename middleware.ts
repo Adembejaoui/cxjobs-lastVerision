@@ -19,8 +19,21 @@ function decodeToken(token: string): { role?: string; isOnboarded?: boolean } | 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   
-  const sessionToken = request.cookies.get("next-auth.session-token")?.value 
-    || request.cookies.get("authjs.session-token")?.value;
+  const cookieNames = [
+    "authjs.session-token",
+    "next-auth.session-token",
+    "__authjs_session",
+    "nextauth.session-token"
+  ];
+  
+  let sessionToken = null;
+  for (const name of cookieNames) {
+    const cookie = request.cookies.get(name);
+    if (cookie) {
+      sessionToken = cookie.value;
+      break;
+    }
+  }
   
   const token = sessionToken ? decodeToken(sessionToken) : null;
   const isAuthenticated = !!token;
@@ -32,6 +45,11 @@ export async function middleware(request: NextRequest) {
   const isOnboardingRoute = pathname.startsWith("/onboarding");
 
   const response = NextResponse.next();
+  
+  // Debug: log cookies and token info
+  const allCookies = Array.from(request.cookies.keys()).join(",");
+  response.headers.set("x-debug-cookies", allCookies);
+  response.headers.set("x-debug-auth", `token:${!!token}, role:${role}, onboarded:${isOnboarded}`);
 
   if (!isAuthenticated && isProtectedRoute) {
     const loginUrl = new URL("/login", request.url);
