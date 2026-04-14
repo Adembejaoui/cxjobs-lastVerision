@@ -10,6 +10,9 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const session = await auth();
+  if(!session?.user?.isOnboarded && session?.user?.role === "CANDIDATE") {
+    redirect("/onboarding/candidate");
+  }
   const userRole = session?.user.role;
   const user = {
     id: session?.user.id as string,
