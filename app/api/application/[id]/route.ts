@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { updateApplicationSchema, toggleSavedSchema } from "@/lib/validations/job";
-import { notifyApplicationStatusChanged, notifyInterviewScheduled } from "@/lib/notifications";
-
 // GET /api/application/[id] - Get single application
 export async function GET(
   request: NextRequest,
@@ -202,32 +200,6 @@ export async function PUT(
         },
       },
     });
-
-    // Send notification to candidate about status change
-    if (status !== application.status) {
-      try {
-        if (status === "ENTRETIEN") {
-          await notifyInterviewScheduled(
-            updatedApplication.candidate.user.id,
-            updatedApplication.jobOffer.title,
-            updatedApplication.jobOffer.company.name,
-            id,
-            updatedApplication.jobOffer.id
-          );
-        } else if (status) {
-          await notifyApplicationStatusChanged(
-            updatedApplication.candidate.user.id,
-            updatedApplication.jobOffer.title,
-            status,
-            id,
-            updatedApplication.jobOffer.id
-          );
-        }
-      } catch (notificationError) {
-        console.error("Failed to send notification:", notificationError);
-      }
-    }
-
     return NextResponse.json({
       success: true,
       message: "Application updated successfully",

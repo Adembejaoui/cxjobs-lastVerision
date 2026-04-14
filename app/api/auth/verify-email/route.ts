@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 import { z } from "zod";
-import { getClientIp } from "@/lib/utils";
 
 const verifyEmailSchema = z.object({
   token: z.string().min(1, "Token is required"),
