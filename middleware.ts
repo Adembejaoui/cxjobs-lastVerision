@@ -45,11 +45,7 @@ export async function middleware(request: NextRequest) {
   const isOnboardingRoute = pathname.startsWith("/onboarding");
 
   const response = NextResponse.next();
-  
-  // Debug: log cookies and token info
-  const allCookies = Array.from(request.cookies.keys()).join(",");
-  response.headers.set("x-debug-cookies", allCookies);
-  response.headers.set("x-debug-auth", `token:${!!token}, role:${role}, onboarded:${isOnboarded}`);
+  response.headers.set("x-debug-auth", `tok:${!!token},r:${role},on:${isOnboarded}`);
 
   if (!isAuthenticated && isProtectedRoute) {
     const loginUrl = new URL("/login", request.url);
