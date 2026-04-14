@@ -10,17 +10,12 @@ export default async function DashboardLayout({
   children: React.ReactNode;
 }) {
   const session = await auth();
-
-  if (!session) {
-    redirect("/login?callbackUrl=/dashboard");
-  }
-
-  const userRole = session.user.role;
+  const userRole = session?.user.role;
   const user = {
-    id: session.user.id as string,
-    name: session.user.name,
-    email: session.user.email,
-    image: session.user.image,
+    id: session?.user.id as string,
+    name: session?.user.name,
+    email: session?.user.email,
+    image: session?.user.image,
     role: userRole,
   };
 
