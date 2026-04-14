@@ -1,29 +1,37 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
 
 const protectedRoutes = ["/dashboard", "/admin"];
 const authRoutes = ["/login", "/register"];
 const onboardingRoutes = ["/onboarding"];
 
+function decodeToken(token: string): { role?: string; isOnboarded?: boolean } | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   
-  const session = await auth();
-  const token = session?.user;
-  const isAuthenticated = !!session;
+  const sessionToken = request.cookies.get("next-auth.session-token")?.value 
+    || request.cookies.get("authjs.session-token")?.value;
   
-  // Debug: log session status
-  console.log("Middleware - pathname:", pathname, "session:", !!session, "user:", token);
-  
-  const isCandidate = token?.role === "CANDIDATE";
+  const token = sessionToken ? decodeToken(sessionToken) : null;
+  const isAuthenticated = !!token;
   const isOnboarded = token?.isOnboarded === true;
+  const role = token?.role;
+  
   const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route));
   const isAuthRoute = authRoutes.some((route) => pathname === route);
   const isOnboardingRoute = pathname.startsWith("/onboarding");
 
   const response = NextResponse.next();
-  response.headers.set("x-pathname", pathname);
 
   if (!isAuthenticated && isProtectedRoute) {
     const loginUrl = new URL("/login", request.url);
@@ -35,19 +43,15 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  if (isCandidate && !isOnboarded) {
-    if (!isOnboardingRoute) {
-      return NextResponse.redirect(new URL("/onboarding/candidate", request.url));
-    }
-    return response;
+  if (role === "CANDIDATE" && !isOnboarded && !isOnboardingRoute) {
+    return NextResponse.redirect(new URL("/onboarding/candidate", request.url));
   }
 
-  if (isCandidate && isOnboarded && isOnboardingRoute) {
+  if (role === "CANDIDATE" && isOnboarded && isOnboardingRoute) {
     return NextResponse.redirect(new URL("/dashboard/candidate", request.url));
   }
 
   if (pathname === "/dashboard" && isAuthenticated) {
-    const role = token?.role;
     if (role === "COMPANY") {
       return NextResponse.redirect(new URL("/dashboard/company", request.url));
     } else if (role === "CANDIDATE" && isOnboarded) {
@@ -55,31 +59,11 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  if (pathname.startsWith("/dashboard/company") && token?.role !== "COMPANY") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
-  }
-
-  if (pathname.startsWith("/dashboard/candidate") && token?.role !== "CANDIDATE") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
-  }
-
-  if (pathname.startsWith("/admin") && token?.role !== "ADMIN") {
-    return NextResponse.redirect(new URL("/", request.url));
-  }
-
   return response;
 }
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - api (API routes)
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder
-     */
     "/((?!api|_next/static|_next/image|favicon.ico|public).*)",
   ],
 };
