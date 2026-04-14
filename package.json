@@ -3,15 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint",
-    "db:migrate": "prisma migrate dev",
-    "db:push": "prisma db push",
-    "db:generate": "prisma generate",
-    "db:seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} --project tsconfig.json prisma/seed.ts"
-  },
+  "dev": "next dev",
+  "build": "next build",
+  "start": "next start",
+  "lint": "eslint",
+  "postinstall": "prisma generate",
+  "db:migrate": "prisma migrate dev",
+  "db:push": "prisma db push",
+  "db:generate": "prisma generate"
+},
   "prisma": {
     "seed": "ts-node --compiler-options {\"module\":\"CommonJS\"} --project tsconfig.json prisma/seed.ts"
   },
