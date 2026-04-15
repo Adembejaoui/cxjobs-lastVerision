@@ -74,7 +74,7 @@ interface Application {
   notes: string | null;
   isSaved: boolean;
   createdAt: Date;
-  candidate: Candidate;
+  candidate?: Candidate;
 }
 
 interface CandidateReviewModalProps {

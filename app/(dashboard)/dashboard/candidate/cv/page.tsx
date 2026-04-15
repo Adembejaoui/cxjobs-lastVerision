@@ -31,7 +31,7 @@ export default async function CVPage() {
       languages: true,
       skills: true,
     },
-  });
+  }) as any;
 
   if (!candidate) {
     redirect("/onboarding/candidate");

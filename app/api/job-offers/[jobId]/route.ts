@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import  prisma  from "@/lib/prisma";
 import { updateJobOfferSchema } from "@/lib/validations/job";
 import { unstable_cache } from "next/cache";
 import { revalidateJobOffers } from "@/lib/cache";

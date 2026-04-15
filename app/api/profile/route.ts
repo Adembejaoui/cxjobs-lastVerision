@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import  prisma  from "@/lib/prisma";
 import { candidateProfileSchema, companyProfileSchema } from "@/lib/validations/profile";
 
 type InteractiveTx = Omit<typeof prisma, "$connect" | "$disconnect" | "$on" | "$transaction" | "$extends">;

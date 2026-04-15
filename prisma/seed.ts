@@ -15,28 +15,27 @@ const prisma = new PrismaClient({
 async function main() {
   console.log("🌱 Starting database seed...");
 
-  await prisma.applicationMessage.deleteMany();
+  // Note: ApplicationMessage, CompanyInvitation, Blog, JobAlert, Notification, NotificationPreference models were removed from schema - skipping delete
   await prisma.application.deleteMany();
   await prisma.jobOfferBenefit.deleteMany();
   await prisma.jobLanguage.deleteMany();
   await prisma.jobOffer.deleteMany();
   await prisma.companyBenefit.deleteMany();
   await prisma.companyCount.deleteMany();
-  await prisma.companyInvitation.deleteMany();
-  await prisma.blog.deleteMany();
   await prisma.company.deleteMany();
   await prisma.candidateSkill.deleteMany();
   await prisma.experience.deleteMany();
   await prisma.education.deleteMany();
   await prisma.language.deleteMany();
-  await prisma.jobAlert.deleteMany();
+  // await prisma.jobAlert.deleteMany();
   await prisma.candidate.deleteMany();
-  await prisma.notification.deleteMany();
-  await prisma.notificationPreference.deleteMany();
+  // await prisma.notification.deleteMany();
+  // await prisma.notificationPreference.deleteMany();
   await prisma.session.deleteMany();
   await prisma.account.deleteMany();
-  await prisma.emailVerificationToken.deleteMany();
+  await prisma.verificationToken.deleteMany();
   await prisma.passwordResetToken.deleteMany();
+  await prisma.verificationToken.deleteMany();
   await prisma.user.deleteMany();
 
   console.log("✓ Cleaned existing data");

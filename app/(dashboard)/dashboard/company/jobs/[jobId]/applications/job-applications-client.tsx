@@ -76,7 +76,7 @@ interface Application {
   notes: string | null;
   isSaved: boolean;
   createdAt: Date;
-  candidate: Candidate;
+  candidate?: Candidate;
 }
 
 interface Stats {
@@ -118,8 +118,8 @@ export function JobApplicationsClient({ jobOffer, applications: initialApplicati
       .filter(({ app }) => {
         const matchesSearch =
           !searchQuery ||
-          app.candidate.user.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          app.candidate.user.email.toLowerCase().includes(searchQuery.toLowerCase());
+          app.candidate?.user?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          app.candidate?.user?.email?.toLowerCase().includes(searchQuery.toLowerCase());
 
         let matchesFilter = true;
         if (statusFilter === "ALL") {
@@ -355,7 +355,7 @@ export function JobApplicationsClient({ jobOffer, applications: initialApplicati
               >
                 <div className="flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-200">
-                    {app.candidate.user.image ? (
+                    {app.candidate?.user?.image ? (
                       <img
                         src={app.candidate.user.image}
                         alt={app.candidate.user.name || "Candidate"}
@@ -367,7 +367,7 @@ export function JobApplicationsClient({ jobOffer, applications: initialApplicati
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-slate-900">
-                      {app.candidate.user.name || "No name"}
+                      {app.candidate?.user?.name || "No name"}
                     </p>
                   </div>
                 </div>
@@ -375,12 +375,12 @@ export function JobApplicationsClient({ jobOffer, applications: initialApplicati
                 <div className="space-y-1">
                   <p className="flex items-center gap-1.5 text-xs text-slate-600">
                     <Mail className="h-3 w-3" />
-                    {app.candidate.user.email}
+                    {app.candidate?.user?.email}
                   </p>
                 </div>
 
                 <div className="flex flex-wrap gap-1">
-                  {app.candidate.skills.slice(0, 3).map((skill) => (
+                  {app.candidate?.skills?.slice(0, 3).map((skill) => (
                     <span
                       key={skill.id}
                       className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600"
@@ -388,7 +388,7 @@ export function JobApplicationsClient({ jobOffer, applications: initialApplicati
                       {skill.name}
                     </span>
                   ))}
-                  {app.candidate.skills.length > 3 && (
+                  {app.candidate?.skills && app.candidate.skills.length > 3 && (
                     <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
                       +{app.candidate.skills.length - 3}
                     </span>

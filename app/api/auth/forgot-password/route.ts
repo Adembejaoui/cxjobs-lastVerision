@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import  prisma  from "@/lib/prisma";
 import { forgotPasswordSchema } from "@/lib/validations/auth";
 import crypto from "crypto";
 

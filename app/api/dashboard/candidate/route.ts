@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import  prisma  from "@/lib/prisma";
 
 // GET /api/dashboard/candidate - Candidate dashboard data
 export async function GET() {
@@ -123,7 +123,7 @@ export async function GET() {
       REFUSE: 0,
     };
 
-    applicationStats.forEach((stat: { status: string; _count: number }) => {
+    applicationStats.forEach((stat: any) => {
       statsMap[stat.status as keyof typeof statsMap] = stat._count;
     });
 

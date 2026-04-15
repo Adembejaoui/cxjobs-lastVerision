@@ -37,8 +37,6 @@ model User {
   passwordResetTokens PasswordResetToken[]
 
   // Notifications
-  notifications Notification[]
-  notificationPreference NotificationPreference?
   
   // Email verification
   emailVerificationTokens EmailVerificationToken[]
@@ -46,7 +44,6 @@ model User {
   @@index([email])
   @@index([role])
   @@map("users")
-  auditLogs AuditLog[]
 }
 
 enum UserRole {
@@ -164,7 +161,6 @@ model Candidate {
   experiences  Experience[]
   education    Education[]
   languages    Language[]
-  jobAlerts    JobAlert[]
 
   @@map("candidates")
 }
@@ -299,8 +295,6 @@ model Company {
 
   // Relations
   jobs        JobOffer[]
-  invitations CompanyInvitation[]
-  blogPosts   Blog[]
   benefits    CompanyBenefit[]  // NEW: company benefit catalog
 
   @@index([slug])
@@ -510,9 +504,6 @@ model Application {
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
-  // Relations
-  messages     ApplicationMessage[]
-
   @@unique([candidateId, jobOfferId]) // Prevent duplicate applications
   @@index([candidateId])
   @@index([jobOfferId])
@@ -528,149 +519,4 @@ enum ApplicationStatus {
   REFUSE
 }
 
-// ==================== APPLICATION MESSAGES (CHAT) ====================
 
-model ApplicationMessage {
-  id            String   @id @default(uuid())
-  applicationId String
-  application   Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  senderId      String
-  senderType    String   // USER (company/admin), CANDIDATE
-  content       String   @db.Text
-  isRead        Boolean  @default(false)
-  createdAt     DateTime @default(now())
-
-  @@index([applicationId])
-  @@index([senderId])
-  @@map("application_messages")
-}
-
-// ==================== COMPANY INVITATIONS ====================
-
-model CompanyInvitation {
-  id        String    @id @default(uuid())
-  email     String
-  token     String    @unique
-  companyId String?
-  company   Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  used      Boolean   @default(false)
-  expiresAt DateTime
-  createdAt DateTime  @default(now())
-
-  @@index([email])
-  @@map("company_invitations")
-}
-
-// ==================== BLOG ====================
-
-model Blog {
-  id          String   @id @default(uuid())
-  title       String
-  slug        String   @unique
-  content     String   @db.Text
-  excerpt     String?  @db.Text
-  coverImage  String?
-  authorId    String?
-  author      Company? @relation(fields: [authorId], references: [id])
-  published   Boolean  @default(false)
-  publishedAt DateTime?
-  views       Int      @default(0)
-  tags        String[] @default([])
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([slug])
-  @@index([authorId])
-  @@map("blogs")
-}
-
-// ==================== JOB ALERTS ====================
-
-model JobAlert {
-  id          String   @id @default(uuid())
-  candidateId String
-  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  
-  // Alert Criteria
-  keywords    String?
-  location    String?
-  jobType     String?
-  workMode    String?
-  salaryMin   Int?
-  
-  // Settings
-  frequency   String   @default("DAILY") // DAILY, WEEKLY, INSTANT
-  isActive   Boolean  @default(true)
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([candidateId])
-  @@index([isActive])
-  @@map("job_alerts")
-}
-
-// ==================== NOTIFICATIONS ====================
-
-model Notification {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  type      String   // JOB_MATCH, APPLICATION_STATUS, NEW_MESSAGE, etc.
-  title     String
-  message   String
-  link      String?
-  isRead    Boolean  @default(false)
-  data      Json?    // Additional data for the notification
-  readAt    DateTime?
-  
-  createdAt DateTime @default(now())
-
-  @@index([userId])
-  @@index([isRead])
-  @@map("notifications")
-}
-
-model NotificationPreference {
-  id               String  @id @default(uuid())
-  userId           String  @unique
-  user             User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  // Email notifications
-  jobMatches       Boolean @default(true)
-  applicationUpdates Boolean @default(true)
-  newMessages      Boolean @default(true)
-  weeklyDigest     Boolean @default(true)
-  
-  // Push notifications
-  pushEnabled      Boolean @default(false)
-  
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  @@map("notification_preferences")
-}
-
-// ==================== AUDIT LOG ====================
-
-model AuditLog {
-  id          String   @id @default(uuid())
-  userId      String?
-  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  
-  action      String   // CREATE, UPDATE, DELETE, LOGIN, etc.
-  entity      String   // User, JobOffer, Application, etc.
-  entityId    String?
-  changes     Json?    // Store before/after values
-  ipAddress   String?
-  userAgent   String?
-  
-  createdAt   DateTime @default(now())
-
-  @@index([userId])
-  @@index([entity])
-  @@index([entityId])
-  @@index([createdAt])
-  @@map("audit_logs")
-}

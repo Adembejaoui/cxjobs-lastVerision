@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import  prisma  from "@/lib/prisma";
 import { parsePaginationParams } from "@/lib/utils";
 
 // GET /api/profile/allCompanies - List all companies (public)

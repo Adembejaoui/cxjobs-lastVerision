@@ -53,7 +53,7 @@ export default async function CandidateProfilePage() {
       languages: true,
       skills: true,
     },
-  });
+  }) as any;
 
   if (!candidate) {
     // If no candidate profile exists, redirect to onboarding
@@ -225,7 +225,7 @@ export default async function CandidateProfilePage() {
       </div>
 
       {/* Edit Form */}
-      <CandidateProfileForm candidate={candidate} />
+      <CandidateProfileForm candidate={candidate as any} />
     </div>
   );
 }

@@ -32,7 +32,7 @@ interface Application {
   coverLetter: string | null;
   cvUrl: string | null;
   createdAt: Date;
-  jobOffer: JobOffer;
+  jobOffer?: JobOffer;
 }
 
 interface CandidateApplicationsClientProps {
@@ -48,10 +48,10 @@ export function CandidateApplicationsClient({ applications: initialApplications 
     return initialApplications.filter((app) => {
       const matchesSearch =
         !searchQuery ||
-        app.jobOffer.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        app.jobOffer.company.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        app.jobOffer.customLocation?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        app.jobOffer.company.location?.toLowerCase().includes(searchQuery.toLowerCase());
+        (app.jobOffer?.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        app.jobOffer?.company?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        app.jobOffer?.customLocation?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        app.jobOffer?.company?.location?.toLowerCase().includes(searchQuery.toLowerCase()));
 
       const matchesFilter = statusFilter === "ALL" || app.status === statusFilter;
 
@@ -177,13 +177,13 @@ export function CandidateApplicationsClient({ applications: initialApplications 
                       <Briefcase className="h-6 w-6 text-slate-600" />
                     </div>
                     <div>
-                      <h3 className="text-lg font-semibold text-slate-900">{app.jobOffer.title}</h3>
-                      <p className="text-sm text-slate-500">{app.jobOffer.company.name}</p>
-                      {(app.jobOffer.customLocation || app.jobOffer.company.location) && (
+                      <h3 className="text-lg font-semibold text-slate-900">{app.jobOffer?.title}</h3>
+                      <p className="text-sm text-slate-500">{app.jobOffer?.company?.name}</p>
+                      {(app.jobOffer?.customLocation || app.jobOffer?.company?.location) && (
                         <p className="text-xs text-slate-400 mt-1">
-                          {app.jobOffer.customLocation || app.jobOffer.company.location}
-                          {app.jobOffer.isRemote && " (Remote)"}
-                          {app.jobOffer.isHybrid && " (Hybrid)"}
+                          {app.jobOffer?.customLocation || app.jobOffer?.company?.location}
+                          {app.jobOffer?.isRemote && " (Remote)"}
+                          {app.jobOffer?.isHybrid && " (Hybrid)"}
                         </p>
                       )}
                       <p className="mt-1 text-xs text-slate-400">Applied on {formatDate(app.createdAt)}</p>
@@ -194,7 +194,7 @@ export function CandidateApplicationsClient({ applications: initialApplications 
                       {getStatusIcon(app.status)}
                       {formatStatus(app.status)}
                     </span>
-                    <Link href={`/jobs/${app.jobOffer.slug}`}>
+                    <Link href={`/jobs/${app.jobOffer?.slug}`}>
                       <Button variant="ghost" size="icon">
                         <ExternalLink className="h-4 w-4" />
                       </Button>

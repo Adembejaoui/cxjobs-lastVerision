@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import  prisma  from "@/lib/prisma";
 import { isValidUuid } from "@/lib/utils";
 import { z } from "zod";
 
@@ -165,7 +165,7 @@ export async function GET() {
       EXPIRED: 0,
     };
 
-    jobStats.forEach((stat: { status: string; _count: number }) => {
+    jobStats.forEach((stat: any) => {
       jobStatsMap[stat.status as keyof typeof jobStatsMap] = stat._count;
     });
 
@@ -177,7 +177,7 @@ export async function GET() {
       REFUSE: 0,
     };
 
-    applicationStats.forEach((stat: { status: string; _count: number }) => {
+    applicationStats.forEach((stat: any) => {
       applicationStatsMap[stat.status as keyof typeof applicationStatsMap] = stat._count;
     });
 

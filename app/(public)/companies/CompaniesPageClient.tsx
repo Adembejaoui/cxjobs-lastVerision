@@ -79,7 +79,7 @@ interface CompanyFromAPI {
   logoUrl: string | null
   coverImageUrl: string | null
   createdAt: Date
-  _count: {
+  _count?: {
     jobs: number
   }
 }
@@ -234,7 +234,7 @@ export default function CompaniesPageClient({ initialCompanies = [], totalCompan
     industry: company.industry || "General",
     location: company.location || "Not specified",
     size: company.companySize || "Unknown",
-    jobsCount: company._count.jobs,
+    jobsCount: company._count?.jobs ?? 0,
     rating: 4.0 + (index % 10) * 0.05, // Deterministic rating based on index
     reviews: 10 + (index * 7) % 190, // Deterministic reviews based on index
     logoUrl: company.logoUrl,

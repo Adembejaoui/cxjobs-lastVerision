@@ -19,7 +19,7 @@ interface JobOffer {
   isHybrid: boolean;
   experienceLevel: string | null;
   createdAt: Date;
-  _count: {
+  _count?: {
     applications: number;
   };
   company?: {
@@ -295,7 +295,7 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
                   title="View applicants"
                 >
                   <Users className="h-4 w-4" />
-                  {job._count.applications}
+                  {job._count?.applications}
                 </Link>
 
                 <div className="flex items-center gap-1 text-slate-500">

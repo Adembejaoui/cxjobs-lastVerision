@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import  prisma  from "@/lib/prisma";
 
 export async function GET() {
   try {
@@ -20,7 +20,7 @@ export async function GET() {
           orderBy: { name: "asc" },
         },
       },
-    });
+    }) as any;
 
     if (!company) {
       return NextResponse.json(

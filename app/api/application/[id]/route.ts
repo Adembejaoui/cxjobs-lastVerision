@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import  prisma  from "@/lib/prisma";
 import { updateApplicationSchema, toggleSavedSchema } from "@/lib/validations/job";
 // GET /api/application/[id] - Get single application
 export async function GET(
@@ -78,7 +78,7 @@ export async function GET(
         where: { userId: session.user.id },
       });
 
-      if (!company || company.id !== application.jobOffer.companyId) {
+      if (!company || (application as any).jobOffer?.companyId !== company.id) {
         return NextResponse.json(
           { success: false, error: "Access denied", code: "FORBIDDEN" },
           { status: 403 }

@@ -29,7 +29,7 @@ export default async function JobsPage() {
     },
     take: 20,
     orderBy: { createdAt: "desc" },
-  });
+  }) as any;
 
   const totalJobs = await prisma.jobOffer.count({
     where: {
@@ -38,7 +38,7 @@ export default async function JobsPage() {
     },
   });
 
-  const transformedJobs = jobs.map((job: typeof jobs[number]) => ({
+  const transformedJobs = (jobs as any).map((job: any) => ({
     id: job.id,
     title: job.title,
     slug: job.slug,
