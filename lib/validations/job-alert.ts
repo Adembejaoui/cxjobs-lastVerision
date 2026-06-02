@@ -1,5 +1,5 @@
+import { ContractType } from "@/app/generated/prisma/enums";
 import { z } from "zod";
-import { ContractType } from "@prisma/client";
 
 const WorkModeEnum = z.enum(["REMOTE", "HYBRID", "ON_SITE"]);
 const FrequencyEnum = z.enum(["DAILY", "WEEKLY", "INSTANT"]);
