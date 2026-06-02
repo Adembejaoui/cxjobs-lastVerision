@@ -12,7 +12,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { slug } = await params
 
-    const company = await prisma.company.findUnique({
+    const company = await prisma.companies.findUnique({
       where: { slug, deletedAt: null },
       select: {
         id: true,

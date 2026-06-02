@@ -8,6 +8,40 @@ import {
   getPublicUrl,
   deleteFile,
 } from "@/lib/supabase";
+import sharp from "sharp";
+import path from "path";
+
+/**
+ * Target dimensions and quality per bucket
+ */
+const IMAGE_CONFIG: Record<string, { width: number; height: number; quality: number }> = {
+  [STORAGE_BUCKETS.LOGO]: { width: 500, height: 500, quality: 90 },
+  [STORAGE_BUCKETS.COVER]: { width: 1600, height: 500, quality: 85 },
+  [STORAGE_BUCKETS.CULTURE]: { width: 1280, height: 720, quality: 85 },
+  [STORAGE_BUCKETS.AVATAR]: { width: 256, height: 256, quality: 90 },
+};
+
+/**
+ * Process an image with sharp (resize, crop to cover, convert to webp)
+ */
+async function processImage(
+  buffer: Buffer,
+  bucket: string
+): Promise<Buffer> {
+  const config = IMAGE_CONFIG[bucket];
+  if (!config) {
+    return buffer;
+  }
+
+  return sharp(buffer)
+    .resize(config.width, config.height, {
+      fit: "cover",
+      position: "entropy",
+    })
+    .sharpen({ sigma: 2 })
+    .webp({ quality: config.quality })
+    .toBuffer();
+}
 
 /**
  * Upload type configuration
@@ -98,9 +132,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get user ID for file path (use 'system' for non-authenticated uploads)
+    // Authenticated user (needed for path ownership check)
     const session = await auth();
-    const userId = session?.user?.id || "system";
+    const userId = session?.user?.id;
+
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized", code: "UNAUTHORIZED" },
+        { status: 401 }
+      );
+    }
 
     // Generate unique file path
     const filePath = generateFilePath(config.bucket, userId, file.name);
@@ -117,11 +158,20 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Upload to Supabase Storage
+    // Process image (resize + crop + webp) for image buckets
+    const processedBuffer = await processImage(buffer, config.bucket);
+
+    // Upload to Supabase Storage (processed image)
+    const isImageBucket =
+      config.bucket === STORAGE_BUCKETS.LOGO ||
+      config.bucket === STORAGE_BUCKETS.COVER ||
+      config.bucket === STORAGE_BUCKETS.AVATAR ||
+      config.bucket === STORAGE_BUCKETS.CULTURE;
+
     const { data, error } = await supabase.storage
       .from(config.bucket)
-      .upload(filePath, buffer, {
-        contentType: file.type,
+      .upload(filePath, processedBuffer, {
+        contentType: isImageBucket ? "image/webp" : file.type,
         upsert: false,
       });
 
@@ -175,9 +225,9 @@ export async function DELETE(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const bucket = searchParams.get("bucket");
-    const path = searchParams.get("path");
+    const filePath = searchParams.get("path");
 
-    if (!bucket || !path) {
+    if (!bucket || !filePath) {
       return NextResponse.json(
         { success: false, error: "Bucket and path are required", code: "MISSING_PARAMS" },
         { status: 400 }
@@ -185,7 +235,12 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Verify the path belongs to the user (security check)
-    if (!path.startsWith(session.user.id) && session.user.role !== "ADMIN") {
+    // Use path.normalize to prevent traversal attacks (e.g., "../../other-user/file.pdf")
+    const normalizedPath = path.normalize(filePath);
+    const pathSegments = normalizedPath.split(path.sep);
+    const isPathOwner = pathSegments.length > 0 && pathSegments[0] === session.user.id && !pathSegments.includes("..");
+
+    if (!isPathOwner && session.user.role !== "ADMIN") {
       return NextResponse.json(
         { success: false, error: "You don't have permission to delete this file", code: "FORBIDDEN" },
         { status: 403 }
@@ -193,7 +248,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Delete from Supabase Storage
-    const result = await deleteFile(bucket, path);
+    const result = await deleteFile(bucket, filePath);
 
     if (!result.success) {
       return NextResponse.json(

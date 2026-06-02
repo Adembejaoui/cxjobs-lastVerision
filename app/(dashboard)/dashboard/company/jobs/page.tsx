@@ -11,7 +11,7 @@ export default async function CompanyJobsPage() {
   }
 
   // Get company
-  const company = await prisma.company.findUnique({
+  const company = await prisma.companies.findUnique({
     where: { userId: session.user.id },
   });
 

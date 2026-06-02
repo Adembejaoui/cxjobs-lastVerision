@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
@@ -13,7 +13,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { 
+import {
   PlusCircle, 
   X, 
   Trash2, 
@@ -27,6 +27,7 @@ import {
   Sparkles,
   Heart
 } from "lucide-react";
+import { z } from "zod";
 import { showSuccess, showError } from "@/lib/toast";
 
 interface JobBenefit {
@@ -45,38 +46,41 @@ interface CompanyBenefit {
   category: string;
 }
 
-interface JobLanguage {
+export interface JobLanguage {
   language: string;
   level: string;
 }
 
-interface JobOffer {
-  id?: string;
-  title?: string;
-  slug?: string;
-  description?: string | null;
-  requirements?: string[];
-  benefitIds?: string[];
-  customLocation?: string | null;
-  contractType?: string;
-  isRemote?: boolean;
-  isHybrid?: boolean;
-  experienceLevel?: string | null;
-  salary?: string | null;
-  salaryMin?: number | null;
-  salaryMax?: number | null;
-  salaryCurrency?: string | null;
-  languages?: JobLanguage[];
-  status?: string;
-  benefits?: JobBenefit[];
-  technicalTools?: string[];
-  softSkills?: string[];
-}
+export interface JobOffer {
+   id?: string;
+   title?: string;
+   location?: string;
+   slug?: string;
+   description?: string | null;
+   requirements?: string[];
+   benefitIds?: string[];
+   customLocation?: string | null;
+   contractType?: string;
+   isRemote?: boolean;
+   isHybrid?: boolean;
+   experienceLevel?: string | null;
+   salary?: string | null;
+   salaryMin?: number | null;
+   salaryMax?: number | null;
+   salaryCurrency?: string | null;
+   languages?: JobLanguage[];
+   status?: string;
+   benefits?: JobBenefit[];
+   technicalTools?: string[];
+   softSkills?: string[];
+   applicationType?: string;
+   externalApplyUrl?: string | null;
+ }
 
 interface JobFormDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  job?: JobOffer | null;
+  job?: Partial<JobOffer> | null;
   onSuccess?: () => void;
 }
 
@@ -94,7 +98,6 @@ const CONTRACT_TYPES = [
 ];
 
 const EXPERIENCE_LEVELS = [
-  { value: "", label: "Not specified" },
   { value: "JUNIOR", label: "Junior (0-2 years)" },
   { value: "MID", label: "Mid-Level (2-5 years)" },
   { value: "SENIOR", label: "Senior (5+ years)" },
@@ -141,6 +144,111 @@ const SOFT_SKILLS = [
   "Team Collaboration", "Adaptability",
 ];
 
+// Zod validation schema for job offer
+const jobOfferSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .min(1, "Job title is required"),
+
+  description: z
+    .string()
+    .trim()
+    .min(20, "Job description must contain at least 20 characters"),
+
+  customLocation: z
+    .string()
+    .trim()
+    .min(1, "Location is required"),
+
+  location: z.string().optional(),
+
+  contractType: z.enum([
+    "CDI",
+    "CDD",
+    "FREELANCE",
+    "INTERNSHIP",
+    "PART_TIME",
+    "APPRENTICESHIP",
+  ]),
+
+  isRemote: z.boolean(),
+
+  isHybrid: z.boolean(),
+
+  experienceLevel: z.enum([
+    "JUNIOR",
+    "MID",
+    "SENIOR",
+    "LEAD",
+    "EXECUTIVE",
+  ]),
+
+  salary: z.string().optional(),
+
+  salaryMin:z.coerce.number().nonnegative().nullable().optional(),
+
+  salaryMax: z.coerce.number().nonnegative().nullable().optional(),
+
+  salaryCurrency: z.enum(["USD", "EUR", "TND"]).optional(),
+
+  requirements: z.array(z.string()).optional(),
+
+  benefitIds: z.array(z.string()).optional(),
+
+  languages: z
+ .array(
+   z.object({
+     language: z.string().trim().min(1),
+     level: z.enum([
+       "REQUIRED",
+       "PREFERRED",
+       "NICE_TO_HAVE",
+     ]),
+   })
+ )
+ .default([])
+ .refine((val) => val.length > 0, {
+   message: "At least one language is required",
+ }),
+
+  technicalTools: z.array(z.string()).optional(),
+
+  softSkills: z.array(z.string()).optional(),
+
+  status: z.enum(["DRAFT", "PUBLISHED"]).optional(),
+
+  publishedAt: z.string().datetime().nullable().optional(),
+
+  slug: z.string().optional(),
+
+  applicationType: z.enum(["INTERNAL", "EXTERNAL"]).optional().default("INTERNAL"),
+
+  externalApplyUrl: z
+    .string()
+    .trim()
+    .url("Please enter a valid URL")
+    .optional()
+    .nullable(),
+}).refine((data) => {
+  if (data.applicationType === "EXTERNAL") {
+    return !!data.externalApplyUrl && data.externalApplyUrl.length > 0;
+  }
+  return true;
+}, {
+  message: "External apply URL is required when application type is EXTERNAL",
+  path: ["externalApplyUrl"],
+});
+
+const REQUIRED_FIELDS = [
+  "title",
+  "contractType",
+  "experienceLevel",
+  "customLocation",
+  "description",
+  "languages",
+];
+
 export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDialogProps) {
   const router = useRouter();
   const isEditMode = !!job?.id;
@@ -154,10 +262,11 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
     title: job?.title || "",
     description: job?.description || "",
     customLocation: job?.customLocation || "",
+    location: job?.location || "",
     contractType: job?.contractType || "CDI",
     isRemote: job?.isRemote || false,
     isHybrid: job?.isHybrid || false,
-    experienceLevel: job?.experienceLevel || "",
+    experienceLevel: job?.experienceLevel || "JUNIOR",
     salary: job?.salary || "",
     salaryMin: job?.salaryMin || null,
     salaryMax: job?.salaryMax || null,
@@ -167,6 +276,8 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
     languages: job?.languages || [],
     technicalTools: job?.technicalTools || [],
     softSkills: job?.softSkills || [],
+    applicationType: job?.applicationType || "INTERNAL",
+    externalApplyUrl: job?.externalApplyUrl || null,
   });
 
   const [newRequirement, setNewRequirement] = useState("");
@@ -191,7 +302,7 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
               contractType: fullJob.contractType || "CDI",
               isRemote: fullJob.isRemote || false,
               isHybrid: fullJob.isHybrid || false,
-              experienceLevel: fullJob.experienceLevel || "",
+              experienceLevel: fullJob.experienceLevel || "JUNIOR",
               salary: fullJob.salary || "",
               salaryMin: fullJob.salaryMin || null,
               salaryMax: fullJob.salaryMax || null,
@@ -201,6 +312,9 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
               languages: fullJob.languages?.map((l: JobLanguage) => ({ language: l.language, level: l.level })) || [],
               technicalTools: fullJob.technicalTools || [],
               softSkills: fullJob.softSkills || [],
+              location: fullJob.location || "",
+              applicationType: fullJob.applicationType || "INTERNAL",
+              externalApplyUrl: fullJob.externalApplyUrl || null,
             });
           }
         })
@@ -213,24 +327,32 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
         .finally(() => {
           setIsLoadingJob(false);
         });
-    } else if (!isEditMode && open) {
+} else if (!isEditMode && open) {
       setFormData({
-        title: "",
-        description: "",
-        customLocation: "",
-        contractType: "CDI",
-        isRemote: false,
-        isHybrid: false,
-        experienceLevel: "",
-        salary: "",
-        salaryMin: null,
-        salaryMax: null,
-        salaryCurrency: "USD",
-        requirements: [],
-        benefitIds: [],
-        languages: [],
-        technicalTools: [],
-        softSkills: [],
+        title: job?.title || "",
+        description: job?.description || "",
+        customLocation: job?.customLocation || job?.location || "",
+        contractType: job?.contractType || "CDI",
+        isRemote: job?.isRemote || false,
+        isHybrid: job?.isHybrid || false,
+        experienceLevel: job?.experienceLevel || "JUNIOR",
+        salary: job?.salary || "",
+        salaryMin: job?.salaryMin || null,
+        salaryMax: job?.salaryMax || null,
+        salaryCurrency: job?.salaryCurrency || "USD",
+        requirements: job?.requirements || [],
+        benefitIds: job?.benefitIds || [],
+        // Scraped data provides languages as {name, level}; JobOffer uses {language, level}.
+        // remap here so the UI (which reads lang.language) displays correctly.
+        languages: ((job?.languages || []) as Array<{ name?: string; language?: string; level?: string }>).map((l) => ({
+          language: l.language || l.name || "",
+          level: l.level?.toUpperCase() || "REQUIRED",
+        })),
+        technicalTools: job?.technicalTools || [],
+        softSkills: job?.softSkills || [],
+        location: job?.location || "",
+        applicationType: job?.applicationType || "INTERNAL",
+        externalApplyUrl: job?.externalApplyUrl || null,
       });
     }
   }, [open, isEditMode, job?.id]);
@@ -358,6 +480,33 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
     setIsSubmitting(true);
     setError(null);
     setFieldErrors({});
+    // Validate form data with Zod
+    const validationResult = jobOfferSchema.safeParse(formData);
+    if (!validationResult.success) {
+      // Convert Zod error to field errors format (top-level fields only)
+      const errors: FieldErrors = {};
+      validationResult.error.issues.forEach((error) => {
+        // Get the top-level field name from the path
+        const fieldName = String(error.path[0] || "form");
+        if (!errors[fieldName]) {
+          errors[fieldName] = [];
+        }
+        // Avoid duplicate error messages for the same field
+        if (!errors[fieldName].includes(error.message)) {
+          errors[fieldName].push(error.message);
+        }
+      });
+      setFieldErrors(errors);
+
+      Object.entries(errors).forEach(([field, messages]) => {
+        showError(field.replace(/([A-Z])/g, " $1"), {
+          description: messages[0],
+        });
+      });
+
+      setIsSubmitting(false);
+      return;
+    }
 
     try {
       const slug = job?.slug || generateSlug(formData.title || "");
@@ -405,7 +554,7 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
         });
       } else {
         showSuccess("Job created successfully!", {
-          description: publishNow 
+          description: publishNow
             ? "Your job listing is now live and visible to candidates."
             : "Your job has been saved as a draft.",
         });
@@ -422,6 +571,11 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
 
   const getCurrencySymbol = () => {
     return CURRENCIES.find(c => c.value === formData.salaryCurrency)?.symbol || "$";
+  };
+
+  const isFormValid = () => {
+    const result = jobOfferSchema.safeParse(formData);
+    return result.success;
   };
 
   return (
@@ -458,7 +612,7 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
 
         {error && (
           <div className="mx-4 sm:mx-6 mt-4 rounded-xl bg-red-50 border border-red-100 p-3 sm:p-4 flex items-start gap-3">
-            <div className="h-5 w-5 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <div className="h-5 w-5 rounded-full bg-red-100 flex items-center justify-center shrink-0 mt-0.5">
               <X className="h-3 w-3 text-red-600" />
             </div>
             <div>
@@ -480,7 +634,7 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
           <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 space-y-6">
             <section className="space-y-4">
               <div className="flex items-center gap-2 mb-3">
-                <div className="h-6 w-1 rounded-full bg-gradient-to-b from-[#162f67] to-[#1e4d9c]"></div>
+                <div className="h-6 w-1 rounded-full bg-linear-to-b from-[#162f67] to-[#1e4d9c]"></div>
                 <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">
                   Basic Information
                 </h3>
@@ -499,7 +653,7 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
                       value={formData.title}
                       onChange={handleChange}
                       placeholder="e.g. Senior Customer Support Specialist"
-                      className={`pl-10 h-11 bg-slate-50 rounded-xl transition-all ${fieldErrors.title ? 'border-red-500 focus:border-red-500' : 'border-slate-200 focus:border-[#162f67]'}`}
+                      className={`pl-10 h-11 bg-slate-50 rounded-xl transition-all ${fieldErrors.title ? 'border-red-500 focus:border-red-500 focus:ring-red-100' : formData.title ? 'border-emerald-500 focus:border-emerald-500' : 'border-slate-200 focus:border-[#162f67]'}`}
                     />
                   </div>
                   {fieldErrors.title && (
@@ -509,7 +663,7 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
 
                 <div className="grid gap-4 grid-cols-2">
                   <div className="group">
-                    <Label className="text-xs font-medium text-slate-600 mb-1.5 block">Contract Type</Label>
+                    <Label className="text-xs font-medium text-slate-600 mb-1.5 block">Contract Type <span className="text-red-500">*</span></Label>
                     <div className="relative">
                       <FileText className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
                       <select
@@ -525,10 +679,15 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
                         ))}
                       </select>
                     </div>
+                    {fieldErrors.contractType && (
+                      <p className="text-xs text-red-500 mt-1.5">
+                        {fieldErrors.contractType[0]}
+                      </p>
+                    )}
                   </div>
 
                   <div className="group">
-                    <Label className="text-xs font-medium text-slate-600 mb-1.5 block">Experience Level</Label>
+                    <Label className="text-xs font-medium text-slate-600 mb-1.5 block">Experience Level <span className="text-red-500">*</span></Label>
                     <div className="relative">
                       <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
                       <select
@@ -544,12 +703,17 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
                         ))}
                       </select>
                     </div>
+                    {fieldErrors.experienceLevel && (
+                      <p className="text-xs text-red-500 mt-1.5">
+                        {fieldErrors.experienceLevel[0]}
+                      </p>
+                    )}
                   </div>
                 </div>
 
                 <div className="group">
                   <Label htmlFor="customLocation" className="text-xs font-medium text-slate-600 mb-1.5 block">
-                    Location
+                    Location <span className="text-red-500">*</span>
                   </Label>
                   <div className="relative">
                     <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -559,9 +723,14 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
                       value={formData.customLocation || ""}
                       onChange={handleChange}
                       placeholder="e.g. Paris, France (leave empty to use company default)"
-                      className={`pl-10 h-11 bg-slate-50 rounded-xl transition-all ${fieldErrors.customLocation ? 'border-red-500 focus:border-red-500' : 'border-slate-200 focus:border-[#162f67]'}`}
+                      className={`pl-10 h-11 bg-slate-50 rounded-xl transition-all ${fieldErrors.customLocation ? 'border-red-500 focus:border-red-500' : formData.customLocation ? 'border-emerald-500 focus:border-emerald-500' : 'border-slate-200 focus:border-[#162f67]'}`}
                     />
                   </div>
+                  {fieldErrors.customLocation && (
+                    <p className="text-xs text-red-500 mt-1.5">
+                      {fieldErrors.customLocation[0]}
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-6 pt-2">
@@ -586,6 +755,208 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
                 </div>
               </div>
             </section>
+
+            <section className="space-y-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="h-6 w-1 rounded-full bg-gradient-to-b from-indigo-500 to-indigo-600"></div>
+                <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">
+                  Application Method
+                </h3>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <label
+                  className={`flex items-center gap-3 rounded-xl border p-4 cursor-pointer transition-all ${
+                    formData.applicationType === "INTERNAL"
+                      ? "border-[#162f67] bg-blue-50"
+                      : "border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="applicationType"
+                    value="INTERNAL"
+                    checked={formData.applicationType === "INTERNAL"}
+                    onChange={() => setFormData((prev) => ({ ...prev, applicationType: "INTERNAL" }))}
+                    className="h-4 w-4 text-[#162f67] focus:ring-[#162f67]"
+                  />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-slate-900">Apply on Platform</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Candidates apply directly on the platform</p>
+                  </div>
+                </label>
+
+                <label
+                  className={`flex items-center gap-3 rounded-xl border p-4 cursor-pointer transition-all ${
+                    formData.applicationType === "EXTERNAL"
+                      ? "border-[#162f67] bg-blue-50"
+                      : "border-slate-200 hover:border-slate-300"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="applicationType"
+                    value="EXTERNAL"
+                    checked={formData.applicationType === "EXTERNAL"}
+                    onChange={() => setFormData((prev) => ({ ...prev, applicationType: "EXTERNAL" }))}
+                    className="h-4 w-4 text-[#162f67] focus:ring-[#162f67]"
+                  />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-slate-900">External ATS / Website</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Redirect to company's application page</p>
+                  </div>
+                </label>
+              </div>
+
+              {formData.applicationType === "EXTERNAL" && (
+                <div className="space-y-2">
+                  <Label htmlFor="externalApplyUrl" className="text-xs font-medium text-slate-600 mb-1.5 block">
+                    Official Apply URL <span className="text-red-500">*</span>
+                  </Label>
+                  <div className="relative">
+                    <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <Input
+                      id="externalApplyUrl"
+                      name="externalApplyUrl"
+                      value={formData.externalApplyUrl || ""}
+                      onChange={handleChange}
+                      placeholder="https://company.com/careers/job"
+                      className={`pl-10 h-11 bg-slate-50 rounded-xl transition-all ${fieldErrors.externalApplyUrl ? 'border-red-500 focus:border-red-500' : formData.externalApplyUrl ? 'border-emerald-500 focus:border-emerald-500' : 'border-slate-200 focus:border-[#162f67]'}`}
+                    />
+                  </div>
+                  {fieldErrors.externalApplyUrl && (
+                    <p className="text-xs text-red-500 mt-1.5">
+                      {fieldErrors.externalApplyUrl[0]}
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
+
+                 <section className="space-y-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="h-6 w-1 rounded-full bg-gradient-to-b from-purple-500 to-purple-600"></div>
+                <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">
+                  Job Description
+                </h3>
+              </div>
+
+              <div>
+                <Label htmlFor="description" className="text-xs font-medium text-slate-600 mb-1.5 block">
+                  Detailed Description <span className="text-red-500">*</span>
+                </Label>
+                  <Textarea
+                  id="description"
+                  name="description"
+                  value={formData.description || ""}
+                  onChange={handleChange}
+                  placeholder="Describe the role, team culture, and what makes this opportunity unique..."
+                  rows={5}
+                  className={`bg-slate-50 rounded-xl transition-all resize-none ${fieldErrors.description ? 'border-red-500 focus:border-red-500 focus:ring-red-100' : formData.description && formData.description.length >= 20 ? 'border-emerald-500 focus:border-emerald-500' : 'border-slate-200 focus:border-[#162f67]'}`}
+                />
+                <div className="flex justify-between mt-1.5">
+                  {fieldErrors.description ? (
+                    <p className="text-xs text-red-500">
+                      {fieldErrors.description[0]}
+                    </p>
+                  ) : (
+                    <div />
+                  )}
+                  <p className="text-xs text-slate-400">
+                    {(formData.description || "").length}/20 minimum
+                  </p>
+                </div>
+              </div>
+            </section>
+             <section className="space-y-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="h-6 w-1 rounded-full bg-gradient-to-b from-teal-500 to-teal-600"></div>
+                <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">
+                  Language Requirements <span className="text-red-500">*</span>
+                </h3>
+              </div>
+
+              <div className="space-y-2">
+                {formData.languages?.map((lang, index) => (
+                  <div key={index} className="flex items-center gap-2 group">
+                    <div className="flex-1 flex items-center gap-2 rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 to-white px-4 py-2.5">
+                      <Globe className="h-4 w-4 text-teal-500 flex-shrink-0" />
+                      <span className="text-sm text-slate-700 font-medium">{lang.language}</span>
+                      <span className="text-xs text-slate-400">({lang.level})</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeLanguage(index)}
+                      className="h-9 w-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+
+                <div className="flex items-center gap-2 pt-1">
+                  <Input
+                    value={newLanguage.language}
+                    onChange={(e) => setNewLanguage((prev) => ({ ...prev, language: e.target.value }))}
+                    placeholder="Add a language (e.g. English)"
+                    className="flex-1 h-11 bg-slate-50 border-slate-200 focus:bg-white focus:border-[#162f67] rounded-xl transition-all"
+                    list="common-languages"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addLanguage();
+                      }
+                    }}
+                  />
+                  <datalist id="common-languages">
+                    {COMMON_LANGUAGES.map((lang) => (
+                      <option key={lang} value={lang} />
+                    ))}
+                  </datalist>
+                  <select
+                    value={newLanguage.level}
+                    onChange={(e) => setNewLanguage((prev) => ({ ...prev, level: e.target.value }))}
+                    className="h-11 px-3 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:bg-white focus:border-[#162f67] transition-all cursor-pointer"
+                  >
+                    {LANGUAGE_LEVELS.map((level) => (
+                      <option key={level.value} value={level.value}>
+                        {level.label}
+                      </option>
+                    ))}
+                  </select>
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={addLanguage} 
+                    size="sm"
+                    className="h-11 px-4 rounded-xl border-slate-200 hover:border-[#162f67] hover:text-[#162f67]"
+                  >
+                    <PlusCircle className="h-4 w-4 mr-1.5" />
+                    Add
+                  </Button>
+                </div>
+              </div>
+              {fieldErrors.languages && (
+                <p className="text-xs text-red-500 mt-2">
+                  {fieldErrors.languages[0]}
+                </p>
+              )}
+            </section>
+
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/60 p-4 sm:p-6">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-700">
+                    Optional Details
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Add extra information to make your job offer more attractive.
+                  </p>
+                </div>
+                <span className="rounded-full bg-white border border-slate-200 px-3 py-1 text-xs text-slate-500 shadow-sm">
+                  Optional
+                </span>
+              </div>
 
             <section className="space-y-4">
               <div className="flex items-center gap-2 mb-3">
@@ -656,29 +1027,7 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
               </div>
             </section>
 
-            <section className="space-y-4">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="h-6 w-1 rounded-full bg-gradient-to-b from-purple-500 to-purple-600"></div>
-                <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">
-                  Job Description
-                </h3>
-              </div>
-
-              <div>
-                <Label htmlFor="description" className="text-xs font-medium text-slate-600 mb-1.5 block">
-                  Detailed Description
-                </Label>
-                <Textarea
-                  id="description"
-                  name="description"
-                  value={formData.description || ""}
-                  onChange={handleChange}
-                  placeholder="Describe the role, team culture, and what makes this opportunity unique..."
-                  rows={5}
-                  className={`bg-slate-50 rounded-xl transition-all resize-none ${fieldErrors.description ? 'border-red-500 focus:border-red-500' : 'border-slate-200 focus:border-[#162f67]'}`}
-                />
-              </div>
-            </section>
+       
 
             <section className="space-y-4">
               <div className="flex items-center gap-2 mb-3">
@@ -732,75 +1081,7 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
               </div>
             </section>
 
-            <section className="space-y-4">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="h-6 w-1 rounded-full bg-gradient-to-b from-teal-500 to-teal-600"></div>
-                <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">
-                  Language Requirements
-                </h3>
-              </div>
-
-              <div className="space-y-2">
-                {formData.languages?.map((lang, index) => (
-                  <div key={index} className="flex items-center gap-2 group">
-                    <div className="flex-1 flex items-center gap-2 rounded-xl border border-slate-200 bg-gradient-to-r from-slate-50 to-white px-4 py-2.5">
-                      <Globe className="h-4 w-4 text-teal-500 flex-shrink-0" />
-                      <span className="text-sm text-slate-700 font-medium">{lang.language}</span>
-                      <span className="text-xs text-slate-400">({lang.level})</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeLanguage(index)}
-                      className="h-9 w-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all opacity-0 group-hover:opacity-100"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-
-                <div className="flex items-center gap-2 pt-1">
-                  <Input
-                    value={newLanguage.language}
-                    onChange={(e) => setNewLanguage((prev) => ({ ...prev, language: e.target.value }))}
-                    placeholder="Add a language (e.g. English)"
-                    className="flex-1 h-11 bg-slate-50 border-slate-200 focus:bg-white focus:border-[#162f67] rounded-xl transition-all"
-                    list="common-languages"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        addLanguage();
-                      }
-                    }}
-                  />
-                  <datalist id="common-languages">
-                    {COMMON_LANGUAGES.map((lang) => (
-                      <option key={lang} value={lang} />
-                    ))}
-                  </datalist>
-                  <select
-                    value={newLanguage.level}
-                    onChange={(e) => setNewLanguage((prev) => ({ ...prev, level: e.target.value }))}
-                    className="h-11 px-3 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:bg-white focus:border-[#162f67] transition-all cursor-pointer"
-                  >
-                    {LANGUAGE_LEVELS.map((level) => (
-                      <option key={level.value} value={level.value}>
-                        {level.label}
-                      </option>
-                    ))}
-                  </select>
-                  <Button 
-                    type="button" 
-                    variant="outline" 
-                    onClick={addLanguage} 
-                    size="sm"
-                    className="h-11 px-4 rounded-xl border-slate-200 hover:border-[#162f67] hover:text-[#162f67]"
-                  >
-                    <PlusCircle className="h-4 w-4 mr-1.5" />
-                    Add
-                  </Button>
-                </div>
-              </div>
-            </section>
+           
 
             <section className="space-y-4">
               <div className="flex items-center gap-2 mb-3">
@@ -988,6 +1269,7 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
                 )}
               </div>
             </section>
+            </div>
           </div>
         )}
 
@@ -1011,8 +1293,15 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
                 <Button
                   type="button"
                   onClick={() => handleSubmit(true)}
-                  disabled={isSubmitting || !formData.title}
-                  className="flex-1 sm:flex-none h-11 px-4 sm:px-6 rounded-xl bg-gradient-to-r from-[#162f67] to-[#1e4d9c] hover:from-[#1e4d9c] hover:to-[#2a5cb8] text-white shadow-lg shadow-[#162f67]/20"
+                  disabled={isSubmitting || !isFormValid()}
+                  className={`
+                    flex-1 sm:flex-none h-11 px-4 sm:px-6 rounded-xl
+                    text-white shadow-lg transition-all duration-200
+                    ${isFormValid()
+                      ? 'bg-gradient-to-r from-[#162f67] to-[#1e4d9c] hover:from-[#1e4d9c] hover:to-[#2a5cb8] shadow-[#162f67]/20'
+                      : 'bg-slate-300 cursor-not-allowed shadow-none'
+                    }
+                  `}
                 >
                   {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Sparkles className="h-4 w-4 mr-2" />}
                   Publish

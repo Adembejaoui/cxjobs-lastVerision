@@ -35,7 +35,7 @@ export async function GET() {
             education: { orderBy: { startDate: "desc" } },
           },
         },
-        company: true,
+        companies: true,
       },
     });
 
@@ -105,12 +105,9 @@ export async function POST(request: NextRequest) {
 }
 
 async function upsertCandidateProfile(userId: string, data: unknown) {
-  console.log("[DEBUG] Received data:", JSON.stringify(data, null, 2));
-  
   const validationResult = candidateProfileSchema.safeParse(data);
 
   if (!validationResult.success) {
-    console.error("[DEBUG] Validation errors:", validationResult.error.flatten());
     return NextResponse.json(
       {
         success: false,
@@ -120,8 +117,6 @@ async function upsertCandidateProfile(userId: string, data: unknown) {
       { status: 400 }
     );
   }
-
-  console.log("[DEBUG] Validation passed, data:", JSON.stringify(validationResult.data, null, 2));
 
   const { skills, experiences, languages, education, ...profileData } = validationResult.data;
 
@@ -282,7 +277,6 @@ async function upsertCompanyProfile(userId: string, data: unknown) {
   const validationResult = companyProfileSchema.safeParse(data);
 
   if (!validationResult.success) {
-    console.error("Validation errors:", JSON.stringify(validationResult.error.flatten(), null, 2));
     return NextResponse.json(
       {
         success: false,
@@ -296,7 +290,7 @@ async function upsertCompanyProfile(userId: string, data: unknown) {
   const { slug, benefits, culture, ...profileData } = validationResult.data;
 
   // Check if slug is already taken by another company
-  const existingSlug = await prisma.company.findFirst({
+  const existingSlug = await prisma.companies.findFirst({
     where: {
       slug,
       NOT: { userId },
@@ -313,34 +307,34 @@ async function upsertCompanyProfile(userId: string, data: unknown) {
   // Transform culture array to JSON string for storage
   const cultureJson = culture && culture.length > 0 ? JSON.stringify(culture) : null;
 
-  // Build company data object with properly typed fields
-  const companyData = {
-    name: profileData.name!,
-    description: profileData.description || null,
-    mission: profileData.mission || null,
-    logoUrl: profileData.logoUrl || null,
-    coverImageUrl: profileData.coverImageUrl || null,
-    website: profileData.website || null,
-    linkedinUrl: profileData.linkedinUrl || null,
-    twitterUrl: profileData.twitterUrl || null,
-    facebookUrl: profileData.facebookUrl || null,
-    industry: profileData.industry || null,
-    companySize: profileData.companySize || null,
-    location: profileData.location || null,
-    foundedYear: profileData.foundedYear || null,
-    isRemoteFriendly: profileData.isRemoteFriendly ?? false,
-    isHybridFriendly: profileData.isHybridFriendly ?? false,
-    culture: cultureJson,
-  };
+   // Build company data object with properly typed fields
+   const companyData = {
+     name: profileData.name!,
+     description: profileData.description || null,
+     mission: profileData.mission || null,
+     logoUrl: profileData.logoUrl || null,
+     coverImageUrl: profileData.coverImageUrl || null,
+     website: profileData.website || null,
+     linkedinUrl: profileData.linkedinUrl || null,
+     twitterUrl: profileData.twitterUrl || null,
+     facebookUrl: profileData.facebookUrl || null,
+     industry: profileData.industry || null,
+     companySize: profileData.companySize || null,
+     location: profileData.location || null,
+     foundedYear: profileData.foundedYear || null,
+     isRemoteFriendly: profileData.isRemoteFriendly ?? false,
+     isHybridFriendly: profileData.isHybridFriendly ?? false,
+     culture: cultureJson,
+   };
 
   const company = await prisma.$transaction(async (tx: InteractiveTx) => {
-    const existingCompany = await tx.company.findUnique({
+    const existingCompany = await tx.companies.findUnique({
       where: { userId },
     });
 
     let company;
     if (existingCompany) {
-      company = await tx.company.update({
+      company = await tx.companies.update({
         where: { userId },
         data: {
           ...companyData,
@@ -349,7 +343,7 @@ async function upsertCompanyProfile(userId: string, data: unknown) {
         },
       });
     } else {
-      company = await tx.company.create({
+      company = await tx.companies.create({
         data: {
           userId,
           ...companyData,
@@ -390,7 +384,7 @@ async function upsertCompanyProfile(userId: string, data: unknown) {
     });
 
     // Return company with benefits
-    return tx.company.findUnique({
+    return tx.companies.findUnique({
       where: { id: company.id },
       include: { benefits: true },
     });

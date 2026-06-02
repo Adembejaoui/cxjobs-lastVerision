@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     };
 
     const [companies, total] = await Promise.all([
-      prisma.company.findMany({
+      prisma.companies.findMany({
         where,
         select: {
           id: true,
@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
         take: limit,
         orderBy: { createdAt: "desc" },
       }),
-      prisma.company.count({ where }),
+      prisma.companies.count({ where }),
     ]);
 
     return NextResponse.json({

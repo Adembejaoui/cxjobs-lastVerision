@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       where: { id: session.user.id },
       include: {
         candidate: true,
-        company: true,
+        companies: true,
       },
     });
 
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (user.role === "COMPANY" && !user.company) {
+    if (user.role === "COMPANY" && !user.companies) {
       return NextResponse.json(
         { success: false, error: "Please complete your company profile first", code: "PROFILE_INCOMPLETE" },
         { status: 400 }

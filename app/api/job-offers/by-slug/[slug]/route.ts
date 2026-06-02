@@ -75,7 +75,7 @@ export async function GET(
 
     // For company users and admins, get full job details
     const jobOffer = await prisma.jobOffer.findFirst({
-      where: { slug },
+      where: { slug, deletedAt: null },
       include: {
         company: {
           select: {
@@ -109,6 +109,19 @@ export async function GET(
         { success: false, error: "Job offer not found", code: "NOT_FOUND" },
         { status: 404 }
       );
+    }
+
+    // Check access - admins can see all, companies can only see their own
+    if (!isAdmin && session?.user?.role === "COMPANY") {
+      const userCompany = await prisma.companies.findFirst({
+        where: { userId: session.user.id, id: jobOffer.companyId },
+      });
+      if (!userCompany) {
+        return NextResponse.json(
+          { success: false, error: "Job offer not found", code: "NOT_FOUND" },
+          { status: 404 }
+        );
+      }
     }
 
     return NextResponse.json({

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { PlusCircle, Eye, Edit, Trash2, MapPin, Search, ChevronDown, Users } from "lucide-react";
+import { JobPostFlow } from "@/components/dashboard/job-post-flow";
 import { JobFormDialog } from "@/components/dashboard/job-form-dialog";
 import { showSuccess, showError, showWarning } from "@/lib/toast";
 
@@ -46,32 +47,29 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [sortBy, setSortBy] = useState<"newest" | "oldest" | "title">("newest");
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<JobOffer | null>(null);
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
 
-  // Filter and sort jobs
+  // ─── Filter & sort ────────────────────────────────────────────────────────
+
   const filteredJobs = useMemo(() => {
     let result = [...initialJobs];
 
-    // Search filter
     if (searchQuery) {
-      const query = searchQuery.toLowerCase();
+      const q = searchQuery.toLowerCase();
       result = result.filter(
         (job) =>
-          job.title.toLowerCase().includes(query) ||
-          (job.customLocation?.toLowerCase().includes(query) ?? false) ||
-          (job.company?.location?.toLowerCase().includes(query) ?? false)
+          job.title.toLowerCase().includes(q) ||
+          (job.customLocation?.toLowerCase().includes(q) ?? false) ||
+          (job.company?.location?.toLowerCase().includes(q) ?? false)
       );
     }
 
-    // Status filter
     if (statusFilter !== "ALL") {
       result = result.filter((job) => job.status === statusFilter);
     }
 
-    // Sort
     result.sort((a, b) => {
       switch (sortBy) {
         case "newest":
@@ -88,38 +86,27 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
     return result;
   }, [initialJobs, searchQuery, statusFilter, sortBy]);
 
+  // ─── Helpers ───────────────────────────────────────────────────────────────
+
   const getStatusStyle = (status: string) => {
     switch (status) {
-      case "PUBLISHED":
-        return "bg-emerald-50 text-emerald-600";
-      case "DRAFT":
-        return "bg-amber-50 text-amber-600";
-      case "ARCHIVED":
-        return "bg-blue-50 text-blue-600";
-      case "CLOSED":
-        return "bg-slate-100 text-slate-500";
-      case "EXPIRED":
-        return "bg-red-50 text-red-600";
-      default:
-        return "bg-slate-100 text-slate-500";
+      case "PUBLISHED": return "bg-emerald-50 text-emerald-600";
+      case "DRAFT":     return "bg-amber-50 text-amber-600";
+      case "ARCHIVED":  return "bg-blue-50 text-blue-600";
+      case "CLOSED":    return "bg-slate-100 text-slate-500";
+      case "EXPIRED":   return "bg-red-50 text-red-600";
+      default:          return "bg-slate-100 text-slate-500";
     }
   };
 
-  const formatDate = (date: Date) => {
-    return new Date(date).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  };
+  const formatDate = (date: Date) =>
+    new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
-  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) =>
     setStatusFilter(e.target.value);
-  };
 
-  const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) =>
     setSortBy(e.target.value as "newest" | "oldest" | "title");
-  };
 
   const handleDeleteJob = async (jobId: string, jobTitle: string) => {
     showWarning(`Are you sure you want to delete "${jobTitle}"?`, {
@@ -129,23 +116,15 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
         onClick: async () => {
           setDeletingJobId(jobId);
           try {
-            const response = await fetch(`/api/job-offers/${jobId}`, {
-              method: "DELETE",
-            });
-
+            const response = await fetch(`/api/job-offers/${jobId}`, { method: "DELETE" });
             if (!response.ok) {
               const data = await response.json();
               throw new Error(data.error || "Failed to delete job");
             }
-
-            showSuccess("Job deleted successfully", {
-              description: `"${jobTitle}" has been removed.`,
-            });
+            showSuccess("Job deleted successfully", { description: `"${jobTitle}" has been removed.` });
             router.refresh();
           } catch (error: any) {
-            showError("Failed to delete job", {
-              description: error.message || "Please try again later.",
-            });
+            showError("Failed to delete job", { description: error.message || "Please try again later." });
           } finally {
             setDeletingJobId(null);
           }
@@ -154,15 +133,20 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
     });
   };
 
+  // ─── Stats cards ───────────────────────────────────────────────────────────
+
   const statsCards = [
     { title: "Active Jobs", value: stats.activeJobs.toString(), change: "Currently published", icon: "▣" },
     { title: "Total Applicants", value: stats.totalApplicants.toString(), change: `${stats.recentApplicants} this week`, icon: "👥" },
     { title: "Total Jobs", value: stats.totalJobs.toString(), change: "All listings", icon: "◉" },
   ];
 
+  // ─── Render ────────────────────────────────────────────────────────────────
+
   return (
     <div className="min-h-screen bg-[#f7f9fc] text-slate-900">
-      <main className="mx-auto max-w-[1440px] px-6 py-8">
+      <main className="mx-auto max-w-360 px-6 py-8">
+        {/* Header */}
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Manage Jobs</h1>
@@ -170,14 +154,7 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
               Overview of your current job listings and recruitment performance.
             </p>
           </div>
-
-          <Button 
-            onClick={() => setIsCreateDialogOpen(true)}
-            className="bg-[#162f67] hover:bg-[#162f67]/90 text-white"
-          >
-            <PlusCircle className="mr-2 h-4 w-4" />
-            Post New Job
-          </Button>
+          <JobPostFlow />
         </div>
 
         {/* Stats Cards */}
@@ -188,20 +165,16 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
               className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
             >
               <div className="mb-2 flex items-start justify-between">
-                <p className="text-xs font-semibold tracking-wide text-slate-400">
-                  {card.title}
-                </p>
+                <p className="text-xs font-semibold tracking-wide text-slate-400">{card.title}</p>
                 <span className="text-lg text-emerald-500">{card.icon}</span>
               </div>
-              <div className="text-3xl font-semibold leading-none tracking-tight">
-                {card.value}
-              </div>
+              <div className="text-3xl font-semibold leading-none tracking-tight">{card.value}</div>
               <div className="mt-2 text-xs text-slate-500">{card.change}</div>
             </div>
           ))}
         </section>
 
-        {/* Search and Filters */}
+        {/* Search & Filters */}
         <section className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative flex flex-1 items-center">
             <Search className="absolute left-3 h-4 w-4 text-slate-400" />
@@ -215,11 +188,12 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Status dropdown */}
             <div className="relative">
-                <select
+              <select
                 value={statusFilter}
                 onChange={handleStatusChange}
-                className="appearance-none rounded-lg border border-slate-200 bg-white px-4 py-2 pr-8 text-sm text-slate-700 shadow-sm cursor-pointer"
+                className="appearance-none rounded-lg border border-slate-200 bg-white px-4 py-2 pr-8 text-sm text-slate-700 shadow-sm cursor-pointer w-full"
               >
                 <option value="ALL">All Status</option>
                 <option value="PUBLISHED">Published</option>
@@ -231,11 +205,12 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
               <ChevronDown className="absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </div>
 
+            {/* Sort dropdown */}
             <div className="relative">
               <select
                 value={sortBy}
                 onChange={handleSortChange}
-                className="appearance-none rounded-lg border border-slate-200 bg-white px-4 py-2 pr-8 text-sm text-slate-700 shadow-sm cursor-pointer"
+                className="appearance-none rounded-lg border border-slate-200 bg-white px-4 py-2 pr-8 text-sm text-slate-700 shadow-sm cursor-pointer w-full"
               >
                 <option value="newest">Newest First</option>
                 <option value="oldest">Oldest First</option>
@@ -249,12 +224,13 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
         {/* Jobs List */}
         {filteredJobs.length > 0 ? (
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            {/* Table header */}
             <div className="grid grid-cols-[2fr_0.8fr_1fr_0.8fr_0.6fr] gap-3 border-b border-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
               <div>Job Title</div>
               <div>Status</div>
               <div>Posted Date</div>
               <div>Applicants</div>
-              <div>Actions</div>
+              <div className="text-right">Actions</div>
             </div>
 
             {filteredJobs.map((job) => (
@@ -278,11 +254,7 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
                 </div>
 
                 <div>
-                  <span
-                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${getStatusStyle(
-                      job.status
-                    )}`}
-                  >
+                  <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${getStatusStyle(job.status)}`}>
                     {job.status}
                   </span>
                 </div>
@@ -298,7 +270,7 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
                   {job._count?.applications}
                 </Link>
 
-                <div className="flex items-center gap-1 text-slate-500">
+                <div className="flex items-center justify-end gap-1 text-slate-500">
                   <Link
                     href={`/jobs/${job.slug}`}
                     className="rounded p-1.5 hover:bg-slate-100"
@@ -328,35 +300,26 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
               </div>
             ))}
 
+            {/* Pagination placeholder */}
             <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3">
               <p className="text-xs text-slate-500">
                 Showing {filteredJobs.length} of {initialJobs.length} jobs
               </p>
               <div className="flex items-center gap-1 text-xs">
-                <button
-                  className="rounded border border-slate-200 px-2 py-1 text-slate-300"
-                  disabled
-                >
-                  Prev
-                </button>
-                <button className="rounded bg-[#162f67] px-2 py-1 font-semibold text-white">
-                  1
-                </button>
-                <button className="rounded border border-slate-200 px-2 py-1 text-slate-600">
-                  Next
-                </button>
+                <button className="rounded border border-slate-200 px-2 py-1 text-slate-300" disabled>Prev</button>
+                <button className="rounded bg-[#162f67] px-2 py-1 font-semibold text-white">1</button>
+                <button className="rounded border border-slate-200 px-2 py-1 text-slate-600">Next</button>
               </div>
             </div>
           </section>
         ) : (
+          /* ─── Empty state ─── */
           <section className="rounded-xl border border-slate-200 bg-white p-12 text-center shadow-sm">
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-slate-100">
               <PlusCircle className="h-8 w-8 text-slate-400" />
             </div>
             <h3 className="mt-4 text-lg font-semibold text-slate-900">
-              {searchQuery || statusFilter !== "ALL"
-                ? "No jobs match your filters"
-                : "No jobs posted yet"}
+              {searchQuery || statusFilter !== "ALL" ? "No jobs match your filters" : "No jobs posted yet"}
             </h3>
             <p className="mt-2 text-sm text-slate-500">
               {searchQuery || statusFilter !== "ALL"
@@ -364,21 +327,14 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
                 : "Create your first job listing to start receiving applications"}
             </p>
             {!searchQuery && statusFilter === "ALL" && (
-              <Button 
-                onClick={() => setIsCreateDialogOpen(true)}
-                className="mt-6 bg-[#162f67] hover:bg-[#162f67]/90 text-white"
-              >
-                <PlusCircle className="mr-2 h-4 w-4" />
-                Create Your First Job
-              </Button>
+              <div className="mt-6">
+                <JobPostFlow />
+              </div>
             )}
             {(searchQuery || statusFilter !== "ALL") && (
               <Button
                 variant="outline"
-                onClick={() => {
-                  setSearchQuery("");
-                  setStatusFilter("ALL");
-                }}
+                onClick={() => { setSearchQuery(""); setStatusFilter("ALL"); }}
                 className="mt-4"
               >
                 Clear Filters
@@ -388,20 +344,7 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
         )}
       </main>
 
-      {/* Create Job Dialog */}
-      <JobFormDialog
-        open={isCreateDialogOpen}
-        onOpenChange={setIsCreateDialogOpen}
-        onSuccess={() => {
-          setIsCreateDialogOpen(false);
-          showSuccess("Job created successfully!", {
-            description: "Your job listing is now live.",
-          });
-          router.refresh();
-        }}
-      />
-
-      {/* Edit Job Dialog */}
+      {/* ─── Edit Job Dialog ─── */}
       <JobFormDialog
         open={isEditDialogOpen}
         onOpenChange={setIsEditDialogOpen}

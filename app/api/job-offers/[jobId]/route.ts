@@ -58,30 +58,23 @@ export async function GET(
     if (!isCompany && !isAdmin) {
       const jobOffer = await getPublicJobOffer(jobId);
 
-      console.log('Public job fetch - Job ID:', jobId);
-      console.log('Job found:', jobOffer ? 'yes' : 'no');
-      if (jobOffer) {
-        console.log('Job deletedAt:', jobOffer.deletedAt);
-        console.log('Job status:', jobOffer.status);
-      }
-
       if (!jobOffer) {
         return NextResponse.json(
-          { success: false, error: "Job offer not found", code: "NOT_FOUND", debug: "Job not found by ID" },
+          { success: false, error: "Job offer not found", code: "NOT_FOUND" },
           { status: 404 }
         );
       }
 
       if (jobOffer.deletedAt) {
         return NextResponse.json(
-          { success: false, error: "Job offer not found", code: "NOT_FOUND", debug: "Job was deleted" },
+          { success: false, error: "Job offer not found", code: "NOT_FOUND" },
           { status: 404 }
         );
       }
 
       if (jobOffer.status !== "PUBLISHED") {
         return NextResponse.json(
-          { success: false, error: "Job offer not found", code: "NOT_FOUND", debug: "Job is not published, status: " + jobOffer.status },
+          { success: false, error: "Job offer not found", code: "NOT_FOUND" },
           { status: 404 }
         );
       }
@@ -140,7 +133,7 @@ export async function GET(
 
     // For companies, check if they own the job
     // If not owned by them, treat as public - can only see PUBLISHED jobs
-    const userCompany = await prisma.company.findFirst({
+    const userCompany = await prisma.companies.findFirst({
       where: { userId: session.user.id, id: jobOffer.companyId },
     });
 
@@ -155,7 +148,7 @@ export async function GET(
     // If company doesn't own this job, only show if PUBLISHED
     if (jobOffer.status !== "PUBLISHED") {
       return NextResponse.json(
-        { success: false, error: "Job offer not found", code: "NOT_FOUND", debug: "Job is not published" },
+        { success: false, error: "Job offer not found", code: "NOT_FOUND" },
         { status: 404 }
       );
     }
@@ -204,135 +197,120 @@ export async function PUT(
       );
     }
 
-    // Get job offer and verify ownership
-    const existingJob = await prisma.jobOffer.findUnique({
-      where: { id: jobId },
-      include: {
-        company: true,
-      },
+    const updateData = validationResult.data;
+    const benefitIds = (updateData as Record<string, unknown>).benefitIds as string[] | undefined;
+    const languages = (updateData as Record<string, unknown>).languages as { language: string; level: string }[] | undefined;
+    delete (updateData as Record<string, unknown>).benefitIds;
+    delete (updateData as Record<string, unknown>).languages;
+
+    if (updateData.status === "PUBLISHED") {
+      (updateData as Record<string, unknown>).publishedAt = new Date();
+    }
+
+    type TxResult =
+      | { kind: "data"; data: Awaited<ReturnType<typeof prisma.jobOffer.findUnique>> }
+      | { kind: "not_found" }
+      | { kind: "forbidden" };
+
+    let txResult: TxResult;
+
+    txResult = await prisma.$transaction(async (tx) => {
+      const existingJob = await tx.jobOffer.findUnique({
+        where: { id: jobId },
+        include: { company: true },
+      });
+
+      if (!existingJob || existingJob.deletedAt) {
+        return { kind: "not_found" } as const;
+      }
+
+      const isAdmin = session.user.role === "ADMIN";
+      const userCompany = isAdmin
+        ? null
+        : await tx.companies.findFirst({
+            where: { userId: session.user.id, id: existingJob.companyId },
+          });
+
+      if (!isAdmin && !userCompany) {
+        return { kind: "forbidden" } as const;
+      }
+
+      const jobOffer = await tx.jobOffer.update({
+        where: { id: jobId },
+        data: updateData as Record<string, unknown>,
+        include: {
+          company: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              logoUrl: true,
+            },
+          },
+        },
+      });
+
+      if (benefitIds !== undefined) {
+        await tx.jobOfferBenefit.deleteMany({ where: { jobOfferId: jobId } });
+        if (benefitIds.length > 0) {
+          await tx.jobOfferBenefit.createMany({
+            data: benefitIds.map((benefitId) => ({ jobOfferId: jobId, benefitId })),
+          });
+        }
+      }
+
+      if (languages !== undefined) {
+        await tx.jobLanguage.deleteMany({ where: { jobOfferId: jobId } });
+        if (languages.length > 0) {
+          await tx.jobLanguage.createMany({
+            data: languages.map((lang) => ({ jobOfferId: jobId, language: lang.language, level: lang.level as "REQUIRED" | "PREFERRED" | "NICE_TO_HAVE" })),
+          });
+        }
+      }
+
+      return {
+        kind: "data",
+        data: await tx.jobOffer.findUnique({
+          where: { id: jobId },
+          include: {
+            company: { select: { id: true, name: true, slug: true, logoUrl: true } },
+            benefits: { include: { benefit: true } },
+            languages: true,
+          },
+        }),
+      };
     });
 
-    if (!existingJob || existingJob.deletedAt) {
+    if (txResult.kind === "not_found") {
       return NextResponse.json(
         { success: false, error: "Job offer not found", code: "NOT_FOUND" },
         { status: 404 }
       );
     }
 
-    // Verify user owns the company or is admin
-    const isAdmin = session?.user?.role === "ADMIN";
-    
-    const userCompany = isAdmin ? null : await prisma.company.findFirst({
-      where: { userId: session!.user.id, id: existingJob.companyId },
-    });
-
-    if (!isAdmin && !userCompany) {
+    if (txResult.kind === "forbidden") {
       return NextResponse.json(
         { success: false, error: "You don't have permission to update this job", code: "FORBIDDEN" },
         { status: 403 }
       );
     }
 
-    const updateData = validationResult.data;
-
-    // Separate benefitIds and languages from updateData (they're not direct fields)
-    const benefitIds = (updateData as Record<string, unknown>).benefitIds as string[] | undefined;
-    const languages = (updateData as Record<string, unknown>).languages as { language: string; level: string }[] | undefined;
-    
-    // Remove benefitIds and languages from direct fields
-    delete (updateData as Record<string, unknown>).benefitIds;
-    delete (updateData as Record<string, unknown>).languages;
-
-    // Handle status change
-    if (updateData.status === "PUBLISHED" && existingJob.status !== "PUBLISHED") {
-      (updateData as Record<string, unknown>).publishedAt = new Date();
-    }
-
-    // First update the job offer (without benefits/languages relations)
-    const jobOffer = await prisma.jobOffer.update({
-      where: { id: jobId },
-      data: updateData as Record<string, unknown>,
-      include: {
-        company: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            logoUrl: true,
-          },
-        },
-      },
-    });
-
-    // Handle benefits update (only if provided)
-    if (benefitIds !== undefined) {
-      // Delete existing benefits
-      await prisma.jobOfferBenefit.deleteMany({
-        where: { jobOfferId: jobId },
-      });
-      
-      // Create new benefits only if array is not empty
-      if (benefitIds.length > 0) {
-        await prisma.jobOfferBenefit.createMany({
-          data: benefitIds.map((benefitId) => ({
-            jobOfferId: jobId,
-            benefitId,
-          })),
-        });
-      }
-    }
-
-    // Handle languages update (only if provided)
-    if (languages !== undefined) {
-      // Delete existing languages
-      await prisma.jobLanguage.deleteMany({
-        where: { jobOfferId: jobId },
-      });
-      
-      // Create new languages only if array is not empty
-      if (languages.length > 0) {
-        await prisma.jobLanguage.createMany({
-          data: languages.map((lang) => ({
-            jobOfferId: jobId,
-            language: lang.language,
-            level: lang.level as "REQUIRED" | "PREFERRED" | "NICE_TO_HAVE",
-          })),
-        });
-      }
-    }
-
-    // Refetch to get updated relations
-    const updatedJobOffer = await prisma.jobOffer.findUnique({
-      where: { id: jobId },
-      include: {
-        company: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            logoUrl: true,
-          },
-        },
-        benefits: {
-          include: { benefit: true },
-        },
-        languages: true,
-      },
-    });
-
-    // Revalidate job offers cache
     revalidateJobOffers();
 
     return NextResponse.json({
       success: true,
       message: "Job offer updated successfully",
-      data: updatedJobOffer,
+      data: txResult.data,
     });
   } catch (error) {
     console.error("Update job offer error:", error);
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    const errorMessage = process.env.NODE_ENV === "production"
+      ? "Failed to update job offer"
+      : error instanceof Error
+        ? error.message
+        : "Failed to update job offer";
     return NextResponse.json(
-      { success: false, error: "Failed to update job offer", details: errorMessage, code: "INTERNAL_ERROR" },
+      { success: false, error: errorMessage, code: "INTERNAL_ERROR" },
       { status: 500 }
     );
   }
@@ -371,7 +349,7 @@ export async function DELETE(
     // Verify user owns the company or is admin
     const isAdmin = session?.user?.role === "ADMIN";
     
-    const userCompany = isAdmin ? null : await prisma.company.findFirst({
+    const userCompany = isAdmin ? null : await prisma.companies.findFirst({
       where: { userId: session!.user.id, id: existingJob.companyId },
     });
 

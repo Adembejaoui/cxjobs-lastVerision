@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
       });
     } else if (session.user.role === "COMPANY") {
       // Get company's job applications
-      const company = await prisma.company.findUnique({
+      const company = await prisma.companies.findUnique({
         where: { userId: session.user.id },
       });
 

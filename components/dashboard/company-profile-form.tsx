@@ -17,7 +17,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Building2, Globe, Linkedin, MapPin, Save, Loader2, Twitter, Facebook, Image as ImageIcon } from "lucide-react";
-import { ImageUpload } from "@/components/dashboard/image-upload";
+import { CroppableImageUpload } from "@/components/dashboard/croppable-image-upload";
 import { CultureEditor } from "@/components/dashboard/culture-editor";
 import { CompanyBenefitsEditor, BenefitItem } from "@/components/dashboard/company-benefits-editor";
 
@@ -269,21 +269,19 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
         </CardHeader>
         <CardContent>
           <div className="grid gap-6 md:grid-cols-2">
-            <ImageUpload
+            <CroppableImageUpload
               value={formData.logoUrl}
               onChange={handleLogoChange}
               type="logo"
               label="Company Logo"
-              aspectRatio="square"
               maxSize="2MB"
               previewClassName="w-32 h-32"
             />
-            <ImageUpload
+            <CroppableImageUpload
               value={formData.coverImageUrl}
               onChange={handleCoverChange}
               type="cover-image"
               label="Cover Image"
-              aspectRatio="video"
               maxSize="5MB"
               previewClassName="h-32"
             />

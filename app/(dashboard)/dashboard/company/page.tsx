@@ -6,11 +6,12 @@ import {
   Users, 
   Eye, 
   TrendingUp,
-  PlusCircle,
   Clock,
   CheckCircle,
-  XCircle
+  XCircle,
+  PlusCircle
 } from "lucide-react";
+import { JobPostFlow } from "@/components/dashboard/job-post-flow";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
@@ -42,12 +43,13 @@ export default async function CompanyDashboardPage() {
           <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
           <p className="text-slate-600">Welcome back! Here's what's happening with your jobs.</p>
         </div>
-        <Link href="/dashboard/company/jobs/new">
-          <Button className="bg-[#071738] hover:bg-[#0d224d] text-white">
-            <PlusCircle className="mr-2 h-4 w-4" />
-            Post New Job
-          </Button>
-        </Link>
+<JobPostFlow
+  trigger={
+    <span className="flex items-center gap-2 rounded-xl bg-[#071738] px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-[#071738]/20 hover:bg-[#0d224d] transition-colors">
+      Post New Job
+    </span>
+  }
+/>
       </div>
 
       {/* Stats Grid */}

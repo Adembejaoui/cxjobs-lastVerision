@@ -55,52 +55,38 @@ export function withCache<T extends (...args: unknown[]) => Promise<unknown>>(
   }) as T;
 }
 
-/**
- * Revalidates cache by tag (Next.js 16+ compatible)
- * @param tag The cache tag to revalidate
- */
+// Revalidates cache by tag
 export function revalidateCacheTag(tag: string): void {
-  revalidateTag(tag, "cache");
+  revalidateTag(tag, "max");
 }
 
-/**
- * Revalidates cache by path
- * @param path The path to revalidate
- */
+// Revalidates cache by path
 export function revalidateCachePath(path: string): void {
   revalidatePath(path);
 }
 
-/**
- * Revalidates all job-related caches
- */
+// Revalidates all job-related caches
 export function revalidateJobOffers(): void {
-  revalidateTag("job-offers", "cache");
-  revalidateTag("job-offer", "cache");
+  revalidateTag("job-offers", "max");
+  revalidateTag("job-offer", "max");
   revalidatePath("/api/job-offers");
 }
 
-/**
- * Revalidates all blog-related caches
- */
+// Revalidates all blog-related caches
 export function revalidateBlogs(): void {
-  revalidateTag("blogs", "cache");
-  revalidateTag("blog", "cache");
+  revalidateTag("blogs", "max");
+  revalidateTag("blog", "max");
   revalidatePath("/api/blogs");
 }
 
-/**
- * Revalidates stats cache
- */
+// Revalidates stats cache
 export function revalidateStats(): void {
-  revalidateTag("stats", "cache");
+  revalidateTag("stats", "max");
   revalidatePath("/api/stats");
 }
 
-/**
- * Revalidates company caches
- */
+// Revalidates company caches
 export function revalidateCompanies(): void {
-  revalidateTag("companies", "cache");
+  revalidateTag("companies", "max");
   revalidatePath("/api/profile/allCompanies");
 }

@@ -22,7 +22,7 @@ export const DEFAULT_PAGINATION_LIMIT = 10;
 export const DEFAULT_PAGINATION_PAGE = 1;
 
 /**
- * Safely parses and validates pagination parameters
+ * Safely parses and validates offset pagination parameters
  * Prevents DoS by enforcing maximum limits
  */
 export function parsePaginationParams(
@@ -38,6 +38,31 @@ export function parsePaginationParams(
 
   return { page, limit, skip };
 }
+
+// ==================== Cursor Pagination Utilities ====================
+
+export interface CursorPaginationParams {
+  limit: number;
+  cursor?: string;
+}
+
+export interface CursorPageResult<T> {
+  data: T[];
+  nextCursor: string | null;
+  prevCursor: string | null;
+  hasMore: boolean;
+}
+
+export function parseCursorParams(searchParams: URLSearchParams): CursorPaginationParams {
+  const limit = Math.min(
+    MAX_PAGINATION_LIMIT,
+    Math.max(1, parseInt(searchParams.get("limit") || String(DEFAULT_PAGINATION_LIMIT)) || DEFAULT_PAGINATION_LIMIT)
+  );
+  const cursor = searchParams.get("cursor") || undefined;
+
+  return { limit, cursor };
+}
+
 
 // ==================== Validation Utilities ====================
 
@@ -217,7 +242,7 @@ export const PASSWORD_REQUIREMENTS = {
   requireUppercase: true,
   requireLowercase: true,
   requireNumber: true,
-  requireSpecialChar: false,
+  requireSpecialChar: true,
 };
 
 /**

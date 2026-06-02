@@ -1,79 +1,58 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
 }
 
-// ==================== USER MANAGEMENT ====================
-
 model User {
-  id            String    @id @default(uuid())
-  name          String?
-  email         String    @unique
-  emailVerified DateTime?
-  passwordHash  String?   // Nullable for OAuth users (Google)
-  image         String?
-  role          UserRole  @default(CANDIDATE)
-  isOnboarded   Boolean   @default(false)
-  isActive      Boolean   @default(true)  // For account deactivation
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime? // Soft delete
-
-  // NextAuth relations
-  accounts      Account[]
-  sessions      Session[]
-
-  // Profile relations
-  candidate     Candidate?
-  company       Company?
-
-  // Password reset
-  passwordResetTokens PasswordResetToken[]
-
-  // Notifications
-  
-  // Email verification
+  id                      String                   @id @default(uuid())
+  name                    String?
+  email                   String                   @unique
+  emailVerified           DateTime?
+  passwordHash            String?
+  image                   String?
+  role                    UserRole                 @default(CANDIDATE)
+  isOnboarded             Boolean                  @default(false)
+  isActive                Boolean                  @default(true)
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  deletedAt               DateTime?
+  accounts                Account[]
+  candidate               Candidate?
+  companies               companies?
   emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
+  sessions                Session[]
 
   @@index([email])
   @@index([role])
+  @@index([role, isActive])
   @@map("users")
 }
 
-enum UserRole {
-  CANDIDATE
-  COMPANY
-  ADMIN
-}
-
-// NextAuth Account model (for OAuth providers like Google)
 model Account {
   id                String  @id @default(uuid())
   userId            String
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
+  refresh_token     String?
+  access_token      String?
   expires_at        Int?
   token_type        String?
   scope             String?
-  id_token          String? @db.Text
+  id_token          String?
   session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@index([userId])
   @@map("accounts")
 }
 
-// NextAuth Session model
 model Session {
   id           String   @id @default(uuid())
   sessionToken String   @unique
@@ -84,17 +63,16 @@ model Session {
   @@map("sessions")
 }
 
-// NextAuth VerificationToken model (for email verification)
 model VerificationToken {
   identifier String
   token      String   @unique
   expires    DateTime
 
   @@unique([identifier, token])
+  @@index([expires])
   @@map("verification_tokens")
 }
 
-// Password Reset Token (custom)
 model PasswordResetToken {
   id        String   @id @default(uuid())
   email     String
@@ -102,12 +80,14 @@ model PasswordResetToken {
   expires   DateTime
   createdAt DateTime @default(now())
   userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([expires])
+  @@index([userId])
+  @@index([email])
   @@map("password_reset_tokens")
 }
 
-// Email Verification Token (custom)
 model EmailVerificationToken {
   id        String   @id @default(uuid())
   email     String
@@ -115,54 +95,271 @@ model EmailVerificationToken {
   expires   DateTime
   createdAt DateTime @default(now())
   userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([expires])
+  @@index([userId])
+  @@index([email])
   @@map("email_verification_tokens")
 }
 
-// ==================== CANDIDATE PROFILE ====================
-
 model Candidate {
-  id           String   @id @default(uuid())
-  userId       String   @unique
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  // Personal Info
-  firstName    String?
-  lastName     String?
-  phone        String?
-  location     String?
-  headline     String?
-  summary      String?  @db.Text
-  avatarUrl    String?
-  
-  // Resume
-  resumeUrl    String?
-  cvParsed     Boolean  @default(false)
-  
-  // Social
-  linkedinUrl  String?
-  
-  // Preferences
-  preferredJobTypes String[] // Full-time, Part-time, Contract, etc.
-  targetJobRole   JobRoleTarget? @default(GENERAL) // Target job role for onboarding
-  
-  // Work Preferences
-  workMode        WorkMode? // ONSITE, REMOTE, HYBRID
-  shiftType       ShiftType? // DAY, NIGHT, FLEXIBLE, ROTATION
-  
-  // Timestamps
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                String           @id @default(uuid())
+  userId            String           @unique
+  firstName         String?
+  lastName          String?
+  phone             String?
+  location          String?
+  headline          String?
+  summary           String?
+  avatarUrl         String?
+  resumeUrl         String?
+  cvParsed          Boolean          @default(false)
+  linkedinUrl       String?
+  preferredJobTypes String[]         @default([])
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  shiftType         ShiftType?
+  targetJobRole     JobRoleTarget?   @default(GENERAL)
+  workMode          WorkMode?
+  applications      Application[]
+  skills            CandidateSkill[]
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  education         Education[]
+  experiences       Experience[]
+  languages         Language[]
 
-  // Relations
-  applications Application[]
-  skills       CandidateSkill[]
-  experiences  Experience[]
-  education    Education[]
-  languages    Language[]
-
+  @@index([userId])
   @@map("candidates")
+}
+
+model CandidateSkill {
+  id                String    @id @default(uuid())
+  candidateId       String
+  name              String
+  level             String?
+  yearsOfExperience Int?
+  candidate         Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId])
+  @@map("candidate_skills")
+}
+
+model Experience {
+  id          String    @id @default(uuid())
+  candidateId String
+  company     String
+  title       String
+  location    String?
+  startDate   DateTime
+  endDate     DateTime?
+  isCurrent   Boolean   @default(false)
+  description String?
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId])
+  @@map("experiences")
+}
+
+model Education {
+  id           String    @id @default(uuid())
+  candidateId  String
+  school       String
+  degree       String
+  fieldOfStudy String?
+  startDate    DateTime
+  endDate      DateTime?
+  isCurrent    Boolean   @default(false)
+  description  String?
+  candidate    Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId])
+  @@map("education")
+}
+
+model Language {
+  id          String    @id @default(uuid())
+  candidateId String
+  name        String
+  proficiency String
+  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId])
+  @@map("languages")
+}
+
+model CompanyCount {
+  id        String    @id @default(uuid())
+  companyId String    @unique
+  jobs      Int       @default(0)
+  employees Int       @default(0)
+  followers Int       @default(0)
+  company   companies @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("company_counts")
+}
+
+model CompanyBenefit {
+  id          String            @id @default(uuid())
+  companyId   String
+  name        String
+  description String?
+  icon        String?
+  category    BenefitCategory   @default(OTHER)
+  scope       BenefitScope      @default(ADDITIONAL)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  company     companies         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  jobOffers   JobOfferBenefit[]
+
+  @@index([companyId])
+  @@index([scope])
+  @@map("company_benefits")
+}
+
+model JobOffer {
+  id               String            @id @default(uuid())
+  companyId        String
+  title            String
+  slug             String            @unique
+  description      String?
+  requirements     String[]          @default([])
+  customLocation   String?
+  contractType     ContractType      @default(CDI)
+  isRemote         Boolean           @default(false)
+  isHybrid         Boolean           @default(false)
+  experienceLevel  ExperienceLevel?
+  salary           String?
+  salaryMin        Int?
+  salaryMax        Int?
+  salaryCurrency   String?           @default("USD")
+  status           JobOfferStatus    @default(DRAFT)
+  publishedAt      DateTime?
+  expiresAt        DateTime?
+  featured         Boolean           @default(false)
+  highlight        Boolean           @default(false)
+  metaTitle        String?
+  metaDescription  String?
+  aiGenerated      Boolean           @default(false)
+  aiModel          String?
+  deletedAt        DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  softSkills       String[]          @default([])
+  technicalTools   String[]          @default([])
+  applicationType  ApplicationMethod @default(INTERNAL)
+  externalApplyUrl String?
+  applications     Application[]
+  languages        JobLanguage[]
+  benefits         JobOfferBenefit[]
+  company          companies         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@index([status])
+  @@index([slug])
+  @@index([contractType])
+  @@index([experienceLevel])
+  @@index([companyId, status, deletedAt])
+  @@index([companyId, status, createdAt])
+  @@index([status, createdAt])
+  @@index([deletedAt, status, createdAt])
+  @@index([companyId, deletedAt, status, createdAt])
+  @@map("job_offers")
+}
+
+model JobOfferBenefit {
+  id                String         @id @default(uuid())
+  jobOfferId        String
+  benefitId         String
+  customDescription String?
+  benefit           CompanyBenefit @relation(fields: [benefitId], references: [id], onDelete: Cascade)
+  jobOffer          JobOffer       @relation(fields: [jobOfferId], references: [id], onDelete: Cascade)
+
+  @@unique([jobOfferId, benefitId])
+  @@index([jobOfferId])
+  @@index([benefitId])
+  @@map("job_offer_benefits")
+}
+
+model JobLanguage {
+  id         String        @id @default(uuid())
+  jobOfferId String
+  language   String
+  level      LanguageLevel @default(REQUIRED)
+  jobOffer   JobOffer      @relation(fields: [jobOfferId], references: [id], onDelete: Cascade)
+
+  @@unique([jobOfferId, language])
+  @@index([jobOfferId])
+  @@map("job_languages")
+}
+
+model Application {
+  id          String            @id @default(uuid())
+  candidateId String
+  jobOfferId  String
+  coverLetter String?
+  cvUrl       String?
+  status      ApplicationStatus @default(NOUVEAU)
+  notes       String?
+  isSaved     Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  candidate   Candidate         @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  jobOffer    JobOffer          @relation(fields: [jobOfferId], references: [id], onDelete: Cascade)
+
+  @@unique([candidateId, jobOfferId])
+  @@index([candidateId, createdAt])
+  @@index([candidateId, status])
+  @@index([jobOfferId, status])
+  @@index([jobOfferId, createdAt])
+  @@index([createdAt])
+  @@index([status])
+  @@map("applications")
+}
+
+model companies {
+  id                    String           @id @default(uuid())
+  userId                String           @unique
+  name                  String
+  slug                  String           @unique
+  logoUrl               String?
+  coverImageUrl         String?
+  industry              String?
+  companySize           String?
+  location              String?
+  website               String?
+  foundedYear           Int?
+  description           String?
+  mission               String?
+  culture               String?
+  isRemoteFriendly      Boolean          @default(false)
+  isHybridFriendly      Boolean          @default(false)
+  linkedinUrl           String?
+  twitterUrl            String?
+  facebookUrl           String?
+  isVerified            Boolean          @default(false)
+  verifiedAt            DateTime?
+  subscriptionPlan      String?          @default("FREE")
+  subscriptionExpiresAt DateTime?
+  deletedAt             DateTime?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  users                 User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  benefits              CompanyBenefit[]
+  count                 CompanyCount?
+  jobs                  JobOffer[]
+
+  @@index([industry])
+  @@index([slug])
+  @@index([userId])
+  @@index([name])
+  @@map("companies")
+}
+
+enum UserRole {
+  CANDIDATE
+  COMPANY
+  ADMIN
 }
 
 enum JobRoleTarget {
@@ -187,160 +384,9 @@ enum ShiftType {
   ROTATION
 }
 
-model CandidateSkill {
-  id         String @id @default(uuid())
-  candidateId String
-  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  name       String
-  level      String? // Beginner, Intermediate, Advanced, Expert
-  yearsOfExperience Int?
-
-  @@index([candidateId])
-  @@map("candidate_skills")
-}
-
-model Experience {
-  id          String   @id @default(uuid())
-  candidateId  String
-  candidate    Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  company     String
-  title       String
-  location    String?
-  startDate   DateTime
-  endDate     DateTime?
-  isCurrent   Boolean  @default(false)
-  description String?  @db.Text
-
-  @@index([candidateId])
-  @@map("experiences")
-}
-
-model Education {
-  id          String   @id @default(uuid())
-  candidateId  String
-  candidate   Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  school      String
-  degree      String
-  fieldOfStudy String?
-  startDate   DateTime
-  endDate     DateTime?
-  isCurrent   Boolean  @default(false)
-  description String?
-
-  @@index([candidateId])
-  @@map("education")
-}
-
-model Language {
-  id          String   @id @default(uuid())
-  candidateId  String
-  candidate    Candidate @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  name        String
-  proficiency  String // Native, Fluent, Advanced, Intermediate, Basic
-
-  @@index([candidateId])
-  @@map("languages")
-}
-
-// ==================== COMPANY PROFILE ====================
-
-model Company {
-  id          String   @id @default(uuid())
-  userId      String   @unique
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
-  // Basic Info
-  name        String
-  slug        String   @unique
-  logoUrl     String?
-  coverImageUrl String?
-  industry    String?
-  companySize String?  // 1-10, 11-50, 51-200, 201-500, 501-1000, 1000+
-  location    String?
-  website     String?
-  foundedYear Int?
-  
-  // Description
-  description String?  @db.Text
-  mission     String?  @db.Text
-  culture     String?  @db.Text
-  // REMOVED: benefits String[] - now in CompanyBenefit model
-  
-  // Work Settings (company defaults)
-  isRemoteFriendly Boolean @default(false)
-  isHybridFriendly Boolean @default(false)
-  
-  // Social
-  linkedinUrl String?
-  twitterUrl  String?
-  facebookUrl String?
-  
-  // Verification
-  isVerified  Boolean  @default(false)
-  verifiedAt  DateTime?
-  
-  // Subscription
-  subscriptionPlan String? @default("FREE")
-  subscriptionExpiresAt DateTime?
-  
-  // Soft delete
-  deletedAt   DateTime?
-  
-  // Stats
-  count       CompanyCount?
-  
-  // Timestamps
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  jobs        JobOffer[]
-  benefits    CompanyBenefit[]  // NEW: company benefit catalog
-
-  @@index([slug])
-  @@index([industry])
-  @@map("companies")
-}
-
-model CompanyCount {
-  id        String  @id @default(uuid())
-  companyId String  @unique
-  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  jobs      Int     @default(0)
-  employees Int     @default(0)
-  followers Int     @default(0)
-
-  @@map("company_counts")
-}
-
-// NEW: Company Benefits Catalog
-model CompanyBenefit {
-  id          String        @id @default(uuid())
-  companyId   String
-  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
-  name        String        // "Health Insurance", "Remote Work", "Stock Options"
-  description String?       // Detailed description
-  icon        String?       // Icon name (e.g., "heart", "home", "trending-up")
-  category    BenefitCategory @default(OTHER)
-  
-  // Scope: Is this benefit automatically included in all jobs?
-  scope       BenefitScope  @default(ADDITIONAL)
-  
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-
-  // Relations
-  jobOffers   JobOfferBenefit[]
-
-  @@index([companyId])
-  @@index([scope])
-  @@map("company_benefits")
-}
-
 enum BenefitScope {
-  CORE        // Always included in all company jobs
-  ADDITIONAL  // Selected per job offer
+  CORE
+  ADDITIONAL
 }
 
 enum BenefitCategory {
@@ -350,111 +396,6 @@ enum BenefitCategory {
   CAREER_GROWTH
   WORK_LIFE_BALANCE
   OTHER
-}
-
-// ==================== JOB OFFERS ====================
-
-model JobOffer {
-  id           String   @id @default(uuid())
-  companyId    String
-  company      Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  
-  // Job Details
-  title        String
-  slug         String   @unique
-  description  String?  @db.Text
-  requirements String[] @default([])
-  // REMOVED: benefits String[] - now via JobOfferBenefit relation
-  
-  // Location (optional override - uses company location if null)
-  customLocation String?  // Only if different from company location
-  
-  // Contract Type
-  contractType ContractType @default(CDI)
-  
-  // Work Mode (overrides or confirms company defaults)
-  isRemote     Boolean  @default(false)
-  isHybrid     Boolean  @default(false)
-  
-  // Experience Level
-  experienceLevel ExperienceLevel?
-  
-  // Salary (optional)
-  salary       String?
-  salaryMin    Int?
-  salaryMax    Int?
-  salaryCurrency String? @default("USD")
-  
-  // Status
-  status       JobOfferStatus @default(DRAFT)
-  publishedAt  DateTime?
-  expiresAt    DateTime?
-  
-  // Display Options
-  featured     Boolean  @default(false)
-  highlight    Boolean  @default(false)
-  
-  // SEO
-  metaTitle    String?
-  metaDescription String?
-  
-  // AI Generation
-  aiGenerated  Boolean  @default(false)
-  aiModel      String?
-
-  // Skills & Tools
-  technicalTools String[] @default([])
-  softSkills   String[] @default([])
-  
-  // Soft delete
-  deletedAt   DateTime?
-  
-  // Timestamps
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  // Relations
-  applications Application[]
-  benefits     JobOfferBenefit[]  // NEW: selected benefits from company catalog
-  languages    JobLanguage[]      // NEW: required languages for this job
-
-  @@index([companyId])
-  @@index([status])
-  @@index([slug])
-  @@index([contractType])
-  @@index([experienceLevel])
-  @@map("job_offers")
-}
-
-// NEW: Join table - which benefits apply to which job
-model JobOfferBenefit {
-  id            String         @id @default(uuid())
-  jobOfferId    String
-  jobOffer      JobOffer       @relation(fields: [jobOfferId], references: [id], onDelete: Cascade)
-  benefitId     String
-  benefit       CompanyBenefit @relation(fields: [benefitId], references: [id], onDelete: Cascade)
-  
-  // Optional: custom description for this specific job
-  customDescription String?
-  
-  @@unique([jobOfferId, benefitId])
-  @@index([jobOfferId])
-  @@index([benefitId])
-  @@map("job_offer_benefits")
-}
-
-// NEW: Required languages for job
-model JobLanguage {
-  id          String        @id @default(uuid())
-  jobOfferId  String
-  jobOffer    JobOffer      @relation(fields: [jobOfferId], references: [id], onDelete: Cascade)
-  
-  language    String        // "English", "French", "German", etc.
-  level       LanguageLevel @default(REQUIRED)
-  
-  @@unique([jobOfferId, language])
-  @@index([jobOfferId])
-  @@map("job_languages")
 }
 
 enum JobOfferStatus {
@@ -475,40 +416,22 @@ enum ContractType {
 }
 
 enum ExperienceLevel {
-  JUNIOR      // 0-2 years
-  MID         // 2-5 years
-  SENIOR      // 5+ years
-  LEAD        // Team lead
-  EXECUTIVE   // C-level
+  JUNIOR
+  MID
+  SENIOR
+  LEAD
+  EXECUTIVE
 }
 
 enum LanguageLevel {
-  REQUIRED       // Must have
-  PREFERRED      // Nice to have but not required
-  NICE_TO_HAVE   // Bonus
+  REQUIRED
+  PREFERRED
+  NICE_TO_HAVE
 }
 
-// ==================== APPLICATIONS ====================
-
-model Application {
-  id           String           @id @default(uuid())
-  candidateId  String
-  candidate    Candidate        @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  jobOfferId   String
-  jobOffer     JobOffer         @relation(fields: [jobOfferId], references: [id], onDelete: Cascade)
-  coverLetter  String?          @db.Text
-  cvUrl        String?
-  status       ApplicationStatus @default(NOUVEAU)
-  notes        String?          @db.Text
-  isSaved      Boolean          @default(false)
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
-
-  @@unique([candidateId, jobOfferId]) // Prevent duplicate applications
-  @@index([candidateId])
-  @@index([jobOfferId])
-  @@index([status])
-  @@map("applications")
+enum ApplicationMethod {
+  INTERNAL
+  EXTERNAL
 }
 
 enum ApplicationStatus {
@@ -518,5 +441,3 @@ enum ApplicationStatus {
   EMBAUCHES
   REFUSE
 }
-
-

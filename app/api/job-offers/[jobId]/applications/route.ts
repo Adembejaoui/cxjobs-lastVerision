@@ -42,7 +42,7 @@ export async function GET(
     }
 
     // Verify user owns the company
-    const userCompany = await prisma.company.findFirst({
+    const userCompany = await prisma.companies.findFirst({
       where: { userId: session.user.id, id: jobOffer.companyId },
     });
 

@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import  prisma  from "@/lib/prisma";
+import prisma from "@/lib/prisma";
 import { isValidUuid } from "@/lib/utils";
 import { z } from "zod";
+import { getCachedDashboardStats, setCachedDashboardStats } from "@/lib/redis";
+
+const COMPANY_STATS_KEY = (companyId: string) => `dashboard:company:${companyId}`;
+const COMPANY_STATS_TTL = 30;
 
 // Validation schema for company profile update
 const updateCompanySchema = z.object({
@@ -42,8 +46,7 @@ export async function GET() {
       );
     }
 
-    // Get company profile
-    const company = await prisma.company.findUnique({
+    const company = await prisma.companies.findUnique({
       where: { userId: session.user.id },
       include: {
         _count: {
@@ -60,13 +63,17 @@ export async function GET() {
       );
     }
 
-    // Validate company.id is a valid UUID before using in raw query
     if (!isValidUuid(company.id)) {
-      console.error("Invalid company ID format:", company.id);
       return NextResponse.json(
         { success: false, error: "Invalid company data", code: "INTERNAL_ERROR" },
         { status: 500 }
       );
+    }
+
+    const cacheKey = COMPANY_STATS_KEY(company.id);
+    const cached = await getCachedDashboardStats(cacheKey);
+    if (cached) {
+      return NextResponse.json({ success: true, data: JSON.parse(cached) });
     }
 
     // Get job offer statistics
@@ -245,7 +252,7 @@ export async function PUT(request: NextRequest) {
     }
 
     // Get company profile
-    const company = await prisma.company.findUnique({
+    const company = await prisma.companies.findUnique({
       where: { userId: session.user.id },
     });
 
@@ -304,7 +311,7 @@ export async function PUT(request: NextRequest) {
     if (coverImageUrl !== undefined) updateData.coverImageUrl = coverImageUrl || null
 
     // Update company profile
-    const updatedCompany = await prisma.company.update({
+    const updatedCompany = await prisma.companies.update({
       where: { id: company.id },
       data: updateData,
     });

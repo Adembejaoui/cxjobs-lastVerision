@@ -1,6 +1,14 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Cache life profiles for server-side fetch caching (Next.js 16+)
+  cacheLife: {
+    default: { stale: 900, revalidate: 300, expire: 86400 },
+    hours: { stale: 3600, revalidate: 1800, expire: 86400 },
+    days: { stale: 86400, revalidate: 43200, expire: 604800 },
+    weeks: { stale: 604800, revalidate: 259200, expire: 2592000 },
+    max: { stale: 31536000, revalidate: 15768000, expire: 31536000 },
+  },
   // Response headers for security
   async headers() {
     return [

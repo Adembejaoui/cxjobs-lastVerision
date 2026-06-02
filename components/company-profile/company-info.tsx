@@ -45,7 +45,7 @@ export function CompanyInfo({
   }
 
   return (
-    <Card className="px-6 py-6 border border-border shadow-sm -mt-12 relative z-10 mx-4 md:mx-8 lg:mx-auto lg:max-w-7xl">
+    <Card className="px-6 py-6 border border-border shadow-sm  relative z-10 mx-4 md:mx-8 lg:mx-auto lg:max-w-7xl">
       <div className="flex flex-col md:flex-row gap-6 items-start md:items-center justify-between">
         <div className="flex gap-6 items-start flex-1">
           {/* Company Logo - Larger size */}

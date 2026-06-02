@@ -15,12 +15,12 @@ export default async function CompanyProfilePage() {
   }
 
   // Fetch company data with all fields
-  const company = await prisma.company.findFirst({
+  const company = await prisma.companies.findFirst({
     where: {
       userId: session.user.id,
     },
     include: {
-      user: true,
+      users: true,
       benefits: true,
       _count: {
         select: { jobs: true },

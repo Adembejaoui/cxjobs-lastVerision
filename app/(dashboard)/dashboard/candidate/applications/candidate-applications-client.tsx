@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,27 +37,59 @@ interface Application {
 
 interface CandidateApplicationsClientProps {
   applications: Application[];
+  initialTotal: number;
+  initialPage: number;
+  pageSize: number;
 }
 
-export function CandidateApplicationsClient({ applications: initialApplications }: CandidateApplicationsClientProps) {
+export function CandidateApplicationsClient({
+  applications: initialApplications,
+  initialTotal,
+  initialPage,
+  pageSize,
+}: CandidateApplicationsClientProps) {
+  const [applications, setApplications] = useState(initialApplications);
+  const [page, setPage] = useState(initialPage);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
+  const totalPages = Math.ceil(initialTotal / pageSize);
+
   // Filter applications based on search and status
-  const filteredApplications = useMemo(() => {
-    return initialApplications.filter((app) => {
-      const matchesSearch =
-        !searchQuery ||
-        (app.jobOffer?.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+  const filteredApplications = applications.filter((app) => {
+    const matchesSearch =
+      !searchQuery ||
+      (app.jobOffer?.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         app.jobOffer?.company?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         app.jobOffer?.customLocation?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         app.jobOffer?.company?.location?.toLowerCase().includes(searchQuery.toLowerCase()));
 
-      const matchesFilter = statusFilter === "ALL" || app.status === statusFilter;
+    const matchesFilter = statusFilter === "ALL" || app.status === statusFilter;
 
-      return matchesSearch && matchesFilter;
-    });
-  }, [initialApplications, searchQuery, statusFilter]);
+    return matchesSearch && matchesFilter;
+  });
+
+  const loadPage = useCallback(
+    async (pageNum: number) => {
+      if (pageNum < 1 || pageNum > totalPages || loading) return;
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/application?page=${pageNum}&limit=${pageSize}`, {
+          cache: "no-store",
+        });
+        const json = await res.json();
+        if (json.success) {
+          setApplications(json.data);
+          setPage(pageNum);
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [totalPages, pageSize, loading]
+  );
 
   const getStatusIcon = (status: string) => {
     switch (status.toLowerCase()) {
@@ -120,7 +152,6 @@ export function CandidateApplicationsClient({ applications: initialApplications 
 
   return (
     <div className="space-y-8">
-      {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">My Applications</h1>
@@ -133,7 +164,6 @@ export function CandidateApplicationsClient({ applications: initialApplications 
         </Link>
       </div>
 
-      {/* Search and Filters */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex flex-1 items-center">
           <Search className="absolute left-3 h-4 w-4 text-slate-400" />
@@ -165,7 +195,6 @@ export function CandidateApplicationsClient({ applications: initialApplications 
         </div>
       </div>
 
-      {/* Applications List */}
       {filteredApplications.length > 0 ? (
         <div className="space-y-4">
           {filteredApplications.map((app) => (
@@ -243,14 +272,30 @@ export function CandidateApplicationsClient({ applications: initialApplications 
         </Card>
       )}
 
-      {/* Results count */}
-      {filteredApplications.length > 0 && (
-        <div className="flex items-center justify-between border-t border-slate-100 pt-4">
-          <p className="text-xs text-slate-500">
-            Showing {filteredApplications.length} of {initialApplications.length} applications
-          </p>
-        </div>
-      )}
+      <div className="flex items-center justify-between border-t border-slate-100 pt-4">
+        <p className="text-xs text-slate-500">
+          Showing {filteredApplications.length} of {initialTotal} applications
+          {totalPages > 1 && ` · Page ${page} of ${totalPages}`}
+        </p>
+        {totalPages > 1 && (
+          <div className="flex items-center gap-2">
+            <button
+              disabled={page <= 1 || loading}
+              onClick={() => loadPage(page - 1)}
+              className="rounded border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            <button
+              disabled={page >= totalPages || loading}
+              onClick={() => loadPage(page + 1)}
+              className="rounded border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

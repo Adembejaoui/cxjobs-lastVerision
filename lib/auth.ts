@@ -6,7 +6,9 @@ import bcrypt from "bcryptjs";
 import prisma from "./prisma";
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
-  adapter: PrismaAdapter(prisma),
+  trustHost: true,
+adapter: PrismaAdapter(prisma as Parameters<typeof PrismaAdapter>[0]),
+  secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
   session: {
     strategy: "jwt",
   },
@@ -18,7 +20,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      allowDangerousEmailAccountLinking: true,
     }),
     Credentials({
       name: "credentials",
@@ -60,18 +61,6 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
   ],
   callbacks: {
     async jwt({ token, user, trigger, session }) {
-      // Always fetch fresh user data from database to get latest isOnboarded status
-      if (token.id) {
-        const dbUser = await prisma.user.findUnique({
-          where: { id: token.id as string },
-          select: { role: true, isOnboarded: true },
-        });
-        if (dbUser) {
-          token.role = dbUser.role;
-          token.isOnboarded = dbUser.isOnboarded;
-        }
-      }
-
       // Initial sign in - add user data to token
       if (user) {
         token.id = user.id;

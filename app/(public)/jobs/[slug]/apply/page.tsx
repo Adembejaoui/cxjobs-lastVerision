@@ -7,22 +7,58 @@ import { Textarea } from '@/components/ui/textarea';
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
-import { ArrowLeft, MapPin, DollarSign, CheckCircle, Loader2, AlertCircle, User, FileText, Languages, Briefcase } from 'lucide-react';
+import { ArrowLeft, MapPin, CheckCircle, Loader2, AlertCircle, User, FileText, Languages } from 'lucide-react';
+
+interface JobLanguage {
+  id: string
+  language: string
+  level: string
+}
+
+interface JobBenefit {
+  id: string
+  benefit: {
+    id: string
+    name: string
+    description: string | null
+    icon: string | null
+    category: string
+  }
+  customDescription: string | null
+}
+
+interface Company {
+  id: string
+  name: string
+  slug: string
+  logoUrl: string | null
+  industry: string | null
+  location: string | null
+  website: string | null
+  description: string | null
+  isRemoteFriendly: boolean
+  isHybridFriendly: boolean
+  benefits: { id: string; name: string }[]
+}
 
 interface JobOffer {
-  id: string;
-  title: string;
-  slug: string;
-  description: string;
-  location: string | null;
-  contractType: string;
-  salaryMin: number | null;
-  salaryMax: number | null;
-  company: {
-    id: string;
-    name: string;
-    logoUrl: string | null;
-  };
+  id: string
+  title: string
+  slug: string
+  description: string | null
+  customLocation: string | null
+  contractType: string
+  salaryMin: number | null
+  salaryMax: number | null
+  applicationType: string
+  externalApplyUrl: string | null
+  benefits: JobBenefit[]
+  languages: JobLanguage[]
+  company: Company
+  _count: {
+    applications: number
+  }
+  createdAt: Date
 }
 
 interface CandidateProfile {
@@ -72,7 +108,15 @@ export default function JobApplyPage() {
           const profileData = await profileRes.json();
 
           if (jobData.success) {
-            setJob(jobData.data);
+            const jobDataRecord = jobData.data;
+            setJob(jobDataRecord);
+            
+            // Check if this is an EXTERNAL application - redirect if so
+            if (jobDataRecord.applicationType === "EXTERNAL" && jobDataRecord.externalApplyUrl) {
+              window.open(jobDataRecord.externalApplyUrl, '_blank', 'noopener,noreferrer');
+              router.push(`/jobs/${jobDataRecord.slug}`);
+              return;
+            }
           } else {
             setError(jobData.error || 'Job not found');
           }
@@ -281,10 +325,10 @@ export default function JobApplyPage() {
                 <h1 className="text-lg font-bold text-slate-900 truncate">{job.title}</h1>
                 <p className="text-slate-600 text-sm">{job.company.name}</p>
                 <div className="flex flex-wrap gap-2 items-center text-xs text-slate-500 mt-1">
-                  <span className="flex items-center gap-1">
-                    <MapPin className="h-3 w-3" />
-                    {job.location || 'Remote'}
-                  </span>
+<span className="flex items-center gap-1">
+                     <MapPin className="h-3 w-3" />
+                     {job.customLocation || job.company.location || 'Remote'}
+                   </span>
                   <span className="text-slate-400">•</span>
                   <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700">
                     {getContractTypeLabel(job.contractType)}

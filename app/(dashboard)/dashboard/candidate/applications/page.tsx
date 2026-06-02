@@ -10,7 +10,6 @@ export default async function CandidateApplicationsPage() {
     redirect("/login");
   }
 
-  // Get candidate profile
   const candidate = await prisma.candidate.findUnique({
     where: { userId: session.user.id },
   });
@@ -19,39 +18,43 @@ export default async function CandidateApplicationsPage() {
     redirect("/onboarding/candidate");
   }
 
-  // Fetch applications for this candidate
-  const applications = await prisma.application.findMany({
-    where: { candidateId: candidate.id },
-    include: {
-      jobOffer: {
-        select: {
-          id: true,
-          title: true,
-          slug: true,
-          customLocation: true,
-          status: true,
-          contractType: true,
-          isRemote: true,
-          isHybrid: true,
-          salary: true,
-          salaryMin: true,
-          salaryMax: true,
-          salaryCurrency: true,
-          createdAt: true,
-          company: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-              logoUrl: true,
-              location: true,
+  const PAGE_SIZE = 25;
+  const [applications, total] = await Promise.all([
+    prisma.application.findMany({
+      where: { candidateId: candidate.id },
+      include: {
+        jobOffer: {
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+            customLocation: true,
+            status: true,
+            contractType: true,
+            isRemote: true,
+            isHybrid: true,
+            salary: true,
+            salaryMin: true,
+            salaryMax: true,
+            salaryCurrency: true,
+            createdAt: true,
+            company: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                logoUrl: true,
+                location: true,
+              },
             },
           },
         },
       },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+      orderBy: { createdAt: "desc" },
+      take: PAGE_SIZE,
+    }),
+    prisma.application.count({ where: { candidateId: candidate.id } }),
+  ]);
 
-  return <CandidateApplicationsClient applications={applications} />;
+  return <CandidateApplicationsClient applications={applications} initialTotal={total} initialPage={1} pageSize={PAGE_SIZE} />;
 }

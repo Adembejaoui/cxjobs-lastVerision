@@ -1,83 +1,21 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Search, User, MapPin, Mail, Phone, Briefcase, Calendar, ChevronDown, Eye, Bookmark } from "lucide-react";
+import {
+  ArrowLeft,
+  Search,
+  User,
+  MapPin,
+  Bookmark,
+  ChevronDown,
+  Eye,
+
+} from "lucide-react";
 import { CandidateReviewModal } from "./candidate-review-modal";
-
-interface UserData {
-  id: string;
-  name: string | null;
-  email: string;
-  image: string | null;
-}
-
-interface Skill {
-  id: string;
-  name: string;
-  level: string | null;
-  yearsOfExperience: number | null;
-}
-
-interface Language {
-  id: string;
-  name: string;
-  proficiency: string;
-}
-
-interface Experience {
-  id: string;
-  company: string;
-  title: string;
-  location: string | null;
-  startDate: Date;
-  endDate: Date | null;
-  isCurrent: boolean;
-  description: string | null;
-}
-
-interface Education {
-  id: string;
-  school: string;
-  degree: string;
-  fieldOfStudy: string | null;
-  startDate: Date;
-  endDate: Date | null;
-  isCurrent: boolean;
-  description: string | null;
-}
-
-interface Candidate {
-  id: string;
-  user: UserData;
-  firstName: string | null;
-  lastName: string | null;
-  phone: string | null;
-  location: string | null;
-  headline: string | null;
-  summary: string | null;
-  avatarUrl: string | null;
-  resumeUrl: string | null;
-  linkedinUrl: string | null;
-  preferredJobTypes: string[];
-  skills: Skill[];
-  languages: Language[];
-  experiences: Experience[];
-  education: Education[];
-}
-
-interface Application {
-  id: string;
-  status: string;
-  coverLetter: string | null;
-  cvUrl: string | null;
-  notes: string | null;
-  isSaved: boolean;
-  createdAt: Date;
-  candidate?: Candidate;
-}
+import type { Candidate, Application } from "./types";
 
 interface Stats {
   total: number;
@@ -92,34 +30,47 @@ interface Stats {
 interface JobOffer {
   id: string;
   title: string;
-  slug: string;
   customLocation: string | null;
-  status: string;
-  createdAt: Date;
 }
 
 interface JobApplicationsClientProps {
   jobOffer: JobOffer;
   applications: Application[];
   stats: Stats;
+  initialTotal: number;
+  initialPage: number;
+  pageSize: number;
 }
 
-export function JobApplicationsClient({ jobOffer, applications: initialApplications, stats }: JobApplicationsClientProps) {
+export function JobApplicationsClient({
+  jobOffer,
+  applications: initialApplications,
+  stats,
+  initialTotal,
+  initialPage,
+  pageSize,
+}: JobApplicationsClientProps) {
+  const [applications, setApplications] = useState(initialApplications);
+  const [page, setPage] = useState(initialPage);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [currentAppIndex, setCurrentAppIndex] = useState(0);
-  const [applications, setApplications] = useState(initialApplications);
 
-  // Get filtered applications with their original indices
+  // Full candidate details keyed by application id — populated on-demand when the modal opens
+  const [fullCandidates, setFullCandidates] = useState<Record<string, Candidate>>({});
+
+  const totalPages = Math.ceil(initialTotal / pageSize);
+
   const filteredWithIndices = useMemo(() => {
     return applications
       .map((app, index) => ({ app, originalIndex: index }))
       .filter(({ app }) => {
         const matchesSearch =
           !searchQuery ||
-          app.candidate?.user?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          app.candidate?.user?.email?.toLowerCase().includes(searchQuery.toLowerCase());
+          (app.candidate?.user?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            app.candidate?.user?.email?.toLowerCase().includes(searchQuery.toLowerCase()));
 
         let matchesFilter = true;
         if (statusFilter === "ALL") {
@@ -134,75 +85,124 @@ export function JobApplicationsClient({ jobOffer, applications: initialApplicati
       });
   }, [applications, searchQuery, statusFilter]);
 
-  // Handle save toggle
-  const handleToggleSaved = async (applicationId: string, isSaved: boolean) => {
-    // Optimistically update local state
-    setApplications(prev => prev.map(app => 
-      app.id === applicationId ? { ...app, isSaved } : app
-    ));
-
-    try {
-      const response = await fetch(`/api/application/${applicationId}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ isSaved }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to toggle saved status");
+  const loadPage = useCallback(
+    async (pageNum: number) => {
+      if (pageNum < 1 || pageNum > totalPages || loading) return;
+      setLoading(true);
+      try {
+        const res = await fetch(
+          `/api/job-offers/${jobOffer.id}/applications?page=${pageNum}&limit=${pageSize}`,
+          { cache: "no-store" }
+        );
+        const json = await res.json();
+        if (json.success) {
+          setApplications(json.data);
+          setPage(pageNum);
+          setFullCandidates({});
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+      } finally {
+        setLoading(false);
       }
-    } catch (error) {
-      console.error("Failed to toggle saved status:", error);
-      // Revert on error
-      setApplications(prev => prev.map(app => 
-        app.id === applicationId ? { ...app, isSaved: !isSaved } : app
-      ));
-    }
-  };
+    },
+    [jobOffer.id, pageSize, totalPages, loading]
+  );
 
-  // Handle status update
+  // Lazy-load full candidate data when the review modal is opened
+  const handleOpenModal = useCallback(
+    async (originalIndex: number) => {
+      setCurrentAppIndex(originalIndex);
+      setIsModalOpen(true);
+
+      const app = filteredWithIndices[originalIndex]?.app;
+      if (!app) return;
+
+      // If we already fetched full details for this candidate, no need to refetch
+      if (fullCandidates[app.id]) return;
+
+      try {
+        const res = await fetch(`/api/application/${app.id}`);
+        const json = await res.json();
+        if (json.success && json.data?.candidate) {
+          setFullCandidates((prev) => ({
+            ...prev,
+            [app.id]: json.data.candidate,
+          }));
+        }
+      } catch {
+        // Silently fail — modal will show whatever we have
+      }
+    },
+    [filteredWithIndices, fullCandidates]
+  );
+
+  const handleNavigate = useCallback((newIndex: number) => {
+    setCurrentAppIndex(newIndex);
+  }, []);
+
   const handleStatusUpdate = async (applicationId: string, status: string, notes: string) => {
-    // Store previous values for revert
-    const previousApp = applications.find(app => app.id === applicationId);
-
-    // Optimistically update local state
-    setApplications(prev => prev.map(app => 
-      app.id === applicationId ? { ...app, status, notes } : app
-    ));
+    const previousApp = applications.find((app) => app.id === applicationId);
+    setApplications((prev) =>
+      prev.map((app) => (app.id === applicationId ? { ...app, status, notes } : app))
+    );
 
     try {
       const response = await fetch(`/api/application/${applicationId}`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status, notes }),
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to update status");
-      }
+      if (!response.ok) throw new Error("Failed to update status");
     } catch (error) {
       console.error("Failed to update application status:", error);
-      // Revert on error
       if (previousApp) {
-        setApplications(prev => prev.map(app => 
-          app.id === applicationId ? previousApp : app
-        ));
+        setApplications((prev) =>
+          prev.map((app) => (app.id === applicationId ? previousApp : app))
+        );
       }
     }
   };
 
-  const handleOpenModal = (originalIndex: number) => {
-    setCurrentAppIndex(originalIndex);
-    setIsModalOpen(true);
+  const handleToggleSaved = async (applicationId: string, isSaved: boolean) => {
+    setApplications((prev) =>
+      prev.map((app) => (app.id === applicationId ? { ...app, isSaved } : app))
+    );
+
+    try {
+      const response = await fetch(`/api/application/${applicationId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isSaved }),
+      });
+
+      if (!response.ok) throw new Error("Failed to toggle saved status");
+    } catch (error) {
+      console.error("Failed to toggle saved status:", error);
+      setApplications((prev) =>
+        prev.map((app) => (app.id === applicationId ? { ...app, isSaved: !isSaved } : app))
+      );
+    }
   };
 
-  const handleNavigate = (newIndex: number) => {
-    setCurrentAppIndex(newIndex);
-  };
+  // Merge full candidate details onto the lean list row for the modal
+  const getEnrichedApplication = useCallback(
+    (filteredIndex: number) => {
+      const { app } = filteredWithIndices[filteredIndex];
+      if (!app) return null;
+      const full = fullCandidates[app.id];
+      return {
+        ...app,
+        candidate: full
+          ? {
+              ...app.candidate,
+              ...full,
+            }
+          : app.candidate,
+      };
+    },
+    [filteredWithIndices, fullCandidates]
+  );
 
   const filteredApplications = filteredWithIndices.map(({ app }) => app);
 
@@ -258,7 +258,6 @@ export function JobApplicationsClient({ jobOffer, applications: initialApplicati
   return (
     <div className="min-h-screen bg-[#f7f9fc] text-slate-900">
       <main className="mx-auto max-w-[1440px] px-6 py-8">
-        {/* Header with back button */}
         <div className="mb-6">
           <Link
             href="/dashboard/company/jobs"
@@ -281,7 +280,6 @@ export function JobApplicationsClient({ jobOffer, applications: initialApplicati
           </div>
         </div>
 
-        {/* Stats Cards */}
         <section className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {statsCards.map((card) => (
             <div
@@ -302,7 +300,6 @@ export function JobApplicationsClient({ jobOffer, applications: initialApplicati
           ))}
         </section>
 
-        {/* Search and Filters */}
         <section className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
           <div className="relative flex flex-1 items-center">
             <Search className="absolute left-3 h-4 w-4 text-slate-400" />
@@ -335,7 +332,6 @@ export function JobApplicationsClient({ jobOffer, applications: initialApplicati
           </div>
         </section>
 
-        {/* Applications List */}
         {filteredApplications.length > 0 ? (
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <div className="grid grid-cols-[2fr_1.5fr_1fr_0.6fr_0.5fr_0.5fr_0.5fr] gap-3 border-b border-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
@@ -348,97 +344,122 @@ export function JobApplicationsClient({ jobOffer, applications: initialApplicati
               <div>Action</div>
             </div>
 
-            {filteredWithIndices.map(({ app, originalIndex }) => (
-              <div
-                key={app.id}
-                className="grid grid-cols-[2fr_1.5fr_1fr_0.6fr_0.5fr_0.5fr_0.5fr] items-center gap-3 border-b border-slate-100 px-4 py-4 last:border-b-0 hover:bg-slate-50"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-200">
-                    {app.candidate?.user?.image ? (
-                      <img
-                        src={app.candidate.user.image}
-                        alt={app.candidate.user.name || "Candidate"}
-                        className="h-10 w-10 rounded-full object-cover"
-                      />
-                    ) : (
-                      <User className="h-5 w-5 text-slate-400" />
-                    )}
+            {filteredWithIndices.map(({ app, originalIndex }) => {
+              const enriched = getEnrichedApplication(originalIndex);
+              const candidate = enriched?.candidate;
+
+              return (
+                <div
+                  key={app.id}
+                  className="grid grid-cols-[2fr_1.5fr_1fr_0.6fr_0.5fr_0.5fr_0.5fr] items-center gap-3 border-b border-slate-100 px-4 py-4 last:border-b-0 hover:bg-slate-50"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-200">
+                      {candidate?.avatarUrl || candidate?.user?.image ? (
+                        <img
+                          src={candidate.avatarUrl || candidate.user?.image || ""}
+                          alt={candidate?.user?.name || "Candidate"}
+                          className="h-10 w-10 rounded-full object-cover"
+                        />
+                      ) : (
+                        <User className="h-5 w-5 text-slate-400" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        {candidate?.user?.name || "No name"}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">
-                      {app.candidate?.user?.name || "No name"}
+
+                  <div className="space-y-1">
+                    <p className="flex items-center gap-1.5 text-xs text-slate-600">
+                      {candidate?.user?.email ? (
+                        <span className="truncate">{candidate.user.email}</span>
+                      ) : null}
                     </p>
                   </div>
-                </div>
 
-                <div className="space-y-1">
-                  <p className="flex items-center gap-1.5 text-xs text-slate-600">
-                    <Mail className="h-3 w-3" />
-                    {app.candidate?.user?.email}
-                  </p>
-                </div>
+                  <div className="flex flex-wrap gap-1">
+                    {candidate?.skills?.slice(0, 3).map((skill: { id: string; name: string }) => (
+                      <span
+                        key={skill.id}
+                        className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600"
+                      >
+                        {skill.name}
+                      </span>
+                    ))}
+                    {candidate?.skills && candidate.skills.length > 3 && (
+                      <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                        +{candidate.skills.length - 3}
+                      </span>
+                    )}
+                  </div>
 
-                <div className="flex flex-wrap gap-1">
-                  {app.candidate?.skills?.slice(0, 3).map((skill) => (
+                  <div>
                     <span
-                      key={skill.id}
-                      className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600"
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${getStatusStyle(
+                        app.status
+                      )}`}
                     >
-                      {skill.name}
+                      {formatStatus(app.status)}
                     </span>
-                  ))}
-                  {app.candidate?.skills && app.candidate.skills.length > 3 && (
-                    <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
-                      +{app.candidate.skills.length - 3}
-                    </span>
-                  )}
-                </div>
+                  </div>
 
-                <div>
-                  <span
-                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${getStatusStyle(
-                      app.status
-                    )}`}
-                  >
-                    {formatStatus(app.status)}
-                  </span>
-                </div>
+                  <div className="text-sm text-slate-500">
+                    {formatDate(app.createdAt)}
+                  </div>
 
-                <div className="text-sm text-slate-500">
-                  {formatDate(app.createdAt)}
-                </div>
+                  <div className="flex items-center justify-center">
+                    <button
+                      onClick={() => handleToggleSaved(app.id, !app.isSaved)}
+                      className={`rounded-lg p-1.5 transition-colors ${
+                        app.isSaved
+                          ? "text-amber-500 hover:text-amber-600"
+                          : "text-slate-400 hover:text-slate-600"
+                      }`}
+                      title={app.isSaved ? "Remove from saved" : "Save candidate"}
+                    >
+                      <Bookmark className={`h-5 w-5 ${app.isSaved ? "fill-current" : ""}`} />
+                    </button>
+                  </div>
 
-                <div className="flex items-center justify-center">
-                  <button
-                    onClick={() => handleToggleSaved(app.id, !app.isSaved)}
-                    className={`rounded-lg p-1.5 transition-colors ${
-                      app.isSaved
-                        ? "text-amber-500 hover:text-amber-600"
-                        : "text-slate-400 hover:text-slate-600"
-                    }`}
-                    title={app.isSaved ? "Remove from saved" : "Save candidate"}
-                  >
-                    <Bookmark className={`h-5 w-5 ${app.isSaved ? "fill-current" : ""}`} />
-                  </button>
+                  <div>
+                    <button
+                      onClick={() => handleOpenModal(originalIndex)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-[#162f67] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#162f67]/90 transition-colors"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      Review
+                    </button>
+                  </div>
                 </div>
-
-                <div>
-                  <button
-                    onClick={() => handleOpenModal(originalIndex)}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-[#162f67] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#162f67]/90 transition-colors"
-                  >
-                    <Eye className="h-3.5 w-3.5" />
-                    Review
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
 
             <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3">
               <p className="text-xs text-slate-500">
-                Showing {filteredApplications.length} of {applications.length} applicants
+                Showing {filteredApplications.length} of {initialTotal} applicants
+                {totalPages > 1 && ` · Page ${page} of ${totalPages}`}
               </p>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <button
+                    disabled={page <= 1 || loading}
+                    onClick={() => loadPage(page - 1)}
+                    className="rounded border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    disabled={page >= totalPages || loading}
+                    onClick={() => loadPage(page + 1)}
+                    className="rounded border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Next
+                  </button>
+                </div>
+              )}
             </div>
           </section>
         ) : (
@@ -472,11 +493,26 @@ export function JobApplicationsClient({ jobOffer, applications: initialApplicati
         )}
       </main>
 
-      {/* Candidate Review Modal */}
+      {/* Candidate Review Modal — receives the enriched application (full details fetched on demand) */}
       <CandidateReviewModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        applications={applications}
+        applications={filteredWithIndices.map(({ app }) => {
+          const full = fullCandidates[app.id];
+          if (!full) {
+            const leanCandidate = app.candidate;
+            return {
+              ...app,
+              candidate: leanCandidate
+                ? { ...leanCandidate, languages: [], experiences: [], education: [], preferredJobTypes: [] }
+                : undefined,
+            };
+          }
+          return {
+            ...app,
+            candidate: full,
+          };
+        })}
         currentIndex={currentAppIndex}
         onNavigate={handleNavigate}
         onStatusUpdate={handleStatusUpdate}

@@ -8,6 +8,8 @@ export const experienceLevelSchema = z.enum(["JUNIOR", "MID", "SENIOR", "LEAD", 
 
 export const languageLevelSchema = z.enum(["REQUIRED", "PREFERRED", "NICE_TO_HAVE"]);
 
+export const applicationMethodSchema = z.enum(["INTERNAL", "EXTERNAL"]);
+
 export const jobStatusSchema = z.enum(["DRAFT", "PUBLISHED", "ARCHIVED", "CLOSED", "EXPIRED"]);
 
 // Job language input schema
@@ -39,9 +41,62 @@ export const createJobOfferSchema = z.object({
   technicalTools: z.array(z.string()).optional(),
   softSkills: z.array(z.string()).optional(),
   status: jobStatusSchema.optional().default("DRAFT"),
+  applicationType: applicationMethodSchema.optional().default("INTERNAL"),
+  externalApplyUrl: z.string().url("Please enter a valid URL").optional().nullable(),
+}).refine((data) => {
+  if (data.applicationType === "EXTERNAL") {
+    return !!data.externalApplyUrl && data.externalApplyUrl.length > 0;
+  }
+  return true;
+}, {
+  message: "External apply URL is required when application type is EXTERNAL",
+  path: ["externalApplyUrl"],
 });
 
-export const updateJobOfferSchema = createJobOfferSchema.partial();
+// Base schema for update (without refinement)
+const updateJobOfferBaseSchema = z.object({
+  title: z.string().min(5, "Title must be at least 5 characters").max(100).optional(),
+  slug: z
+    .string()
+    .min(5, "Slug must be at least 5 characters")
+    .regex(/^[a-z0-9-]+$/, "Slug must contain only lowercase letters, numbers, and hyphens")
+    .optional(),
+  description: z.string().optional(),
+  customLocation: z.string().optional(),
+  contractType: contractTypeSchema.optional(),
+  isRemote: z.boolean().optional(),
+  isHybrid: z.boolean().optional(),
+  experienceLevel: experienceLevelSchema.optional(),
+  salary: z.string().optional(),
+  salaryMin: z.coerce.number().int().positive().optional().nullable(),
+  salaryMax: z.coerce.number().int().positive().optional().nullable(),
+  salaryCurrency: z.string().optional(),
+  requirements: z.array(z.string()).optional(),
+  benefitIds: z.array(z.string().uuid()).optional(),
+  languages: z.array(jobLanguageInputSchema).optional(),
+  technicalTools: z.array(z.string()).optional(),
+  softSkills: z.array(z.string()).optional(),
+  status: jobStatusSchema.optional(),
+  applicationType: applicationMethodSchema.optional(),
+  externalApplyUrl: z.string().url("Please enter a valid URL").optional().nullable(),
+}).refine((data) => {
+  if (data.applicationType === "EXTERNAL") {
+    return !!data.externalApplyUrl && data.externalApplyUrl.length > 0;
+  }
+  return true;
+}, {
+  message: "External apply URL is required when application type is EXTERNAL",
+  path: ["externalApplyUrl"],
+});
+
+export const updateJobOfferSchema = updateJobOfferBaseSchema;
+
+// ==================== Job URL Scraping Schema ====================
+
+export const scrapeJobUrlSchema = z.object({
+  url: z.string().url("Please enter a valid URL"),
+  language: z.enum(["en", "fr"]).default("en").optional(),
+});
 
 export const jobOfferFilterSchema = z.object({
   page: z.number().int().positive().optional().default(1),
@@ -86,3 +141,6 @@ export type UpdateJobOfferInput = z.infer<typeof updateJobOfferSchema>;
 export type JobOfferFilterInput = z.infer<typeof jobOfferFilterSchema>;
 export type CreateApplicationInput = z.infer<typeof createApplicationSchema>;
 export type UpdateApplicationInput = z.infer<typeof updateApplicationSchema>;
+export type ApplicationMethod = z.infer<typeof applicationMethodSchema>;
+
+export type ScrapeJobUrlInput = z.infer<typeof scrapeJobUrlSchema>;

@@ -149,7 +149,6 @@ export async function PUT(request: NextRequest) {
 
     // TODO: Send verification email
     const verifyUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/verify-email?token=${token}`;
-    console.log(`Verification URL for ${email}: ${verifyUrl}`);
 
     return NextResponse.json({
       success: true,

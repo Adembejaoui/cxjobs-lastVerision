@@ -7,76 +7,116 @@ import { unstable_cache } from "next/cache";
 import { revalidateJobOffers } from "@/lib/cache";
 
 // Cached function for fetching public job offers
-const getPublicJobOffers = unstable_cache(
-  async (filters: {
-    page: number;
-    limit: number;
-    skip: number;
-    companyId?: string;
-    contractType?: "CDI" | "CDD" | "FREELANCE" | "INTERNSHIP" | "PART_TIME" | "APPRENTICESHIP";
-    location?: string;
-    search?: string;
-  }) => {
-    const where: Record<string, unknown> = {
-      deletedAt: null,
-      status: "PUBLISHED",
-    };
+async function getPublicJobOffers(filters: {
+  page: number;
+  limit: number;
+  skip: number;
+  companyId?: string;
+  contractType?: "CDI" | "CDD" | "FREELANCE" | "INTERNSHIP" | "PART_TIME" | "APPRENTICESHIP";
+  location?: string;
+  search?: string;
+}) {
+  return unstable_cache(
+    async () => {
+      const where: Record<string, unknown> = {
+        deletedAt: null,
+        status: "PUBLISHED",
+      };
 
-    if (filters.companyId) {
-      where.companyId = filters.companyId;
-    }
+      if (filters.companyId) {
+        where.companyId = filters.companyId;
+      }
 
-    if (filters.contractType) {
-      where.contractType = filters.contractType;
-    }
+      if (filters.contractType) {
+        where.contractType = filters.contractType;
+      }
 
-    if (filters.location) {
-      where.OR = [
-        { customLocation: { contains: filters.location, mode: "insensitive" } },
-        { company: { location: { contains: filters.location, mode: "insensitive" } } },
-      ];
-    }
-
-    if (filters.search) {
-      where.OR = [
-        ...(Array.isArray(where.OR) ? where.OR : []),
-        { title: { contains: filters.search, mode: "insensitive" } },
-        { description: { contains: filters.search, mode: "insensitive" } },
-      ];
-    }
-
-    const [jobOffers, total] = await Promise.all([
-      prisma.jobOffer.findMany({
-        where,
-        include: {
-          company: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-              logoUrl: true,
-              industry: true,
-              location: true,
-              isRemoteFriendly: true,
-              isHybridFriendly: true,
+      if (filters.location) {
+        where.OR = [
+          {
+            customLocation: {
+              contains: filters.location,
+              mode: "insensitive",
             },
           },
-          _count: {
-            select: { applications: true },
+          {
+            company: {
+              location: {
+                contains: filters.location,
+                mode: "insensitive",
+              },
+            },
           },
-        },
-        skip: filters.skip,
-        take: filters.limit,
-        orderBy: { createdAt: "desc" },
-      }),
-      prisma.jobOffer.count({ where }),
-    ]);
+        ];
+      }
 
-    return { jobOffers, total };
-  },
-  ["public-job-offers"],
-  { revalidate: 60, tags: ["job-offers"] }
-);
+      if (filters.search) {
+        where.OR = [
+          ...(Array.isArray(where.OR) ? where.OR : []),
+          {
+            title: {
+              contains: filters.search,
+              mode: "insensitive",
+            },
+          },
+          {
+            description: {
+              contains: filters.search,
+              mode: "insensitive",
+            },
+          },
+        ];
+      }
+
+      const [jobOffers, total] = await Promise.all([
+        prisma.jobOffer.findMany({
+          where,
+          include: {
+            company: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                logoUrl: true,
+                industry: true,
+                location: true,
+                isRemoteFriendly: true,
+                isHybridFriendly: true,
+              },
+            },
+            _count: {
+              select: {
+                applications: true,
+              },
+            },
+          },
+          skip: filters.skip,
+          take: filters.limit,
+          orderBy: {
+            createdAt: "desc",
+          },
+        }),
+        prisma.jobOffer.count({ where }),
+      ]);
+
+      return { jobOffers, total };
+    },
+    [
+      "public-job-offers",
+      String(filters.page),
+      String(filters.limit),
+      String(filters.skip),
+      filters.search ?? "",
+      filters.contractType ?? "",
+      filters.location ?? "",
+      filters.companyId ?? "",
+    ],
+    {
+      revalidate: 60,
+      tags: ["job-offers"],
+    }
+  )();
+}
 
 // GET /api/job-offers - List job offers (public with filters)
 export async function GET(request: NextRequest) {
@@ -126,6 +166,10 @@ export async function GET(request: NextRequest) {
           total,
           totalPages: Math.ceil(total / filters.limit),
         },
+      }, {
+        headers: {
+          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=30',
+        },
       });
     }
 
@@ -136,7 +180,7 @@ export async function GET(request: NextRequest) {
 
     // Admins can see all jobs including drafts, companies see only their own
     if (!isAdmin) {
-      const company = await prisma.company.findUnique({
+      const company = await prisma.companies.findUnique({
         where: { userId: session!.user.id },
       });
       if (company) {
@@ -237,7 +281,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get company profile
-    const company = await prisma.company.findUnique({
+    const company = await prisma.companies.findUnique({
       where: { userId: session.user.id },
     });
 
@@ -249,11 +293,9 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    console.log("Job creation request body:", JSON.stringify(body, null, 2));
     const validationResult = createJobOfferSchema.safeParse(body);
 
     if (!validationResult.success) {
-      console.log("Validation error:", JSON.stringify(validationResult.error.flatten(), null, 2));
       return NextResponse.json(
         {
           success: false,
@@ -267,73 +309,69 @@ export async function POST(request: NextRequest) {
     const { slug, benefitIds, languages, ...jobData } = validationResult.data;
 
     // Generate slug from title if not provided
-    const jobSlug =
+    const baseSlug =
       slug ||
       (jobData.title as string)
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "") +
-        "-" +
-        Date.now().toString(36);
+        .replace(/^-|-$/g, "");
+    const jobSlug = `${baseSlug}-${Date.now().toString(36)}`;
 
-    // Check if slug is unique
-    const existingSlug = await prisma.jobOffer.findUnique({
-      where: { slug: jobSlug },
-    });
+    let jobOffer: Awaited<ReturnType<typeof prisma.jobOffer.create>>;
 
-    if (existingSlug) {
-      return NextResponse.json(
-        { success: false, error: "A job with this slug already exists", code: "SLUG_EXISTS" },
-        { status: 400 }
-      );
+    try {
+      jobOffer = await prisma.jobOffer.create({
+        data: {
+          ...jobData,
+          slug: jobSlug,
+          companyId: company.id,
+          publishedAt: jobData.status === "PUBLISHED" ? new Date() : null,
+          ...(benefitIds && benefitIds.length > 0
+            ? {
+                benefits: {
+                  create: benefitIds.map((benefitId) => ({
+                    benefitId,
+                  })),
+                },
+              }
+            : {}),
+          ...(languages && languages.length > 0
+            ? {
+                languages: {
+                  create: languages.map((lang) => ({
+                    language: lang.language,
+                    level: lang.level,
+                  })),
+                },
+              }
+            : {}),
+        },
+        include: {
+          company: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              logoUrl: true,
+            },
+          },
+          benefits: {
+            include: {
+              benefit: true,
+            },
+          },
+          languages: true,
+        },
+      });
+    } catch (e: unknown) {
+      if ((e as { code?: string }).code === "P2002") {
+        return NextResponse.json(
+          { success: false, error: "A job with this slug already exists", code: "SLUG_EXISTS" },
+          { status: 400 }
+        );
+      }
+      throw e;
     }
-
-    // Create job offer with benefits and languages
-    const jobOffer = await prisma.jobOffer.create({
-      data: {
-        ...jobData,
-        slug: jobSlug,
-        companyId: company.id,
-        publishedAt: jobData.status === "PUBLISHED" ? new Date() : null,
-        // Handle benefits
-        ...(benefitIds && benefitIds.length > 0
-          ? {
-              benefits: {
-                create: benefitIds.map((benefitId) => ({
-                  benefitId,
-                })),
-              },
-            }
-          : {}),
-        // Handle languages
-        ...(languages && languages.length > 0
-          ? {
-              languages: {
-                create: languages.map((lang) => ({
-                  language: lang.language,
-                  level: lang.level,
-                })),
-              },
-            }
-          : {}),
-      },
-      include: {
-        company: {
-          select: {
-            id: true,
-            name: true,
-            slug: true,
-            logoUrl: true,
-          },
-        },
-        benefits: {
-          include: {
-            benefit: true,
-          },
-        },
-        languages: true,
-      },
-    });
 
     // Revalidate job offers cache
     revalidateJobOffers();

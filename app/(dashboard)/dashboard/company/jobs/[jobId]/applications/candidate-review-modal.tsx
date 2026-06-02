@@ -4,83 +4,21 @@ import { useState, useMemo, useEffect } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { X, ChevronLeft, ChevronRight, Mail, Phone, Download, Bookmark } from "lucide-react";
-
-interface User {
-  id: string;
-  name: string | null;
-  email: string;
-  image: string | null;
-}
-
-interface Skill {
-  id: string;
-  name: string;
-  level: string | null;
-  yearsOfExperience: number | null;
-}
-
-interface Language {
-  id: string;
-  name: string;
-  proficiency: string;
-}
-
-interface Experience {
-  id: string;
-  company: string;
-  title: string;
-  location: string | null;
-  startDate: Date;
-  endDate: Date | null;
-  isCurrent: boolean;
-  description: string | null;
-}
-
-interface Education {
-  id: string;
-  school: string;
-  degree: string;
-  fieldOfStudy: string | null;
-  startDate: Date;
-  endDate: Date | null;
-  isCurrent: boolean;
-  description: string | null;
-}
-
-interface Candidate {
-  id: string;
-  user: User;
-  firstName: string | null;
-  lastName: string | null;
-  phone: string | null;
-  location: string | null;
-  headline: string | null;
-  summary: string | null;
-  avatarUrl: string | null;
-  resumeUrl: string | null;
-  linkedinUrl: string | null;
-  preferredJobTypes: string[];
-  skills: Skill[];
-  languages: Language[];
-  experiences: Experience[];
-  education: Education[];
-}
-
-interface Application {
-  id: string;
-  status: string;
-  coverLetter: string | null;
-  cvUrl: string | null;
-  notes: string | null;
-  isSaved: boolean;
-  createdAt: Date;
-  candidate?: Candidate;
-}
+import type { Candidate, LeanCandidate } from "./types";
 
 interface CandidateReviewModalProps {
   isOpen: boolean;
   onClose: () => void;
-  applications: Application[];
+  applications: Array<{
+    id: string;
+    status: string;
+    coverLetter: string | null;
+    cvUrl: string | null;
+    notes: string | null;
+    isSaved: boolean;
+    createdAt: Date;
+    candidate?: Candidate | LeanCandidate;
+  }>;
   currentIndex: number;
   onNavigate: (index: number) => void;
   onStatusUpdate: (applicationId: string, status: string, notes: string) => void;
@@ -103,7 +41,7 @@ export function CandidateReviewModal({
     return applications[currentIndex];
   }, [applications, currentIndex]);
 
-  const candidate = application?.candidate;
+  const candidate = application?.candidate as Candidate | undefined;
 
   // Sync notes and status when application changes
   useEffect(() => {
@@ -280,11 +218,11 @@ export function CandidateReviewModal({
               </section>
 
               {/* Language Proficiency */}
-              {candidate.languages.length > 0 && (
-                <section>
-                  <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-400 mb-5">
-                    Language Proficiency
-                  </p>
+{candidate.languages && candidate.languages.length > 0 && (
+                 <section>
+                   <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-400 mb-5">
+                     Language Proficiency
+                   </p>
 
                   <div className="space-y-4">
                     {candidate.languages.map((lang) => (
@@ -306,11 +244,11 @@ export function CandidateReviewModal({
               )}
 
               {/* Preferences */}
-              {candidate.preferredJobTypes.length > 0 && (
-                <section>
-                  <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-400 mb-5">
-                    Preferences
-                  </p>
+{candidate.preferredJobTypes && candidate.preferredJobTypes.length > 0 && (
+                 <section>
+                   <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-400 mb-5">
+                     Preferences
+                   </p>
 
                   <div className="flex flex-wrap gap-3">
                     {candidate.preferredJobTypes.map((type, idx) => (
@@ -326,11 +264,11 @@ export function CandidateReviewModal({
               )}
 
               {/* Skills */}
-              {candidate.skills.length > 0 && (
-                <section>
-                  <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-400 mb-5">
-                    Skills
-                  </p>
+{candidate.skills && candidate.skills.length > 0 && (
+                 <section>
+                   <p className="text-[12px] font-semibold uppercase tracking-[0.18em] text-slate-400 mb-5">
+                     Skills
+                   </p>
                   <div className="flex flex-wrap gap-2">
                     {candidate.skills.map((skill) => (
                       <span 
@@ -398,14 +336,14 @@ export function CandidateReviewModal({
             )}
 
             {/* Experience Section */}
-            {candidate.experiences.length > 0 && (
-              <div className="rounded-[20px] border border-slate-200 bg-white overflow-hidden shadow-sm mb-6">
-                <div className="px-7 py-5 border-b border-slate-200">
-                  <div className="flex items-center gap-3">
-                    <div className="h-8 w-1 bg-[#162f67] rounded-full" />
-                    <h3 className="text-[16px] uppercase tracking-[0.18em] font-semibold text-slate-400">Experience</h3>
-                  </div>
-                </div>
+{candidate.experiences && candidate.experiences.length > 0 && (
+               <div className="rounded-[20px] border border-slate-200 bg-white overflow-hidden shadow-sm mb-6">
+                 <div className="px-7 py-5 border-b border-slate-200">
+                   <div className="flex items-center gap-3">
+                     <div className="h-8 w-1 bg-[#162f67] rounded-full" />
+                     <h3 className="text-[16px] uppercase tracking-[0.18em] font-semibold text-slate-400">Experience</h3>
+                   </div>
+                 </div>
 
                 <div className="p-8 space-y-8">
                   {candidate.experiences.map((exp) => (
@@ -428,14 +366,14 @@ export function CandidateReviewModal({
             )}
 
             {/* Education Section */}
-            {candidate.education.length > 0 && (
-              <div className="rounded-[20px] border border-slate-200 bg-white overflow-hidden shadow-sm mb-6">
-                <div className="px-7 py-5 border-b border-slate-200">
-                  <div className="flex items-center gap-3">
-                    <div className="h-8 w-1 bg-[#162f67] rounded-full" />
-                    <h3 className="text-[16px] uppercase tracking-[0.18em] font-semibold text-slate-400">Education</h3>
-                  </div>
-                </div>
+{candidate.education && candidate.education.length > 0 && (
+               <div className="rounded-[20px] border border-slate-200 bg-white overflow-hidden shadow-sm mb-6">
+                 <div className="px-7 py-5 border-b border-slate-200">
+                   <div className="flex items-center gap-3">
+                     <div className="h-8 w-1 bg-[#162f67] rounded-full" />
+                     <h3 className="text-[16px] uppercase tracking-[0.18em] font-semibold text-slate-400">Education</h3>
+                   </div>
+                 </div>
 
                 <div className="p-8 space-y-6">
                   {candidate.education.map((edu) => (

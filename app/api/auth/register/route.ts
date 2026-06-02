@@ -76,7 +76,6 @@ export async function POST(request: NextRequest) {
       });
 
       const verifyUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/verify-email?token=${token}`;
-      console.log(`Verification URL for ${email}: ${verifyUrl}`);
     } catch (verificationError) {
       console.error("Failed to create verification token:", verificationError);
     }

@@ -74,7 +74,7 @@ export async function GET(
         );
       }
     } else if (session.user.role === "COMPANY") {
-      const company = await prisma.company.findUnique({
+      const company = await prisma.companies.findUnique({
         where: { userId: session.user.id },
       });
 
@@ -157,7 +157,7 @@ export async function PUT(
     }
 
     // Verify user owns the company
-    const userCompany = await prisma.company.findFirst({
+    const userCompany = await prisma.companies.findFirst({
       where: { userId: session.user.id, id: application.jobOffer.companyId },
     });
 

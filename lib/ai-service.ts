@@ -36,6 +36,35 @@ export interface JobGenerationOutput {
 }
 
 /**
+ * Input for extracting a job offer from URL/text content
+ */
+export interface JobUrlScrapeInput {
+  content: string;
+  language?: "en" | "fr";
+}
+
+/**
+ * Output from URL scraping — matches all JobOffer DB fields
+ */
+export interface JobUrlScrapeOutput {
+  title: string;
+  description: string;
+  requirements?: string[];
+  salary?: string;
+  salaryMin?: number | null;
+  salaryMax?: number | null;
+  salaryCurrency?: string;
+  location: string;
+  contractType?: string;
+  experienceLevel?: string;
+  isRemote?: boolean;
+  isHybrid?: boolean;
+  technicalTools?: string[];
+  softSkills?: string[];
+  languages?: Array<{ name: string; level?: string }>;
+}
+
+/**
  * Generate a professional job description using AI
  */
 export async function generateJobDescription(
@@ -292,6 +321,105 @@ Expected JSON:
   } catch (error) {
     console.error("AI CV parsing error:", error);
     throw new Error("Failed to parse CV with AI");
+  }
+}
+
+/**
+ * Extract structured job offer data from URL/content text using AI
+ */
+export async function extractJobFromUrlText(
+  input: JobUrlScrapeInput
+): Promise<JobUrlScrapeOutput> {
+  const openai = getOpenAIClient();
+  const language = input.language || "en";
+
+  // Limit content to avoid token overflow
+  const content = input.content.substring(0, 4000);
+
+  const prompt = language === "fr"
+    ? `Tu es un assistant qui extrait des informations d'offre d'emploi depuis du texte brut ou du HTML.
+
+Voici le contenu de la page:
+${content}
+
+Extrais TOUTES les informations d'offre d'emploi que tu peux trouver et retourne UNIQUEMENT du JSON valide avec ces clés:
+
+{
+  "title": "Titre du poste",
+  "description": "Description complète de l'offre",
+  "requirements": ["exigence 1", "exigence 2"],
+  "salary": "ex: 50000-60000 EUR",
+  "salaryMin": 50000,
+  "salaryMax": 60000,
+  "salaryCurrency": "EUR",
+  "location": "Paris, France",
+  "contractType": "CDI" | "CDD" | "FREELANCE" | "INTERNSHIP" | "PART_TIME" | "APPRENTICESHIP",
+  "experienceLevel": "JUNIOR" | "MID" | "SENIOR" | "LEAD" | "EXECUTIVE",
+  "isRemote": true,
+  "isHybrid": false,
+  "technicalTools": ["Salesforce", "HubSpot"],
+  "softSkills": ["Communication", "Empathy"],
+  "languages": [{"name": "Anglais", "level": "REQUIRED"}]
+}
+
+RÈGLES CRITIQUES:
+- title, description, et location sont OBLIGATOIRES - si absent, utilise une chaîne vide "".
+- Si une information n'est PAS clairement présente, utilise null (pour les nombres) ou false (pour les booléens) ou un tableau vide [].
+- NE JAMAIS inventer d'informations. Utilise seulement ce qui est visible dans le texte.
+- Pour contractType et experienceLevel, utilise UNIQUEMENT les valeurs de la liste ci-dessus.
+- Pour les langues, extrais TOUTES les langues mentionnées dans les exigences ou la description.
+- Pour les salaires, convertis TOUJOURS en nombres (pas de texte comme "negociable" ou "competitive").`
+    : `You are a job-offer extraction assistant. Extract all job information from the raw content below.
+
+Content:
+${content}
+
+Extract ALL available job information and return ONLY valid JSON with these exact keys:
+
+{
+  "title": "Job title",
+  "description": "Full job description",
+  "requirements": ["requirement 1", "requirement 2"],
+  "salary": "e.g. 50000-60000 USD",
+  "salaryMin": 50000,
+  "salaryMax": 60000,
+  "salaryCurrency": "USD",
+  "location": "City, Country",
+  "contractType": "CDI" | "CDD" | "FREELANCE" | "INTERNSHIP" | "PART_TIME" | "APPRENTICESHIP",
+  "experienceLevel": "JUNIOR" | "MID" | "SENIOR" | "LEAD" | "EXECUTIVE",
+  "isRemote": true,
+  "isHybrid": false,
+  "technicalTools": ["Salesforce", "HubSpot"],
+  "softSkills": ["Communication", "Empathy"],
+  "languages": [{"name": "English", "level": "REQUIRED"}]
+}
+
+CRITICAL RULES:
+- title, description, and location ARE REQUIRED - if not found, use an empty string "".
+- If information is NOT clearly present, use null (for strings/numbers), false (for booleans), or an empty array [].
+- NEVER invent information. Only use what is visible in the text.
+- For contractType and experienceLevel, use ONLY the values listed above.
+- For languages, extract ALL languages mentioned in requirements or description.
+- For salary, if you see a range like "35k-45k", convert to 35000 and 45000. If only a single number, set both salaryMin and salaryMax to it.
+- If salary is described as "competitive", "negotiable", or "based on experience", return null.`;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+      temperature: 0.3,
+      max_tokens: 1500,
+    });
+
+    const content = completion.choices[0].message.content;
+    if (!content) throw new Error("No response from AI");
+
+    const result: JobUrlScrapeOutput = JSON.parse(content);
+    return result;
+  } catch (error) {
+    console.error("Job URL scraping error:", error);
+    throw new Error("Failed to extract job data from URL");
   }
 }
 
