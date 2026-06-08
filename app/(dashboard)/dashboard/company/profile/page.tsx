@@ -29,14 +29,15 @@ export default async function CompanyProfilePage() {
   });
 
   if (!company) {
-    // If no company exists, redirect to onboarding
-    redirect("/onboarding/company");
-  }
+
+      redirect("/dashboard/company");
+    }
+
 
   // Get active jobs count
   const activeJobsCount = await prisma.jobOffer.count({
     where: {
-      companyId: company.id,
+      companyId: company?.id,
       status: "PUBLISHED",
       deletedAt: null,
     },
@@ -46,7 +47,7 @@ export default async function CompanyProfilePage() {
   const totalApplicantsCount = await prisma.application.count({
     where: {
       jobOffer: {
-        companyId: company.id,
+        companyId: company?.id,
       },
     },
   });

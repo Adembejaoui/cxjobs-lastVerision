@@ -5,9 +5,6 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Briefcase,
-  Users,
-  BarChart3,
-  ImageIcon,
   Building2,
   FileText,
   Bell,
@@ -50,10 +47,7 @@ interface DashboardSidebarProps {
 const companyNavItems: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard/company" },
   { label: "Manage Jobs", icon: Briefcase, href: "/dashboard/company/jobs" },
-  { label: "Analytics", icon: BarChart3, href: "/dashboard/company/analytics" },
-  { label: "Media Manager", icon: ImageIcon, href: "/dashboard/company/media" },
   { label: "Company Profile", icon: Building2, href: "/dashboard/company/profile" },
-  { label: "Settings", icon: Settings, href: "/dashboard/company/settings" },
 ];
 
 const candidateNavItems: NavItem[] = [

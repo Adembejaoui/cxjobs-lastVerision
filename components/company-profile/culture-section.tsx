@@ -54,7 +54,7 @@ export function CultureSection({ culture }: CultureSectionProps) {
   return (
     <section className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold text-foreground pb-3 border-l-4 border-primary">
+        <h2 className="text-3xl font-bold text-foreground pb-3 ">
           Company Culture
         </h2>
         <span className="text-primary font-semibold hover:opacity-80 transition cursor-pointer">

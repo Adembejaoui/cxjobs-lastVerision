@@ -49,7 +49,7 @@ export function CompanyInfo({
       <div className="flex flex-col md:flex-row gap-6 items-start md:items-center justify-between">
         <div className="flex gap-6 items-start flex-1">
           {/* Company Logo - Larger size */}
-          <div className="w-24 h-24 md:w-32 md:h-32 bg-primary text-primary-foreground rounded-2xl flex items-center justify-center flex-shrink-0 shadow-lg border-4 border-background">
+          <div className="w-24 h-24 md:w-32 md:h-32 bg-black text-primary-foreground rounded-2xl flex items-center justify-center shrink-0 shadow-lg border-4 border-background">
             {logoUrl ? (
               <img 
                 src={logoUrl} 

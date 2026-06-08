@@ -56,7 +56,7 @@ export function BenefitsSection({ benefits }: BenefitsSectionProps) {
 
   return (
     <section className="space-y-6">
-      <h3 className="text-2xl font-bold text-foreground pb-3 border-l-4 border-primary flex items-center gap-2">
+      <h3 className="text-2xl font-bold text-foreground pb-3  flex items-center gap-2">
         <span>💼</span> Employee Benefits
       </h3>
       <div className="flex flex-col gap-3">

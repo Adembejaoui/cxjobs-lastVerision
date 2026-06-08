@@ -11,7 +11,7 @@ export function AboutSection({ description, mission }: AboutSectionProps) {
   return (
     <section className="space-y-6">
       <div>
-        <h2 className="text-3xl  font-bold text-foreground mb-6 pb-3 border-l-4 border-primary">
+        <h2 className="text-3xl  font-bold text-foreground mb-6 pb-3  ">
           About Us
         </h2>
         

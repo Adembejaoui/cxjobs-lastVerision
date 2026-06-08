@@ -16,6 +16,9 @@ export default async function CompanyJobsPage() {
   });
 
   if (!company) {
+    if (session.user.isOnboarded) {
+      redirect("/dashboard/company");
+    }
     redirect("/onboarding/company");
   }
 

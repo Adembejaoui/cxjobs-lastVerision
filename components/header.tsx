@@ -117,7 +117,7 @@ export function Header() {
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link href={user.role === "COMPANY" ? "/dashboard/company" : "/dashboard/profile"} className="cursor-pointer">
+                    <Link href={user.role === "COMPANY" ? "/dashboard/company/profile" : "/dashboard/candidate/profile"} className="cursor-pointer">
                       <Settings className="mr-2 h-4 w-4" />
                       Settings
                     </Link>

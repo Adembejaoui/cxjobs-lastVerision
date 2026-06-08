@@ -109,12 +109,12 @@ export function Navbar() {
                   <DropdownMenuItem asChild>
                     <Link href={getDashboardLink()} className="cursor-pointer">
                       <LayoutDashboard className="mr-2 h-4 w-4" />
-                      {getDashboardName()}
+                      Dashboard
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
                     <Link href={user.role === "COMPANY" ? "/dashboard/company/profile" : "/dashboard/candidate/profile"} className="cursor-pointer">
-                      <Settings className="mr-2 h-4 w-4" />
+                      <User className="mr-2 h-4 w-4" />
                       Profile
                     </Link>
                   </DropdownMenuItem>
