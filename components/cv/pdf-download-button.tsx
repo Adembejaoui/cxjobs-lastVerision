@@ -12,7 +12,7 @@ interface PDFDownloadButtonProps {
   fullName?: string;
 }
 
-export function PDFDownloadButton({ candidate, fullName }: PDFDownloadButtonProps) {
+export function PDFDownloadButton({ candidate }: PDFDownloadButtonProps) {
   const watermarkSrc = "https://hvbbactmgfhecqbetlhg.supabase.co/storage/v1/object/public/cv/logo%20cxjob.png";
 
   const { generatePDF, isGenerating, error } = useCVPDF({

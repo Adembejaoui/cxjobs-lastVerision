@@ -79,10 +79,29 @@ export function AllJobModals() {
         key={`form-${jobRefKey}`}
         open={phase === "manual"}
         onOpenChange={handleFormClose}
-        // ScrapedJobData's `languages` uses {name, level} vs JobOffer's {language, level}.
-        // JobFormDialog remaps it inside the !isEditMode branch — safe to cast here.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        job={scrapedData as any}
+        job={scrapedData
+          ? {
+              title: scrapedData.title,
+              description: scrapedData.description,
+              requirements: scrapedData.requirements,
+              salary: scrapedData.salary,
+              salaryMin: scrapedData.salaryMin,
+              salaryMax: scrapedData.salaryMax,
+              salaryCurrency: scrapedData.salaryCurrency,
+              location: scrapedData.location,
+              contractType: scrapedData.contractType,
+              isRemote: scrapedData.isRemote,
+              isHybrid: scrapedData.isHybrid,
+              activityType: scrapedData.activityType,
+              activityCustom: scrapedData.activityCustom,
+              technicalTools: scrapedData.technicalTools,
+              softSkills: scrapedData.softSkills,
+              languages: scrapedData.languages?.map((l) => ({
+                language: l.name,
+                level: l.level ?? "REQUIRED",
+              })),
+            }
+          : null}
         onSuccess={handleFormSuccess}
       />
     </>

@@ -23,8 +23,8 @@ export function Pagination({ currentPage, totalPages, onPageChange }: Pagination
       pages.push(1);
 
       // Show current page and surrounding pages
-      let start = Math.max(2, currentPage - 1);
-      let end = Math.min(totalPages - 1, currentPage + 1);
+      const start = Math.max(2, currentPage - 1);
+      const end = Math.min(totalPages - 1, currentPage + 1);
 
       if (start > 2) {
         pages.push('...');

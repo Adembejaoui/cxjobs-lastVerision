@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import  prisma  from "@/lib/prisma";
+import { logger } from "@/lib/logger";
 
 interface RouteParams {
   params: Promise<{
@@ -19,14 +20,12 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         name: true,
         slug: true,
         description: true,
-        mission: true,
         logoUrl: true,
         coverImageUrl: true,
         website: true,
         linkedinUrl: true,
         twitterUrl: true,
         facebookUrl: true,
-        industry: true,
         companySize: true,
         location: true,
         foundedYear: true,
@@ -53,6 +52,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             slug: true,
             customLocation: true,
             contractType: true,
+            employmentType: true,
             isRemote: true,
             isHybrid: true,
             salary: true,
@@ -78,7 +78,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       data: company,
     })
   } catch (error) {
-    console.error("Get company error:", error)
+    logger.error("Failed to fetch company", { error });
     return NextResponse.json(
       { success: false, error: "Failed to fetch company", code: "INTERNAL_ERROR" },
       { status: 500 }

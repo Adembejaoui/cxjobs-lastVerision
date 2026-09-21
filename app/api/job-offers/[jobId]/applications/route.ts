@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import  prisma  from "@/lib/prisma";
 import { parsePaginationParams } from "@/lib/utils";
+import { logger } from "@/lib/logger";
+import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
 
 // GET /api/job-offers/[jobId]/applications - Get applications for a job (company owner only)
 export async function GET(
@@ -15,6 +17,15 @@ export async function GET(
       return NextResponse.json(
         { success: false, error: "Unauthorized", code: "UNAUTHORIZED" },
         { status: 401 }
+      );
+    }
+
+    const APPLICATIONS_LIMIT = { windowMs: 60_000, max: 30 };
+    const rl = await checkRateLimitAsync(`job-applications:${session.user.id}`, APPLICATIONS_LIMIT);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { success: false, error: "Too many requests. Please try again later.", code: "RATE_LIMITED" },
+        { status: 429, headers: getRateLimitHeaders(rl) }
       );
     }
 
@@ -97,7 +108,7 @@ export async function GET(
       },
     });
   } catch (error) {
-    console.error("Get applications error:", error);
+    logger.error("Failed to fetch applications", { error });
     return NextResponse.json(
       { success: false, error: "Failed to fetch applications", code: "INTERNAL_ERROR" },
       { status: 500 }

@@ -3,26 +3,35 @@ import { auth } from "@/lib/auth";
 import {
   supabase,
   STORAGE_BUCKETS,
+  MAX_FILE_SIZES,
   validateFile,
   generateFilePath,
   getPublicUrl,
+  getSignedUrl,
   deleteFile,
 } from "@/lib/supabase";
+import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
+import { logger } from "@/lib/logger";
 import sharp from "sharp";
 import path from "path";
+
+const UPLOAD_LIMIT = { windowMs: 60_000, max: 20 };
+const DELETE_LIMIT = { windowMs: 60_000, max: 10 };
 
 /**
  * Target dimensions and quality per bucket
  */
 const IMAGE_CONFIG: Record<string, { width: number; height: number; quality: number }> = {
-  [STORAGE_BUCKETS.LOGO]: { width: 500, height: 500, quality: 90 },
-  [STORAGE_BUCKETS.COVER]: { width: 1600, height: 500, quality: 85 },
-  [STORAGE_BUCKETS.CULTURE]: { width: 1280, height: 720, quality: 85 },
+  [STORAGE_BUCKETS.LOGO]: { width: 500, height: 500, quality: 95 },
+  [STORAGE_BUCKETS.COVER]: { width: 1600, height: 500, quality: 90 },
+  [STORAGE_BUCKETS.CULTURE]: { width: 1280, height: 720, quality: 90 },
   [STORAGE_BUCKETS.AVATAR]: { width: 256, height: 256, quality: 90 },
 };
 
 /**
- * Process an image with sharp (resize, crop to cover, convert to webp)
+ * Process an image with sharp.
+ * Logos/avatars keep original format and use contain to preserve full image.
+ * Covers/culture use webp with cover fit.
  */
 async function processImage(
   buffer: Buffer,
@@ -33,12 +42,34 @@ async function processImage(
     return buffer;
   }
 
+  const isLogo = bucket === STORAGE_BUCKETS.LOGO;
+  const isAvatar = bucket === STORAGE_BUCKETS.AVATAR;
+
+  if (isLogo) {
+    return sharp(buffer)
+      .resize(config.width, config.height, {
+        fit: "contain",
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      })
+      .toBuffer();
+  }
+
+  if (isAvatar) {
+    return sharp(buffer)
+      .resize(config.width, config.height, {
+        fit: "contain",
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      })
+      .webp({ quality: config.quality })
+      .toBuffer();
+  }
+
   return sharp(buffer)
     .resize(config.width, config.height, {
       fit: "cover",
       position: "entropy",
     })
-    .sharpen({ sigma: 2 })
+    .sharpen({ sigma: 1.5 })
     .webp({ quality: config.quality })
     .toBuffer();
 }
@@ -74,6 +105,21 @@ const UPLOAD_CONFIG: Record<
  */
 export async function POST(request: NextRequest) {
   try {
+    const userSession = await auth();
+    if (!userSession?.user?.id) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized", code: "UNAUTHORIZED" },
+        { status: 401 }
+      );
+    }
+
+    const rl = await checkRateLimitAsync(`upload:${userSession.user.id}`, UPLOAD_LIMIT);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { success: false, error: "Too many uploads. Please try again later.", code: "RATE_LIMITED" },
+        { status: 429, headers: getRateLimitHeaders(rl) }
+      );
+    }
 
     // Get upload type from query
     const { searchParams } = new URL(request.url);
@@ -112,6 +158,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Enforce request size BEFORE parsing form data (prevents memory exhaustion)
+    const contentLength = parseInt(request.headers.get("content-length") || "0", 10);
+    const maxBucketSize = MAX_FILE_SIZES[config.bucket] || MAX_FILE_SIZES[STORAGE_BUCKETS.CV];
+    if (contentLength > maxBucketSize) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Request too large. Maximum size: ${(maxBucketSize / (1024 * 1024)).toFixed(1)}MB`,
+          code: "REQUEST_TOO_LARGE",
+        },
+        { status: 413 }
+      );
+    }
+
     // Parse form data
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
@@ -124,7 +184,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate file
-    const validation = validateFile(file, config.bucket);
+    const validation = await validateFile(file, config.bucket);
     if (!validation.valid) {
       return NextResponse.json(
         { success: false, error: validation.error, code: "INVALID_FILE" },
@@ -146,14 +206,6 @@ export async function POST(request: NextRequest) {
     // Generate unique file path
     const filePath = generateFilePath(config.bucket, userId, file.name);
 
-    // Check if Supabase is configured
-    if (!supabase) {
-      return NextResponse.json(
-        { success: false, error: "Storage not configured", code: "STORAGE_NOT_CONFIGURED" },
-        { status: 503 }
-      );
-    }
-
     // Convert file to buffer
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
@@ -168,7 +220,7 @@ export async function POST(request: NextRequest) {
       config.bucket === STORAGE_BUCKETS.AVATAR ||
       config.bucket === STORAGE_BUCKETS.CULTURE;
 
-    const { data, error } = await supabase.storage
+    const { data, error } = await supabase!.storage
       .from(config.bucket)
       .upload(filePath, processedBuffer, {
         contentType: isImageBucket ? "image/webp" : file.type,
@@ -176,27 +228,40 @@ export async function POST(request: NextRequest) {
       });
 
     if (error) {
-      console.error("Upload error:", error);
+    logger.error("Upload failed", { error });
       return NextResponse.json(
         { success: false, error: "Failed to upload file", code: "UPLOAD_ERROR" },
         { status: 500 }
       );
     }
 
-    // Get public URL
-    const publicUrl = getPublicUrl(config.bucket, data.path);
+    // Get URL — use signed URL for CV bucket (private), public URL for image buckets
+    let fileUrl: string;
+    if (config.bucket === STORAGE_BUCKETS.CV) {
+      const signedUrl = await getSignedUrl(config.bucket, data.path, 3600);
+      if (!signedUrl) {
+        logger.error("Failed to generate signed URL for private file");
+        return NextResponse.json(
+          { success: false, error: "Failed to generate secure file URL", code: "URL_GENERATION_ERROR" },
+          { status: 500 }
+        );
+      }
+      fileUrl = signedUrl;
+    } else {
+      fileUrl = getPublicUrl(config.bucket, data.path);
+    }
 
     return NextResponse.json({
       success: true,
       message: "File uploaded successfully",
       data: {
-        url: publicUrl,
+        url: fileUrl,
         path: data.path,
         bucket: config.bucket,
       },
     });
   } catch (error) {
-    console.error("Upload error:", error);
+    logger.error("Upload failed", { error });
     return NextResponse.json(
       { success: false, error: "Failed to upload file", code: "INTERNAL_ERROR" },
       { status: 500 }
@@ -220,6 +285,14 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: "Unauthorized", code: "UNAUTHORIZED" },
         { status: 401 }
+      );
+    }
+
+    const rl = await checkRateLimitAsync(`upload-delete:${session.user.id}`, DELETE_LIMIT);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { success: false, error: "Too many requests. Please try again later.", code: "RATE_LIMITED" },
+        { status: 429, headers: getRateLimitHeaders(rl) }
       );
     }
 
@@ -262,7 +335,7 @@ export async function DELETE(request: NextRequest) {
       message: "File deleted successfully",
     });
   } catch (error) {
-    console.error("Delete error:", error);
+    logger.error("Delete failed", { error });
     return NextResponse.json(
       { success: false, error: "Failed to delete file", code: "INTERNAL_ERROR" },
       { status: 500 }

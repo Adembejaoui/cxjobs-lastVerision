@@ -1,6 +1,8 @@
 "use client";
 
-import { useSession } from 'next-auth/react'
+/* eslint-disable @next/next/no-img-element */
+
+import { useUser } from "@/components/auth/user-provider"
 import {
   CheckCircle2,
   ChevronRight,
@@ -10,7 +12,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
-import { useParams } from 'next/navigation'
+import { logger } from "@/lib/logger";
 
 export interface JobBenefit {
   id: string
@@ -35,7 +37,6 @@ export interface Company {
   name: string
   slug: string
   logoUrl: string | null
-  industry: string | null
   location: string | null
   website: string | null
   description: string | null
@@ -53,7 +54,9 @@ export interface JobOffer {
   contractType: string
   isRemote: boolean
   isHybrid: boolean
-  experienceLevel: string | null
+  experienceLevel?: string | null
+  activityType: string | null
+  activityCustom: string | null
   salary: string | null
   salaryMin: number | null
   salaryMax: number | null
@@ -106,6 +109,20 @@ function getLanguageLevelLabel(level: string): string {
   return labels[level] || level
 }
 
+function activityTypeLabel(type: string | null, custom: string | null): string {
+  if (!type) return ''
+  const labels: Record<string, string> = {
+    CUSTOMER_SERVICE: 'Customer Service',
+    SALES_LEAD_GENERATION: 'Sales & Lead Generation',
+    TECHNICAL_IT_SUPPORT: 'Technical & IT Support',
+    DEBT_COLLECTION_LITIGATION: 'Debt Collection & Litigation',
+    BACK_OFFICE_DIGITAL_SERVICES: 'Back-office & Digital Services',
+    SURVEYS_MARKET_RESEARCH: 'Surveys & Market Research',
+    OTHER: custom || 'Other',
+  }
+  return labels[type] || type
+}
+
 function SectionTitle({ title }: { title: string }) {
   return (
     <div>
@@ -124,13 +141,13 @@ interface JobDetailClientProps {
 }
 
 export function JobDetailClient({ job }: JobDetailClientProps) {
-  const params = useParams()
-  const { data: session, status } = useSession()
+  const user = useUser()
   const [isSaved, setIsSaved] = useState(false)
   const [hasApplied, setHasApplied] = useState(false)
   const [checkingApplication, setCheckingApplication] = useState(true)
 
-  const isCandidate = session?.user?.role === 'CANDIDATE'
+  const isCandidate = user?.role === 'CANDIDATE'
+  const isCompany = user?.role === 'COMPANY'
 
   useEffect(() => {
     async function checkApplication() {
@@ -147,8 +164,8 @@ export function JobDetailClient({ job }: JobDetailClientProps) {
         if (data.success && data.data && data.data.length > 0) {
           setHasApplied(true)
         }
-      } catch (err) {
-        console.error('Error checking application status:', err)
+      } catch {
+        logger.error("Error checking application status");
       } finally {
         setCheckingApplication(false)
       }
@@ -156,6 +173,20 @@ export function JobDetailClient({ job }: JobDetailClientProps) {
 
     checkApplication()
   }, [isCandidate, job?.id])
+
+  useEffect(() => {
+    async function incrementViews() {
+      try {
+        const seenKey = `job-viewed:${job.slug}`
+        if (sessionStorage.getItem(seenKey)) return
+        sessionStorage.setItem(seenKey, '1')
+        await fetch(`/api/job-offers/${job.slug}/views`, { method: 'POST' })
+      } catch {
+        // Silent fail — views are non-critical
+      }
+    }
+    incrementViews()
+  }, [job.slug])
 
   const postedDate = job.publishedAt
     ? new Date(job.publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -184,12 +215,12 @@ export function JobDetailClient({ job }: JobDetailClientProps) {
         <section className="rounded-[28px] border border-[#dfe6ee] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
           <div className="flex flex-col gap-6 border-b border-[#e5ebf1] p-5 md:p-7 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex gap-4 md:gap-5">
-              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[18px] bg-linear-to-br from-[#162f67] to-[#1e4d9c] text-[10px] font-semibold tracking-[0.18em] text-white shadow-sm md:h-[72px] md:w-[72px] overflow-hidden">
+              <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-[18px] bg-linear-to-br from-[#162f67] to-[#1e4d9c] text-[10px] font-semibold tracking-[0.18em] text-white shadow-sm md:h-[88px] md:w-[88px] overflow-hidden">
                 {job.company.logoUrl ? (
                   <img
                     src={job.company.logoUrl}
                     alt={job.company.name}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-contain p-2"
                   />
                 ) : (
                   <span className="text-2xl font-bold text-white">{job.company.name.charAt(0)}</span>
@@ -235,7 +266,8 @@ export function JobDetailClient({ job }: JobDetailClientProps) {
                   <CheckCircle2 className="h-5 w-5 mr-2" />
                   Already Applied
                 </button>
-              ) : isCandidate && job.applicationType === "EXTERNAL" ? (
+              ) : isCompany ? null
+                : isCandidate && job.applicationType === "EXTERNAL" ? (
                 <a
                   href={job.externalApplyUrl || "#"}
                   target="_blank"
@@ -378,6 +410,18 @@ export function JobDetailClient({ job }: JobDetailClientProps) {
                       )}
                     </div>
                   </div>
+
+                  <div className="flex gap-4">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-linear-to-br from-[#162f67] to-[#1e4d9c] text-white shadow-[0_6px_12px_rgba(23,50,107,0.18)]">
+                      ◈
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#9aa5b6]">
+                        Activity Type
+                      </p>
+                      <p className="mt-1 text-[18px] font-semibold text-[#111b35]">{activityTypeLabel(job.activityType, job.activityCustom)}</p>
+                    </div>
+                  </div>
                 </div>
 
                 {(job.benefits.length > 0 || job.company.benefits.length > 0) && (
@@ -417,7 +461,8 @@ export function JobDetailClient({ job }: JobDetailClientProps) {
                       <CheckCircle2 className="h-5 w-5 mr-2" />
                       Already Applied
                     </button>
-                  ) : isCandidate && job.applicationType === "EXTERNAL" ? (
+                  ) : isCompany ? null
+                    : isCandidate && job.applicationType === "EXTERNAL" ? (
                     <a
                       href={job.externalApplyUrl || "#"}
                       target="_blank"
@@ -454,7 +499,8 @@ export function JobDetailClient({ job }: JobDetailClientProps) {
                       <CheckCircle2 className="h-5 w-5 mr-2" />
                       Already Applied
                     </button>
-                  ) : isCandidate && job.applicationType === "EXTERNAL" ? (
+                  ) : isCompany ? null
+                    : isCandidate && job.applicationType === "EXTERNAL" ? (
                     <a
                       href={job.externalApplyUrl || "#"}
                       target="_blank"
@@ -483,7 +529,7 @@ export function JobDetailClient({ job }: JobDetailClientProps) {
               <aside className="rounded-3xl border border-[#dfe6ee] bg-white p-6 shadow-[0_1px_2px_rgba(15,23,42,0.03)] md:p-7">
                 <h2 className="text-[20px] font-semibold text-[#111b35]">About the Company</h2>
                 <p className="mt-5 text-[15px] leading-8 text-[#4d5a72]">
-                  {job.company.description || `${job.company.name} is a company in the ${job.company.industry || 'technology'} industry.`}
+                  {job.company.description || `${job.company.name} is a company dedicated to delivering exceptional solutions.`}
                 </p>
 
                 <div className="my-7 h-px bg-[#e6ecf2]" />

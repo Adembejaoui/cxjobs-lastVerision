@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import  prisma  from "@/lib/prisma";
-import { updateApplicationSchema, toggleSavedSchema } from "@/lib/validations/job";
+import { updateApplicationSchema } from "@/lib/validations/job";
+import { logger } from "@/lib/logger";
 // GET /api/application/[id] - Get single application
 export async function GET(
   request: NextRequest,
@@ -78,7 +79,7 @@ export async function GET(
         where: { userId: session.user.id },
       });
 
-      if (!company || (application as any).jobOffer?.companyId !== company.id) {
+      if (!company || application.jobOffer?.companyId !== company.id) {
         return NextResponse.json(
           { success: false, error: "Access denied", code: "FORBIDDEN" },
           { status: 403 }
@@ -91,7 +92,7 @@ export async function GET(
       data: application,
     });
   } catch (error) {
-    console.error("Get application error:", error);
+    logger.error("Failed to fetch application", { error });
     return NextResponse.json(
       { success: false, error: "Failed to fetch application", code: "INTERNAL_ERROR" },
       { status: 500 }
@@ -206,7 +207,7 @@ export async function PUT(
       data: updatedApplication,
     });
   } catch (error) {
-    console.error("Update application error:", error);
+    logger.error("Failed to update application", { error });
     return NextResponse.json(
       { success: false, error: "Failed to update application", code: "INTERNAL_ERROR" },
       { status: 500 }

@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import  prisma  from "@/lib/prisma";
+import { logger } from "@/lib/logger";
 
 // POST /api/onboarding - Complete user onboarding
-export async function POST(request: NextRequest) {
+export async function POST(_request: NextRequest) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _ = _request;
   try {
     const session = await auth();
 
@@ -70,7 +73,7 @@ export async function POST(request: NextRequest) {
       data: updatedUser,
     });
   } catch (error) {
-    console.error("Onboarding error:", error);
+    logger.error("Onboarding error", { error });
     return NextResponse.json(
       { success: false, error: "Failed to complete onboarding", code: "INTERNAL_ERROR" },
       { status: 500 }

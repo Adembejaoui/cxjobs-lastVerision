@@ -1,68 +1,37 @@
-interface CacheEntry {
-  value: string;
-  expiresAt: number;
-}
+import { Redis } from "@upstash/redis";
 
-class InMemoryCache {
-  private store = new Map<string, CacheEntry>();
-  private timers = new Map<string, NodeJS.Timeout>();
+const globalForRedis = global as unknown as {
+  redis: Redis | null;
+};
 
-  get(key: string): string | null {
-    const entry = this.store.get(key);
-    if (!entry) return null;
-    if (Date.now() > entry.expiresAt) {
-      this.store.delete(key);
-      return null;
-    }
-    return entry.value;
+function createRedisClient(): Redis | null {
+  const upstashUrl = process.env.UPSTASH_REDIS_REST_URL;
+  const upstashToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  if (upstashUrl && upstashToken) {
+    return new Redis({
+      url: upstashUrl,
+      token: upstashToken,
+    });
   }
 
-  setex(key: string, ttlSeconds: number, value: string): void {
-    const expiresAt = Date.now() + ttlSeconds * 1000;
-    this.store.set(key, { value, expiresAt });
-
-    if (this.timers.has(key)) {
-      clearTimeout(this.timers.get(key)!);
-    }
-
-    const timer = setTimeout(() => {
-      this.store.delete(key);
-      this.timers.delete(key);
-    }, ttlSeconds * 1000);
-
-    this.timers.set(key, timer);
+  if (process.env.NODE_ENV !== "production") {
+    return null;
   }
 
-  del(key: string): void {
-    this.store.delete(key);
-    if (this.timers.has(key)) {
-      clearTimeout(this.timers.get(key)!);
-      this.timers.delete(key);
-    }
-  }
+  throw new Error(
+    "Redis is not configured. Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN environment variables."
+  );
 }
 
-const globalCache = globalThis as unknown as { __cxCache?: InMemoryCache };
+export const redis = globalForRedis.redis ?? createRedisClient();
 
-export function getCache(): InMemoryCache {
-  if (!globalCache.__cxCache) {
-    globalCache.__cxCache = new InMemoryCache();
-  }
-  return globalCache.__cxCache;
+if (process.env.NODE_ENV !== "production" && redis !== null) {
+  globalForRedis.redis = redis;
 }
 
-export async function getCachedDashboardStats(key: string): Promise<string | null> {
-  return getCache().get(key);
+export function isRedisConfigured(): boolean {
+  return !!redis;
 }
 
-export async function setCachedDashboardStats(
-  key: string,
-  value: string,
-  ttlSeconds: number
-): Promise<void> {
-  getCache().setex(key, ttlSeconds, value);
-}
-
-export async function invalidateCache(key: string): Promise<void> {
-  getCache().del(key);
-}
+export default redis;

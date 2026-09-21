@@ -22,9 +22,7 @@ export default async function DashboardLayout({
       select: { isOnboarded: true, role: true },
     });
 
-    if (freshUser?.isOnboarded) {
-      session.user.isOnboarded = true;
-    } else {
+    if (!freshUser?.isOnboarded) {
       if (freshUser?.role === "CANDIDATE") {
         redirect("/onboarding/candidate");
       } else if (freshUser?.role === "COMPANY") {

@@ -1,9 +1,11 @@
 "use client"
 
+/* eslint-disable @next/next/no-img-element */
+
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Briefcase, Menu, X, User, LogOut, Settings, BriefcaseIcon, LayoutDashboard } from "lucide-react"
+import { Briefcase, Menu, X, User, LogOut, Settings, LayoutDashboard } from "lucide-react"
 import { useState } from "react"
 import { useSession, signOut } from "next-auth/react"
 import { 
@@ -23,8 +25,7 @@ const navigation = [
 export function Header() {
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const { data: session, status } = useSession()
-  const isLoading = status === "loading"
+  const { data: session} = useSession()
   const user = session?.user
 
   // Determine dashboard link based on user role

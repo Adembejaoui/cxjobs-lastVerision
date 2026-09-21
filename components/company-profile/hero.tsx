@@ -4,12 +4,13 @@ import React from 'react'
 import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 
+/* eslint-disable @next/next/no-img-element */
+
 interface CompanyData {
   name: string
   logoUrl?: string | null
   location?: string | null
   companySize?: string | null
-  industry?: string | null
 }
 
 interface HeroProps {
@@ -18,20 +19,7 @@ interface HeroProps {
 
 export function Hero({ company }: HeroProps) {
   const getCompanySizeDisplay = (size: string | null | undefined): string => {
-    switch (size) {
-      case 'STARTUP':
-        return '1-10 employees'
-      case 'SMALL':
-        return '11-50 employees'
-      case 'MEDIUM':
-        return '51-200 employees'
-      case 'LARGE':
-        return '201-1000 employees'
-      case 'ENTERPRISE':
-        return '1000+ employees'
-      default:
-        return '50+ employees'
-    }
+    return size ? `${size} employees` : 'Size not set';
   }
 
   return (
@@ -53,15 +41,15 @@ export function Hero({ company }: HeroProps) {
       <div className="relative z-10 max-w-7xl mx-auto px-4 h-full flex items-center">
         <div className="flex items-end gap-6 w-full">
           {/* Company Logo */}
-          <div className="w-24 h-24 bg-primary text-primary-foreground rounded-2xl flex items-center justify-center flex-shrink-0 shadow-lg border-4 border-background">
+          <div className="w-40 h-36 bg-white border border-border rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm overflow-hidden">
             {company.logoUrl ? (
               <img 
                 src={company.logoUrl} 
                 alt={company.name}
-                className="w-full h-full object-cover rounded-lg"
+                className="w-full h-full object-contain p-2"
               />
             ) : (
-              <span className="text-sm font-bold text-center px-2">
+              <span className="text-sm font-bold text-center px-2 text-muted-foreground">
                 {company.name.substring(0, 2).toUpperCase()}
               </span>
             )}
@@ -80,14 +68,6 @@ export function Hero({ company }: HeroProps) {
               <div className="flex items-center gap-2 text-foreground">
                 <span className="text-lg">👥</span>
                 <span>{getCompanySizeDisplay(company.companySize)}</span>
-              </div>
-              <div className="flex items-center gap-2 text-foreground">
-                <span className="text-lg">⭐</span>
-                <span>Rated 4.5</span>
-              </div>
-              <div className="flex items-center gap-2 text-foreground">
-                <span className="text-lg">🏢</span>
-                <span>{company.industry || 'Technology'}</span>
               </div>
             </div>
           </div>

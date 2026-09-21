@@ -1,11 +1,13 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent,} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { MapPin, Users, Calendar, Eye } from "lucide-react";
 import Link from "next/link";
 import { CompanyProfileForm } from "@/components/dashboard/company-profile-form";
+
+/* eslint-disable @next/next/no-img-element */
 
 export default async function CompanyProfilePage() {
   const session = await auth();
@@ -73,23 +75,22 @@ export default async function CompanyProfilePage() {
         <CardContent className="p-6">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
             {/* Logo */}
-            <div className="flex h-20 w-20 items-center justify-center rounded-lg bg-[#071738] text-2xl font-bold text-white overflow-hidden">
+            <div className="flex h-28 w-28 items-center justify-center rounded-lg bg-white border border-slate-200 overflow-hidden">
               {company.logoUrl ? (
                 <img 
                   src={company.logoUrl} 
                   alt={company.name}
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-contain p-2"
                 />
               ) : (
                 company.name.charAt(0).toUpperCase()
               )}
             </div>
             
-            {/* Company Info */}
-            <div className="flex-1">
-              <h2 className="text-xl font-semibold text-slate-900">{company.name}</h2>
-              <p className="text-sm text-slate-500">{company.industry || "Industry not set"}</p>
-              <div className="mt-2 flex flex-wrap gap-4 text-sm text-slate-600">
+             {/* Company Info */}
+             <div className="flex-1">
+               <h2 className="text-xl font-semibold text-slate-900">{company.name}</h2>
+               <div className="mt-2 flex flex-wrap gap-4 text-sm text-slate-600">
                 {company.location && (
                   <span className="flex items-center gap-1">
                     <MapPin className="h-4 w-4" />
@@ -133,18 +134,5 @@ export default async function CompanyProfilePage() {
 }
 
 function getCompanySizeDisplay(size: string | null): string {
-  switch (size) {
-    case 'STARTUP':
-      return '1-10 employees';
-    case 'SMALL':
-      return '11-50 employees';
-    case 'MEDIUM':
-      return '51-200 employees';
-    case 'LARGE':
-      return '201-1000 employees';
-    case 'ENTERPRISE':
-      return '1000+ employees';
-    default:
-      return 'Size not set';
-  }
+  return size || 'Size not set';
 }

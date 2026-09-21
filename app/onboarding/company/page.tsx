@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { useUser } from "@/components/auth/user-provider";
 
 export default function CompanyOnboardingPage() {
   const router = useRouter();
-  const { data: session, status } = useSession();
+  const user = useUser();
+  const isOnboarded = user?.isOnboarded ?? false;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,23 +23,13 @@ export default function CompanyOnboardingPage() {
   });
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/login");
-    } else if (status === "authenticated") {
-      // Check if already onboarded
-      fetch("/api/profile")
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.success && data.data.company && data.data.isOnboarded) {
-            // Already completed onboarding, redirect to dashboard
-            router.push("/dashboard");
-          } else {
-            setLoading(false);
-          }
-        })
-        .catch(() => setLoading(false));
+    // Check if already onboarded (layout handles auth redirect)
+    if (isOnboarded) {
+      router.push("/dashboard");
+    } else {
+      setLoading(false);
     }
-  }, [status, router]);
+  }, [isOnboarded, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

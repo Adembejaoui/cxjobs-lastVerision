@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
+
 import { useState, useRef } from "react";
 import { Upload, X, Loader2, Image as ImageIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -64,8 +66,8 @@ export function ImageUpload({
       const uploadedUrl = data.data.url;
       setPreview(uploadedUrl);
       onChange(uploadedUrl);
-    } catch (err: any) {
-      setError(err.message || "Failed to upload image");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to upload image");
     } finally {
       setIsUploading(false);
       // Reset file input

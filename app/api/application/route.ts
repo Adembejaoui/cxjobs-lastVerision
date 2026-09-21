@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import  prisma  from "@/lib/prisma";
+import prisma from "@/lib/prisma";
 import { createApplicationSchema } from "@/lib/validations/job";
 import { parsePaginationParams } from "@/lib/utils";
+import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
+import { logger } from "@/lib/logger";
+
+const APPLICATION_LIMIT = { windowMs: 60_000, max: 10 };
 
 // GET /api/application - List applications (role-filtered)
 export async function GET(request: NextRequest) {
@@ -114,6 +118,7 @@ export async function GET(request: NextRequest) {
                 title: true,
                 customLocation: true,
                 contractType: true,
+                employmentType: true,
               },
             },
             candidate: {
@@ -154,7 +159,7 @@ export async function GET(request: NextRequest) {
       );
     }
   } catch (error) {
-    console.error("Get applications error:", error);
+    logger.error("Get applications error", { error });
     return NextResponse.json(
       { success: false, error: "Failed to fetch applications", code: "INTERNAL_ERROR" },
       { status: 500 }
@@ -165,6 +170,15 @@ export async function GET(request: NextRequest) {
 // POST /api/application - Submit application (candidate only)
 export async function POST(request: NextRequest) {
   try {
+    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    const rl = await checkRateLimitAsync(`application:${ip}`, APPLICATION_LIMIT);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { success: false, error: "Too many requests. Please try again later.", code: "RATE_LIMITED" },
+        { status: 429, headers: getRateLimitHeaders(rl) }
+      );
+    }
+
     const session = await auth();
 
     if (!session?.user?.id) {
@@ -238,37 +252,68 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const application = await prisma.application.create({
-      data: {
-        candidateId: candidate.id,
-        jobOfferId,
-        coverLetter: coverLetter || "",
-        cvUrl: candidate.resumeUrl,
-        status: "NOUVEAU",
-      },
-      include: {
-        jobOffer: {
-          select: {
-            id: true,
-            title: true,
-            company: {
+    // Submit atomically inside a transaction to prevent race conditions.
+    // The unique constraint on [candidateId, jobOfferId] is the final guard;
+    // P2002 is handled as an idempotent duplicate response.
+    let application: Awaited<ReturnType<typeof prisma.application.create>>;
+    try {
+      application = await prisma.$transaction(async (tx) => {
+        // Re-validate job availability inside the transaction
+        const job = await tx.jobOffer.findUnique({
+          where: { id: jobOfferId },
+        });
+        if (!job || job.deletedAt || job.status !== "PUBLISHED") {
+          throw new Error("JOB_NOT_AVAILABLE");
+        }
+
+        return tx.application.create({
+          data: {
+            candidateId: candidate.id,
+            jobOfferId,
+            coverLetter: coverLetter || "",
+            cvUrl: candidate.resumeUrl,
+            status: "NOUVEAU",
+          },
+          include: {
+            jobOffer: {
               select: {
                 id: true,
-                name: true,
-                userId: true,
+                title: true,
+                company: {
+                  select: {
+                    id: true,
+                    name: true,
+                    userId: true,
+                  },
+                },
               },
             },
           },
-        },
-      },
-    });
+        });
+      });
+    } catch (e: unknown) {
+      const err = e as { code?: string; message?: string };
+      if (err.code === "P2002") {
+        return NextResponse.json(
+          { success: false, error: "You have already applied to this job", code: "DUPLICATE_APPLICATION" },
+          { status: 400 }
+        );
+      }
+      if (err.message === "JOB_NOT_AVAILABLE") {
+        return NextResponse.json(
+          { success: false, error: "Job offer not found or no longer available", code: "NOT_FOUND" },
+          { status: 404 }
+        );
+      }
+      throw e;
+    }
 
     // Send notification to company
     try {
-     
+    
     } catch (notificationError) {
       // Log but don't fail the request
-      console.error("Failed to send notification:", notificationError);
+      logger.warn("Failed to send notification", { error: notificationError });
     }
 
     return NextResponse.json(
@@ -280,7 +325,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    console.error("Create application error:", error);
+     logger.error("Create application error", { error });
     return NextResponse.json(
       { success: false, error: "Failed to submit application", code: "INTERNAL_ERROR" },
       { status: 500 }

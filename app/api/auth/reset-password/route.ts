@@ -1,11 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import  prisma  from "@/lib/prisma";
+import prisma from "@/lib/prisma";
 import { resetPasswordSchema } from "@/lib/validations/auth";
+import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
+import { logger } from "@/lib/logger";
+
+const RESETPW_LIMIT = { windowMs: 60_000, max: 5 };
 
 export async function POST(request: NextRequest) {
   try {
 
+    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    const rl = await checkRateLimitAsync(`reset-pw:${ip}`, RESETPW_LIMIT);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { success: false, error: "Too many requests. Please try again later.", code: "RATE_LIMITED" },
+        { status: 429, headers: getRateLimitHeaders(rl) }
+      );
+    }
 
     const body = await request.json();
 
@@ -89,7 +101,7 @@ export async function POST(request: NextRequest) {
       message: "Password has been reset successfully",
     });
   } catch (error) {
-    console.error("Reset password error:", error);
+    logger.error("Reset password error", { error });
     return NextResponse.json(
       {
         success: false,

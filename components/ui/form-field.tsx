@@ -16,7 +16,7 @@ interface FormFieldWrapperProps {
 }
 
 export const FormFieldWrapper = React.forwardRef<HTMLDivElement, FormFieldWrapperProps>(
-  ({ fieldName, label, required, fieldErrors, children, className, descriptionId }, ref) => {
+  ({ fieldName, label, required, fieldErrors, children, className}, ref) => {
     const error = getFieldError(fieldErrors, fieldName);
     const hasError = hasFieldError(fieldErrors, fieldName);
 

@@ -36,11 +36,11 @@ export default function MissionSection() {
               Our journey began with a simple observation: the recruitment process in the BPO industry was fragmented. Talent was struggling to find the right environment, and high-growth BPOs were losing speed due to hiring inefficiencies.
             </p>
             <p>
-              We built CX Jobs to create a seamless, human-centric connection. We don't just post jobs; we facilitate careers and fuel the growth of global service providers through technology-driven matching.
+              We built CX Jobs to create a seamless, human-centric connection. We don&apos;t just post jobs; we facilitate careers and fuel the growth of global service providers through technology-driven matching.
             </p>
           </div>
           <div className="mt-8 text-sm italic text-[#334867] md:text-base">
-            <span className="font-semibold">"Excellence in every connection."</span>
+            <span className="font-semibold">&ldquo;Excellence in every connection.&rdquo;</span>
             <br />— Founding Principles
           </div>
         </div>

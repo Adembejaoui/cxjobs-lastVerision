@@ -18,13 +18,13 @@ export function JobPostFlow({
 
   const [phase, setPhase] = useState<Phase>("closed");
   const [scrapedData, setScrapedData] = useState<ScrapedJobData | null>(null);
-  const formKeyRef = useRef(0);
+  const [formKey, setFormKey] = useState(0);
   const isTransitioningRef = useRef(false);
 
   const closeAll = useCallback(() => {
     setScrapedData(null);
     setPhase("closed");
-    formKeyRef.current += 1;
+    setFormKey((k) => k + 1);
   }, []);
 
   const openManual = useCallback(() => {
@@ -90,10 +90,10 @@ export function JobPostFlow({
       />
 
       <JobFormDialog
-        key={`job-form-${formKeyRef.current}`}
+        key={`job-form-${formKey}`}
         open={phase === "form"}
         onOpenChange={onFormClose}
-        job={scrapedData ? scrapedData as any : undefined}
+        job={scrapedData ? (scrapedData as Parameters<typeof JobFormDialog>[0]["job"]) : undefined}
         onSuccess={onFormSuccess}
       />
     </>

@@ -42,7 +42,7 @@ export default function LoginForm() {
 
       router.push('/dashboard');
       router.refresh();
-    } catch (err) {
+    } catch {
       setError('Invalid email or password. Please try again.');
     } finally {
       setLoading(false);
@@ -62,7 +62,7 @@ export default function LoginForm() {
         <p className="text-slate-600">
           Enter your details to access your account.{' '}
           <span className="text-slate-700">
-            Don't have an account?{' '}
+            Don&apos;t have an account?{' '}
             <Link href="/register" className="font-semibold text-indigo-900 hover:underline">
               Sign Up
             </Link>
@@ -187,7 +187,7 @@ export default function LoginForm() {
       {/* Help Link */}
       <div className="text-center mt-6">
         <Link href="/register" className="text-teal-500 hover:underline text-sm font-medium">
-          don't have an account? Sign up
+          don&apos;t have an account? Sign up
         </Link>
       </div>
     </div>

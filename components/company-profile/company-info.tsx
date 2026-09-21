@@ -2,16 +2,15 @@ import React from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Heart, Share2, Star } from 'lucide-react'
+import { Heart, MapPin, Calendar, Users } from 'lucide-react'
+
+/* eslint-disable @next/next/no-img-element */
 
 interface CompanyInfoProps {
   name: string
   logoUrl?: string | null
   location?: string | null
   companySize?: string | null
-  industry?: string | null
-  rating?: number
-  reviewCount?: number
   foundedYear?: number | null
   showActions?: boolean
 }
@@ -21,27 +20,13 @@ export function CompanyInfo({
   logoUrl, 
   location, 
   companySize, 
-  industry, 
-  rating = 4.5,
-  reviewCount = 125,
+
+
   foundedYear,
   showActions = true 
 }: CompanyInfoProps) {
   const getCompanySizeDisplay = (size: string | null | undefined): string => {
-    switch (size) {
-      case 'STARTUP':
-        return '1-10'
-      case 'SMALL':
-        return '11-50'
-      case 'MEDIUM':
-        return '51-200'
-      case 'LARGE':
-        return '201-1000'
-      case 'ENTERPRISE':
-        return '1000+'
-      default:
-        return '50+'
-    }
+    return size || '50+';
   }
 
   return (
@@ -49,15 +34,15 @@ export function CompanyInfo({
       <div className="flex flex-col md:flex-row gap-6 items-start md:items-center justify-between">
         <div className="flex gap-6 items-start flex-1">
           {/* Company Logo - Larger size */}
-          <div className="w-24 h-24 md:w-32 md:h-32 bg-black text-primary-foreground rounded-2xl flex items-center justify-center shrink-0 shadow-lg border-4 border-background">
+          <div className="w-28 h-28 md:w-36 md:h-36 bg-white border border-border rounded-2xl flex items-center justify-center shrink-0 shadow-sm overflow-hidden">
             {logoUrl ? (
               <img 
                 src={logoUrl} 
                 alt={name}
-                className="w-full h-full object-cover rounded-xl"
+                className="w-full h-full object-contain p-2"
               />
             ) : (
-              <span className="text-2xl md:text-4xl font-bold text-center">
+              <span className="text-2xl md:text-4xl font-bold text-center text-muted-foreground">
                 {name.substring(0, 2).toUpperCase()}
               </span>
             )}
@@ -68,20 +53,22 @@ export function CompanyInfo({
             <h1 className="text-2xl md:text-3xl font-bold text-foreground mb-1">
               {name}
             </h1>
-            <p className="text-muted-foreground text-lg mb-3">
-              {industry || 'Technology Company'}
-            </p>
             <div className="flex flex-wrap gap-3 items-center">
-              <div className="flex items-center gap-2">
-                <Star className="h-5 w-5 fill-yellow-500 text-yellow-500" />
-                <span className="font-semibold text-foreground">{rating}</span>
-                <span className="text-muted-foreground text-sm">({reviewCount} reviews)</span>
-              </div>
+              {location && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <MapPin className="h-4 w-4" />
+                  <span>{location}</span>
+                </div>
+              )}
+              
               <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
+              <Users className="h-4 w-4 text-muted-foreground mr-1" />
                 {getCompanySizeDisplay(companySize)} employees
               </Badge>
               {foundedYear && (
-                <Badge variant="secondary" className="bg-secondary/10 text-secondary border-secondary/20">
+                
+                <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
+                  <Calendar className="h-4 w-4 text-muted-foreground mr-1" />
                   Founded {foundedYear}
                 </Badge>
               )}
@@ -95,9 +82,7 @@ export function CompanyInfo({
             <Button variant="outline" size="icon" className="hover:bg-primary/10">
               <Heart className="h-5 w-5" />
             </Button>
-            <Button variant="outline" size="icon" className="hover:bg-primary/10">
-              <Share2 className="h-5 w-5" />
-            </Button>
+        
             <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
               Follow Company
             </Button>

@@ -30,7 +30,7 @@ export function FeaturedEmployer() {
         </div>
         
         <p className="mb-4 text-sm leading-relaxed text-blue-100">
-          We're hiring <span className="text-teal-400 font-bold">200+ agents</span> this month! 
+          We&apos;re hiring <span className="text-teal-400 font-bold">200+ agents</span> this month! 
           Join our team and work with world-class brands.
         </p>
         

@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
+
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,7 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { 
-  User, MapPin, Phone, Linkedin,
+  User, MapPin, Phone, Linkedin, Calendar,
   Save, Loader2, Plus, Trash2, Briefcase, GraduationCap, Languages,
   Settings, Upload,Eye
 } from "lucide-react";
@@ -73,6 +75,8 @@ interface Candidate {
   preferredJobTypes: string[];
   workMode: string | null;
   shiftType: string | null;
+  dateOfBirth: string | null;
+  gender: string | null;
   user?: {
     email: string | null;
   };
@@ -111,6 +115,12 @@ const SHIFT_TYPES = [
   { value: "NIGHT", label: "Night Shift" },
   { value: "FLEXIBLE", label: "Flexible" },
   { value: "ROTATION", label: "Rotation" },
+];
+
+const GENDER_OPTIONS = [
+  { value: "male", label: "male" },
+  { value: "female", label: "female" },
+  { value: "Prefer not to say", label: "Prefer not to say" },
 ];
 
 const TUNISIA_GOVERNORATES = [
@@ -157,9 +167,9 @@ const validateSummary = (summary: string): string | null => {
 const JOB_TYPES = [
   { value: "FULL_TIME", label: "Full-time" },
   { value: "PART_TIME", label: "Part-time" },
-  { value: "CDI", label: "CDI (Permanent)" },
-  { value: "CDD", label: "CDD (Contract)" },
-  { value: "INTERNSHIP", label: "Internship" },
+  { value: "CDI", label: "CDI" },
+  { value: "CIVP", label: "CIVP" },
+  { value: "KARAMA", label: "Karama" },
   { value: "FREELANCE", label: "Freelance" },
 ];
 
@@ -177,7 +187,7 @@ export function CandidateProfileForm({ candidate }: CandidateProfileFormProps) {
     if (tab && tab !== activeTab) {
       setActiveTab(tab);
     }
-  }, [searchParams]);
+  }, [searchParams, activeTab]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -213,12 +223,14 @@ const fileInputRef = useRef<HTMLInputElement>(null);
     phone: candidate.phone ?? "",
     linkedinUrl: candidate.linkedinUrl ?? "",
     avatarUrl: candidate.avatarUrl ?? "",
-    targetJobRole: candidate.targetJobRole ?? "",
+    targetJobRole: candidate.targetJobRole ?? null,
+    dateOfBirth: candidate.dateOfBirth ? new Date(candidate.dateOfBirth).toISOString().slice(0, 10) : "",
+    gender: candidate.gender ?? null,
   });
 
   const [preferencesData, setPreferencesData] = useState({
-    workMode: candidate.workMode ?? "",
-    shiftType: candidate.shiftType ?? "",
+    workMode: candidate.workMode ?? null,
+    shiftType: candidate.shiftType ?? null,
     preferredJobTypes: candidate.preferredJobTypes ?? [],
   });
 
@@ -303,7 +315,7 @@ const fileInputRef = useRef<HTMLInputElement>(null);
     setShowLocationDropdown(value.length > 0);
   };
 
-  const handlePreferencesChange = (name: string, value: any) => {
+  const handlePreferencesChange = (name: string, value: string) => {
     setPreferencesData(prev => ({ ...prev, [name]: value }));
   };
 
@@ -332,7 +344,7 @@ const fileInputRef = useRef<HTMLInputElement>(null);
     setExperiences(prev => prev.filter((_, i) => i !== index));
   };
 
-  const updateExperience = (index: number, field: keyof Experience, value: any) => {
+  const updateExperience = (index: number, field: keyof Experience, value: string | boolean) => {
     setExperiences(prev => prev.map((exp, i) => 
       i === index ? { ...exp, [field]: value } : exp
     ));
@@ -354,7 +366,7 @@ const fileInputRef = useRef<HTMLInputElement>(null);
     setEducation(prev => prev.filter((_, i) => i !== index));
   };
 
-  const updateEducation = (index: number, field: keyof Education, value: any) => {
+  const updateEducation = (index: number, field: keyof Education, value: string) => {
     setEducation(prev => prev.map((edu, i) => 
       i === index ? { ...edu, [field]: value } : edu
     ));
@@ -408,7 +420,7 @@ const fileInputRef = useRef<HTMLInputElement>(null);
       } else {
         setError(data.error || "Failed to upload avatar");
       }
-    } catch (error) {
+    } catch {
       setError("Failed to upload avatar");
     } finally {
       setIsUploading(false);
@@ -461,8 +473,8 @@ const fileInputRef = useRef<HTMLInputElement>(null);
 
       setSuccess("CV uploaded successfully!");
       router.refresh();
-    } catch (err: any) {
-      setError(err.message || "Failed to upload CV");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to upload CV");
     } finally {
       setIsUploading(false);
     }
@@ -529,8 +541,8 @@ const fileInputRef = useRef<HTMLInputElement>(null);
 
       setSuccess("Profile updated successfully!");
       router.refresh();
-    } catch (err: any) {
-      setError(err.message || "Failed to update profile");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to update profile");
     } finally {
       setIsSaving(false);
     }
@@ -678,7 +690,27 @@ const fileInputRef = useRef<HTMLInputElement>(null);
               </div>
 
               <div className="grid gap-6 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="dateOfBirth">
+                    <Calendar className="w-4 h-4 inline mr-1" />
+                    Date of Birth
+                  </Label>
+                  <Input id="dateOfBirth" name="dateOfBirth" type="date" value={personalData.dateOfBirth} onChange={handlePersonalChange} />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="gender">Gender</Label>
+                  <Select value={personalData.gender || undefined} onValueChange={(value) => setPersonalData(prev => ({ ...prev, gender: value }))}>
+                    <SelectTrigger id="gender">
+                      <SelectValue placeholder="Select gender" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {GENDER_OPTIONS.map((g) => (
+                        <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
 
               {/* CV Upload */}
               <div className="space-y-2">

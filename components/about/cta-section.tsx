@@ -7,7 +7,7 @@ export default function CTASection() {
           Ready to join the next generation of CX?
         </h2>
         <p className="mx-auto mt-6 max-w-2xl text-sm leading-7 text-white/80 md:text-base">
-          Whether you're a high-potential agent or a global BPO partner, we're here to help you grow.
+          Whether you&apos;re a high-potential agent or a global BPO partner, we&apos;re here to help you grow.
         </p>
         <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
           <button className="rounded-xl bg-[#47ca8b] px-8 py-4 text-sm font-extrabold text-[#153864] shadow-[0_10px_24px_rgba(71,202,139,0.28)] md:px-10 md:text-base">

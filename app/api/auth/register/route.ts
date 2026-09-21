@@ -1,11 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import  prisma  from "@/lib/prisma";
+import prisma from "@/lib/prisma";
 import { registerSchema } from "@/lib/validations/auth";
-import crypto from "crypto";
+import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
+import { getClientIp } from "@/lib/utils";
+import { logger } from "@/lib/logger";
+
+const REGISTER_LIMIT = { windowMs: 60_000, max: 5 };
 
 export async function POST(request: NextRequest) {
   try {
+
+    const ip = getClientIp(request);
+    const rl = await checkRateLimitAsync(`register:${ip}`, REGISTER_LIMIT);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { success: false, error: "Too many requests. Please try again later.", code: "RATE_LIMITED" },
+        { status: 429, headers: getRateLimitHeaders(rl) }
+      );
+    }
 
     const body = await request.json();
 
@@ -22,7 +35,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { email, password, name, role } = validationResult.data;
+    const { email, password, name } = validationResult.data;
 
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
@@ -49,7 +62,7 @@ export async function POST(request: NextRequest) {
         email,
         passwordHash,
         name,
-        role,
+        role: "CANDIDATE",
         isOnboarded: false,
       },
       select: {
@@ -61,28 +74,6 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Send verification email
-    try {
-      const token = crypto.randomBytes(32).toString("hex");
-      const expires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-
-      await prisma.emailVerificationToken.create({
-        data: {
-          email,
-          token,
-          userId: user.id,
-          expires,
-        },
-      });
-
-      const verifyUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/verify-email?token=${token}`;
-    } catch (verificationError) {
-      console.error("Failed to create verification token:", verificationError);
-    }
-
-    // Send welcome notification (but not until email is verified - optional)
-    
-
     return NextResponse.json(
       {
         success: true,
@@ -92,7 +83,7 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     );
   } catch (error) {
-    console.error("Registration error:", error);
+    logger.error("Registration error", { error });
     return NextResponse.json(
       {
         success: false,

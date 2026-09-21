@@ -34,7 +34,7 @@ export const JOB_ROLE_CONFIG: Record<string, JobRoleConfig> = {
     recommendedLanguages: ["French", "English", "Arabic", "German", "Spanish", "Italian"],
     requiredFields: ["phone", "languages"],
     skipEducation: true,
-    recommendedJobTypes: ["FULL_TIME", "PART_TIME", "CDI", "CDD"]
+    recommendedJobTypes: ["FULL_TIME", "PART_TIME", "CDI", "CIVP", "KARAMA", "FREELANCE"]
   },
   SALES: {
     id: "SALES",
@@ -76,7 +76,7 @@ export const JOB_ROLE_CONFIG: Record<string, JobRoleConfig> = {
     recommendedLanguages: ["English", "French", "Arabic", "German", "Spanish", "Italian"],
     requiredFields: ["skills", "education"],
     skipEducation: false,
-    recommendedJobTypes: ["FULL_TIME", "CDI", "INTERNSHIP"]
+    recommendedJobTypes: ["FULL_TIME", "CDI", "FREELANCE"]
   },
   CUSTOMER_SERVICE: {
     id: "CUSTOMER_SERVICE",
@@ -97,7 +97,7 @@ export const JOB_ROLE_CONFIG: Record<string, JobRoleConfig> = {
     recommendedLanguages: ["French", "English", "Arabic", "German", "Spanish", "Italian"],
     requiredFields: ["phone", "languages"],
     skipEducation: true,
-    recommendedJobTypes: ["FULL_TIME", "PART_TIME", "CDI", "CDD"]
+    recommendedJobTypes: ["FULL_TIME", "PART_TIME", "CDI", "CIVP", "KARAMA", "FREELANCE"]
   },
   ADMIN: {
     id: "ADMIN",
@@ -139,7 +139,7 @@ export const JOB_ROLE_CONFIG: Record<string, JobRoleConfig> = {
     recommendedLanguages: ["French", "English", "Arabic", "German", "Spanish", "Italian"],
     requiredFields: [],
     skipEducation: false,
-    recommendedJobTypes: ["FULL_TIME", "PART_TIME", "CDI", "CDD", "INTERNSHIP", "FREELANCE"]
+    recommendedJobTypes: ["FULL_TIME", "PART_TIME", "CDI", "CIVP", "KARAMA", "FREELANCE"]
   }
 };
 

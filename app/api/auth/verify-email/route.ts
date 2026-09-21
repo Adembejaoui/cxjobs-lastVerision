@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import prisma  from "@/lib/prisma";
-import crypto from "crypto";
+import prisma from "@/lib/prisma";
+import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
 import { z } from "zod";
+import crypto from "crypto";
+import { logger } from "@/lib/logger";
+
+const VERIFY_LIMIT = { windowMs: 60_000, max: 5 };
+const RESEND_LIMIT = { windowMs: 60_000, max: 3 };
 
 const verifyEmailSchema = z.object({
   token: z.string().min(1, "Token is required"),
@@ -11,6 +16,14 @@ const verifyEmailSchema = z.object({
 export async function POST(request: NextRequest) {
   try {
     // Rate limiting
+    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    const rl = await checkRateLimitAsync(`verify-email:${ip}`, VERIFY_LIMIT);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { success: false, error: "Too many requests. Please try again later.", code: "RATE_LIMITED" },
+        { status: 429, headers: getRateLimitHeaders(rl) }
+      );
+    }
 
     const body = await request.json();
     const validationResult = verifyEmailSchema.safeParse(body);
@@ -74,7 +87,7 @@ export async function POST(request: NextRequest) {
       message: "Email verified successfully",
     });
   } catch (error) {
-    console.error("Email verification error:", error);
+    logger.error("Email verification error", { error });
     return NextResponse.json(
       { success: false, error: "Failed to verify email", code: "INTERNAL_ERROR" },
       { status: 500 }
@@ -91,6 +104,14 @@ const resendSchema = z.object({
 export async function PUT(request: NextRequest) {
   try {
     // Rate limiting
+    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    const rl = await checkRateLimitAsync(`verify-email-resend:${ip}`, RESEND_LIMIT);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { success: false, error: "Too many requests. Please try again later.", code: "RATE_LIMITED" },
+        { status: 429, headers: getRateLimitHeaders(rl) }
+      );
+    }
 
     const body = await request.json();
     const validationResult = resendSchema.safeParse(body);
@@ -148,14 +169,13 @@ export async function PUT(request: NextRequest) {
     });
 
     // TODO: Send verification email
-    const verifyUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/verify-email?token=${token}`;
 
     return NextResponse.json({
       success: true,
       message: "Verification email sent",
     });
   } catch (error) {
-    console.error("Resend verification error:", error);
+    logger.error("Resend verification error", { error });
     return NextResponse.json(
       { success: false, error: "Failed to resend verification email", code: "INTERNAL_ERROR" },
       { status: 500 }

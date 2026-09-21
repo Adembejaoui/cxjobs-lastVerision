@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import  prisma  from "@/lib/prisma";
+import prisma from "@/lib/prisma";
+import { logger } from "@/lib/logger";
+import type { Prisma } from "@prisma/client";
 
 export async function GET() {
   try {
@@ -20,7 +22,11 @@ export async function GET() {
           orderBy: { name: "asc" },
         },
       },
-    }) as any;
+    }) as Prisma.companiesGetPayload<{
+      include: {
+        benefits: { orderBy: { name: "asc" } };
+      };
+    }> | null;
 
     if (!company) {
       return NextResponse.json(
@@ -29,8 +35,8 @@ export async function GET() {
       );
     }
 
-    const coreBenefits = company.benefits.filter((b: typeof company.benefits[number]) => b.scope === "CORE");
-    const additionalBenefits = company.benefits.filter((b: typeof company.benefits[number]) => b.scope === "ADDITIONAL");
+    const coreBenefits = company.benefits.filter((b) => b.scope === "CORE");
+    const additionalBenefits = company.benefits.filter((b) => b.scope === "ADDITIONAL");
 
     return NextResponse.json({
       success: true,
@@ -40,7 +46,7 @@ export async function GET() {
       },
     });
   } catch (error) {
-    console.error("Error fetching company benefits:", error);
+    logger.error("Failed to fetch company benefits", { error });
     return NextResponse.json(
       { success: false, error: "Failed to fetch company benefits" },
       { status: 500 }

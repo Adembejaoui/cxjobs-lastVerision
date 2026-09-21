@@ -5,7 +5,6 @@ import { useState } from "react";
 import {
   Globe,
   Loader2,
-  AlertCircle,
 } from "lucide-react";
 
 import {
@@ -37,7 +36,7 @@ interface ScrapedJobData {
   salaryMax?: number | null;
   salaryCurrency?: string;
   contractType?: string;
-  experienceLevel?: string;
+  employmentType?: string;
   isRemote?: boolean;
   isHybrid?: boolean;
   technicalTools?: string[];
@@ -148,7 +147,7 @@ if (
              ...body.data,
              languages:
                body.data.languages?.map(
-                 (lang: any) => ({
+                  (lang: Record<string, unknown>) => ({
                    name:
                      lang.name ||
                      lang.language ||
@@ -172,9 +171,9 @@ if (
             "No data returned."
         );
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       const msg =
-        err.message ||
+        (err instanceof Error ? err.message : null) ||
         "Something went wrong.";
 
       setErrorMsg(msg);
@@ -222,7 +221,7 @@ if (
           scrapedData.contractType,
 
           scrapedData
-            .experienceLevel,
+            .employmentType,
 
           scrapedData
             .technicalTools

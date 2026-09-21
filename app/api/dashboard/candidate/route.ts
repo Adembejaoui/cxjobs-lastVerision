@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import  prisma  from "@/lib/prisma";
+import { logger } from "@/lib/logger";
 
 // GET /api/dashboard/candidate - Candidate dashboard data
 export async function GET() {
@@ -58,6 +59,7 @@ export async function GET() {
             title: true,
             customLocation: true,
             contractType: true,
+            employmentType: true,
             company: {
               select: {
                 id: true,
@@ -124,7 +126,7 @@ export async function GET() {
       REFUSE: 0,
     };
 
-    applicationStats.forEach((stat: any) => {
+    applicationStats.forEach((stat: { status: string; _count: number }) => {
       statsMap[stat.status as keyof typeof statsMap] = stat._count;
     });
 
@@ -148,7 +150,7 @@ export async function GET() {
       },
     });
   } catch (error) {
-    console.error("Get candidate dashboard error:", error);
+    logger.error("Get candidate dashboard error", { error });
     return NextResponse.json(
       { success: false, error: "Failed to fetch dashboard data", code: "INTERNAL_ERROR" },
       { status: 500 }

@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { MapPin, Globe, Linkedin, Twitter } from 'lucide-react'
+import { Globe, Linkedin, Twitter } from 'lucide-react'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import {
@@ -28,6 +28,8 @@ interface JobOffer {
   salary: string | null
   salaryMin: number | null
   salaryMax: number | null
+  activityType: string | null
+  activityCustom: string | null
   createdAt: Date
 }
 
@@ -48,11 +50,9 @@ interface Company {
   linkedinUrl: string | null
   twitterUrl: string | null
   facebookUrl: string | null
-  industry: string | null
   companySize: string | null
   location: string | null
   foundedYear: number | null
-  mission: string | null
   createdAt: Date
 
   benefits:
@@ -99,14 +99,12 @@ async function getCompany(slug: string): Promise<Company | null> {
       name: true,
       slug: true,
       description: true,
-      mission: true,
       logoUrl: true,
       coverImageUrl: true,
       website: true,
       linkedinUrl: true,
       twitterUrl: true,
       facebookUrl: true,
-      industry: true,
       companySize: true,
       location: true,
       foundedYear: true,
@@ -145,6 +143,8 @@ async function getCompany(slug: string): Promise<Company | null> {
         salary: true,
         salaryMin: true,
         salaryMax: true,
+        activityType: true,
+        activityCustom: true,
         createdAt: true
       },
       orderBy: {
@@ -183,14 +183,12 @@ async function getCompany(slug: string): Promise<Company | null> {
     name: company.name,
     slug: company.slug,
     description: company.description,
-    mission: company.mission,
     logoUrl: company.logoUrl,
     coverImageUrl: company.coverImageUrl,
     website: company.website,
     linkedinUrl: company.linkedinUrl,
     twitterUrl: company.twitterUrl,
     facebookUrl: company.facebookUrl,
-    industry: company.industry,
     companySize: company.companySize,
     location: company.location,
     foundedYear: company.foundedYear,
@@ -249,7 +247,6 @@ export default async function CompanyDetailPage({
         logoUrl={company.logoUrl}
         location={company.location}
         companySize={company.companySize}
-        industry={company.industry}
         foundedYear={company.foundedYear}
       />
 
@@ -260,7 +257,6 @@ export default async function CompanyDetailPage({
           <div className="space-y-12 lg:col-span-2">
             <AboutSection
               description={company.description}
-              mission={company.mission}
             />
 
             <CultureSection culture={company.culture} />
@@ -276,7 +272,9 @@ export default async function CompanyDetailPage({
                     ? 'Hybrid'
                     : company.location || ''),
                 salary: job.salary,
-                contractType: job.contractType
+                contractType: job.contractType,
+                activityType: job.activityType,
+                activityCustom: job.activityCustom,
               }))}
               totalCount={company._count.jobs}
             />
@@ -362,16 +360,7 @@ export default async function CompanyDetailPage({
                   </div>
                 )}
 
-                <div>
-                  <p className="mb-1 text-sm text-muted-foreground">
-                    Location
-                  </p>
-
-                  <p className="flex items-center gap-2 text-foreground">
-                    <MapPin className="h-4 w-4" />
-                    {company.location || 'Remote'}
-                  </p>
-                </div>
+                
               </div>
             </Card>
 

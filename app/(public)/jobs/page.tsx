@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import JobsPageClient from './JobsPageClient'
 
 export const metadata = {
@@ -9,5 +10,9 @@ export const metadata = {
 export const revalidate = 300;
 
 export default function JobsPage() {
-  return <JobsPageClient />
+  return (
+    <Suspense fallback={<div className="min-h-screen px-4 py-5">Loading jobs...</div>}>
+      <JobsPageClient />
+    </Suspense>
+  )
 }

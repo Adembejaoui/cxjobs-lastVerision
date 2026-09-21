@@ -1,19 +1,14 @@
 "use client";
 
-import React, { useState, useCallback, useRef, useEffect } from "react";
+/* eslint-disable @next/next/no-img-element */
+
+import React, { useState, useCallback, useRef } from "react";
 import Cropper, { Area } from "react-easy-crop";
 import {
   Upload,
   X,
   Loader2,
   Image as ImageIcon,
-  RotateCw,
-  RotateCcw,
-  FlipHorizontal,
-  FlipVertical,
-  Contrast,
-  Sun,
-  Droplets,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,7 +19,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
 import { cn } from "@/lib/utils";
 
 // ── Props ──────────────────────────────────────────────────────
@@ -78,7 +72,6 @@ const ASPECT_CLASS: Record<AspectLabel, string> = {
   "16:9": "aspect-video",
 };
 
-// ── Helpers ────────────────────────────────────────────────────
 function createImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -88,17 +81,15 @@ function createImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
-function rotationsEqual(a: number, b: number): boolean {
-  return ((a % 360) + 360) % 360 === ((b % 360) + 360) % 360;
-}
-
 /**
  * Apply brightness / contrast / saturation / rotation / flip to an ImageElement
- * and return the rasterised buffer (JPEG).
+ * and return the rasterised buffer in the requested format.
  */
 function adjustAndRender(
   source: HTMLImageElement,
   adj: Adjustments,
+  mimeType: string = "image/jpeg",
+  quality: number = 0.92,
 ): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const canvas = document.createElement("canvas");
@@ -115,10 +106,9 @@ function adjustAndRender(
     ctx.rotate((rot * Math.PI) / 180);
     ctx.scale(adj.flipH ? -1 : 1, adj.flipV ? -1 : 1);
 
-    // Canvas filter syntax: "brightness(X) contrast(Y) saturate(Z)"
-    const b = 1 + adj.brightness; // 0…2
-    const c = 1 + adj.contrast;   // 0…2
-    const s = 1 + adj.saturation; // 0…2
+    const b = 1 + adj.brightness;
+    const c = 1 + adj.contrast;
+    const s = 1 + adj.saturation;
     ctx.filter = `brightness(${b}) contrast(${c}) saturate(${s})`;
 
     ctx.drawImage(
@@ -130,8 +120,8 @@ function adjustAndRender(
 
     canvas.toBlob(
       (blob) => (blob ? resolve(blob) : reject(new Error("Canvas toBlob failed"))),
-      "image/jpeg",
-      0.92,
+      mimeType,
+      quality,
     );
   });
 }
@@ -169,11 +159,6 @@ export function CroppableImageUpload({
   const aspectLabel = TYPE_TO_ASPECT[type] ?? "1:1";
   const aspect = ASPECT_VALUE[aspectLabel];
 
-  // Reset slider value display when "original" is asked for (brightness === 0)
-  const sliderVal = (v: number) => (v === 0 ? [0] : [v]);
-  const sliderRange = [-100, 100] as const;
-  const sliderStep = 5;
-
   // ── ① File picker ────────────────────────────────────────────
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -201,22 +186,19 @@ export function CroppableImageUpload({
   const createEditedBlob = useCallback(async (): Promise<Blob | null> => {
     if (!rawImageEl || !rawImage) return null;
 
+    const isLogo = type === "logo";
+    const mimeType = isLogo ? "image/png" : "image/jpeg";
+    const quality = isLogo ? undefined : 0.92;
+
     // If no adjustments made, just return the original buffer
     if (adj.brightness === 0 && adj.contrast === 0 && adj.saturation === 0 &&
         adj.rotate === 0 && !adj.flipH && !adj.flipV) {
       const buf = await (await fetch(rawImage)).arrayBuffer();
-      return new Blob([buf], { type: "image/jpeg" });
+      return new Blob([buf], { type: mimeType });
     }
 
-    return adjustAndRender(rawImageEl, adj);
-  }, [rawImageEl, rawImage, adj]);
-
-  // ── ④ Build cropped-selection preview for the cropper ───────
-  const buildCropperImage = useCallback(async (): Promise<string | null> => {
-    const blob = await createEditedBlob();
-    if (!blob) return null;
-    return URL.createObjectURL(blob);
-  }, [createEditedBlob]);
+    return adjustAndRender(rawImageEl, adj, mimeType, quality);
+  }, [rawImageEl, rawImage, adj, type]);
 
   // ── ⑤ Crop-complete callback ─────────────────────────────────
   const onCropComplete = useCallback((_area: Area, pixels: Area) => {
@@ -226,6 +208,10 @@ export function CroppableImageUpload({
   // ── ⑥ Canvas-rasterise cropped selection ────────────────────
   const createFinalBlob = useCallback(async (): Promise<Blob | null> => {
     if (!rawImage) return null;
+
+    const isLogo = type === "logo";
+    const mimeType = isLogo ? "image/png" : "image/jpeg";
+    const quality = isLogo ? undefined : 0.9;
 
     // A. rasterise adjustments → temp image
     const editedBlob = await createEditedBlob();
@@ -252,14 +238,16 @@ export function CroppableImageUpload({
     );
 
     return new Promise<Blob | null>((resolve) => {
-      canvas.toBlob((b) => resolve(b), "image/jpeg", 0.9);
+      canvas.toBlob((b) => resolve(b), mimeType, quality);
     });
-  }, [rawImage, createEditedBlob, croppedAreaPixels]);
+  }, [rawImage, createEditedBlob, croppedAreaPixels, type]);
 
   // ── ⑦ Upload ─────────────────────────────────────────────────
   const uploadBlob = async (blob: Blob) => {
+    const isLogo = type === "logo";
+    const ext = isLogo ? "png" : "jpg";
     const formData = new FormData();
-    formData.append("file", blob, `edit-${Date.now()}.jpg`);
+    formData.append("file", blob, `edit-${Date.now()}.${ext}`);
     const res = await fetch(`/api/upload?type=${type}`, {
       method: "POST",
       body: formData,
@@ -313,32 +301,6 @@ export function CroppableImageUpload({
     setError(null);
     closeDialog();
   };
-
-  const toggleFlipH = () => setAdj((a) => ({ ...a, flipH: !a.flipH }));
-  const toggleFlipV = () => setAdj((a) => ({ ...a, flipV: !a.flipV }));
-  const rotateCW = () => {
-    setAdj((a) => {
-      const nr = ((a.rotate + 90) % 360);
-      return { ...a, rotate: nr };
-    });
-    // also rotate crop overlay
-    setCropperRotation((r) => (r + 90) % 360);
-  };
-  const rotateCCW = () => {
-    setAdj((a) => {
-      const nr = ((a.rotate - 90 + 360) % 360);
-      return { ...a, rotate: nr };
-    });
-    setCropperRotation((r) => (r + 270) % 360);
-  };
-
-  const hasEdits =
-    adj.brightness !== 0 ||
-    adj.contrast !== 0 ||
-    adj.saturation !== 0 ||
-    adj.rotate !== 0 ||
-    adj.flipH ||
-    adj.flipV;
 
   const displayPreview = preview || currentImageUrl;
 
@@ -469,103 +431,7 @@ export function CroppableImageUpload({
                 onRotationChange={setCropperRotation}
               />
             )}
-          </div>
-
-          {/* ── Adjustment sliders ───────────────────────────────── */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 px-1">
-
-            {/* Brightness */}
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-1.5">
-                <Sun className="h-3.5 w-3.5 text-slate-500" />
-                <span className="text-xs font-medium text-slate-600">Brightness</span>
-              </div>
-              <Slider
-                value={sliderVal(adj.brightness)}
-                min={sliderRange[0]}
-                max={sliderRange[1]}
-                step={sliderStep}
-                onValueChange={([v]) =>
-                  setAdj((a) => ({ ...a, brightness: v }))
-                }
-              />
-            </div>
-
-            {/* Contrast */}
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-1.5">
-                <Contrast className="h-3.5 w-3.5 text-slate-500" />
-                <span className="text-xs font-medium text-slate-600">Contrast</span>
-              </div>
-              <Slider
-                value={sliderVal(adj.contrast)}
-                min={sliderRange[0]}
-                max={sliderRange[1]}
-                step={sliderStep}
-                onValueChange={([v]) =>
-                  setAdj((a) => ({ ...a, contrast: v }))
-                }
-              />
-            </div>
-
-            {/* Saturation */}
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-1.5">
-                <Droplets className="h-3.5 w-3.5 text-slate-500" />
-                <span className="text-xs font-medium text-slate-600">Saturation</span>
-              </div>
-              <Slider
-                value={sliderVal(adj.saturation)}
-                min={sliderRange[0]}
-                max={sliderRange[1]}
-                step={sliderStep}
-                onValueChange={([v]) =>
-                  setAdj((a) => ({ ...a, saturation: v }))
-                }
-              />
-            </div>
-          </div>
-
-          {/* ── Rotate + Flip ─────────────────────────────────────── */}
-          <div className="flex flex-wrap items-center gap-2 px-1">
-            <Button variant="outline" size="sm" onClick={rotateCCW} disabled={isUploading}>
-              <RotateCcw className="h-4 w-4 mr-1" />
-              −90°
-            </Button>
-            <Button variant="outline" size="sm" onClick={rotateCW} disabled={isUploading}>
-              <RotateCw className="h-4 w-4 mr-1" />
-              +90°
-            </Button>
-            <Button
-              variant={adj.flipH ? "default" : "outline"}
-              size="sm"
-              onClick={toggleFlipH}
-              disabled={isUploading}
-            >
-              <FlipHorizontal className="h-4 w-4 mr-1" />
-              Flip H
-            </Button>
-            <Button
-              variant={adj.flipV ? "default" : "outline"}
-              size="sm"
-              onClick={toggleFlipV}
-              disabled={isUploading}
-            >
-              <FlipVertical className="h-4 w-4 mr-1" />
-              Flip V
-            </Button>
-            {hasEdits && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={resetEdits}
-                disabled={isUploading}
-              >
-                Reset all
-              </Button>
-            )}
-          </div>
-
+          </div>          
           {/* ── Footer ─────────────────────────────────────────────── */}
           <DialogFooter>
             <Button variant="outline" onClick={handleCancel} disabled={isUploading}>

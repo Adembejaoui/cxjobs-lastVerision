@@ -242,7 +242,6 @@ export const PASSWORD_REQUIREMENTS = {
   requireUppercase: true,
   requireLowercase: true,
   requireNumber: true,
-  requireSpecialChar: true,
 };
 
 /**
@@ -268,10 +267,6 @@ export function validatePasswordStrength(password: string): {
 
   if (PASSWORD_REQUIREMENTS.requireNumber && !/[0-9]/.test(password)) {
     errors.push("Password must contain at least one number");
-  }
-
-  if (PASSWORD_REQUIREMENTS.requireSpecialChar && !/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
-    errors.push("Password must contain at least one special character");
   }
 
   return {

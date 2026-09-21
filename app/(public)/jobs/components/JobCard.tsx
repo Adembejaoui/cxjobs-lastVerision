@@ -8,20 +8,20 @@ export interface JobData {
   slug: string
   location: string
   salary: string
-  department: string
   extra: string
   badge1: string
   badge2: string
+  badge3: string
   icon: string
   isFirst?: boolean
 }
 
 interface JobCardProps {
   job: JobData
-  index: number
+  isCompany?: boolean
 }
 
-export function JobCard({ job, index }: JobCardProps) {
+export function JobCard({ job, isCompany = false }: JobCardProps) {
   return (
     <article className="rounded-[30px] bg-[#f7f9fb] px-5 py-5 shadow-[0_10px_24px_rgba(0,0,0,0.12)] ring-1 ring-[#e8edf4] md:px-6">
       <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
@@ -45,7 +45,6 @@ export function JobCard({ job, index }: JobCardProps) {
             <div className="mt-5 flex flex-wrap gap-x-8 gap-y-3 text-[16px] font-semibold text-[#72829a]">
               <InfoText icon="⌖" text={job.location} />
               <InfoText icon="◫" text={job.salary} />
-              <InfoText icon="⌘" text={job.department} />
               <InfoText icon="◷" text={job.extra} />
             </div>
           </div>
@@ -55,16 +54,19 @@ export function JobCard({ job, index }: JobCardProps) {
           <div className="flex flex-wrap gap-2">
             {job.badge1 ? <Tag variant="green">{job.badge1}</Tag> : null}
             {job.badge2 ? <Tag variant="slate">{job.badge2}</Tag> : null}
+            {job.badge3 ? <Tag variant="green">{job.badge3}</Tag> : null}
           </div>
 
           <div className="grid w-full flex-col gap-3 sm:w-auto sm:flex-row lg:flex-col xl:flex-row">
-            <Link 
-              href={`/jobs/${job.slug}/apply`}
-              className="min-w-[170px] rounded-[18px] bg-[#45c68d] px-7 py-4 text-center text-[18px] font-extrabold text-white shadow-[0_12px_22px_rgba(69,198,141,0.28)] transition hover:translate-y-[-1px]"
-            >
-              Quick Apply
-            </Link>
-            <Link 
+            {!isCompany && (
+              <Link
+                href={`/jobs/${job.slug}/apply`}
+                className="min-w-[170px] rounded-[18px] bg-[#45c68d] px-7 py-4 text-center text-[18px] font-extrabold text-white shadow-[0_12px_22px_rgba(69,198,141,0.28)] transition hover:translate-y-[-1px]"
+              >
+                Quick Apply
+              </Link>
+            )}
+            <Link
               href={`/jobs/${job.slug}`}
               className="min-w-[170px] rounded-[18px] border border-[#d7e0ea] bg-white px-7 py-4 text-center text-[18px] font-extrabold text-[#2a476e] transition hover:bg-[#f9fbfd]"
             >

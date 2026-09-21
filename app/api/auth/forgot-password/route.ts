@@ -1,10 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import  prisma  from "@/lib/prisma";
+import prisma from "@/lib/prisma";
 import { forgotPasswordSchema } from "@/lib/validations/auth";
+import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
 import crypto from "crypto";
+import { logger } from "@/lib/logger";
+
+const FORGOTPW_LIMIT = { windowMs: 60_000, max: 3 };
 
 export async function POST(request: NextRequest) {
   try {
+
+    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    const rl = await checkRateLimitAsync(`forgot-pw:${ip}`, FORGOTPW_LIMIT);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { success: false, error: "Too many requests. Please try again later.", code: "RATE_LIMITED" },
+        { status: 429, headers: getRateLimitHeaders(rl) }
+      );
+    }
 
     const body = await request.json();
 
@@ -56,18 +69,14 @@ export async function POST(request: NextRequest) {
     });
 
     // TODO: Send email with reset link
-    // For now, we'll just log it (in production, use an email service)
-    const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/reset-password?token=${token}`;
-    console.log(`Password reset URL for ${email}: ${resetUrl}`);
+    // The reset URL and token are never logged in production.
 
-    // SECURITY: Never return the token in the response, even in development
-    // This prevents accidental token leakage if development settings are used in production
     return NextResponse.json({
       success: true,
       message: "If an account with that email exists, we've sent a password reset link.",
     });
   } catch (error) {
-    console.error("Forgot password error:", error);
+    logger.error("Forgot password error", { error });
     return NextResponse.json(
       {
         success: false,

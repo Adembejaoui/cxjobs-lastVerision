@@ -13,8 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
-import { Plus, Trash2, GripVertical, Heart, DollarSign, Home, TrendingUp, Briefcase, Coffee, Sparkles } from "lucide-react";
+import { Plus, Trash2, GripVertical, Heart, DollarSign, Home, TrendingUp, Coffee, Sparkles } from "lucide-react";
 
 export interface BenefitItem {
   id: string;

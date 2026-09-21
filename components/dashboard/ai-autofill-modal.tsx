@@ -59,7 +59,6 @@ export function AIAutofillModal({ open, onOpenChange, onDataExtracted }: AIAutof
   
   const [step, setStep] = useState<Step>("upload");
   const [isUploading, setIsUploading] = useState(false);
-  const [isParsing, setIsParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [parsedData, setParsedData] = useState<ParsedData | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -68,7 +67,6 @@ export function AIAutofillModal({ open, onOpenChange, onDataExtracted }: AIAutof
   const resetModal = () => {
     setStep("upload");
     setIsUploading(false);
-    setIsParsing(false);
     setError(null);
     setParsedData(null);
     setUploadedFile(null);
@@ -139,8 +137,7 @@ export function AIAutofillModal({ open, onOpenChange, onDataExtracted }: AIAutof
         throw new Error("No file selected");
       }
       
-      setIsUploading(false);
-      setIsParsing(true);
+      setIsUploading(true);
 
       // Create FormData with the file
       const parseFormData = new FormData();
@@ -167,12 +164,11 @@ export function AIAutofillModal({ open, onOpenChange, onDataExtracted }: AIAutof
       } else {
         throw new Error("Could not extract data from CV");
       }
-    } catch (err: any) {
-      setError(err.message || "An error occurred while processing your CV");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "An error occurred while processing your CV");
       setStep("upload");
     } finally {
       setIsUploading(false);
-      setIsParsing(false);
     }
   };
 
@@ -192,7 +188,7 @@ export function AIAutofillModal({ open, onOpenChange, onDataExtracted }: AIAutof
         phone: parsedData.phone,
         email: parsedData.email,
         skills: parsedData.skills?.map((skill: string) => ({ name: skill })) ?? [],
-        experiences: parsedData.experiences?.map((exp: any) => ({
+        experiences: parsedData.experiences?.map((exp: Record<string, unknown>) => ({
           title: exp.title || "",
           company: exp.company || "",
           startDate: exp.startDate || "",
@@ -201,7 +197,7 @@ export function AIAutofillModal({ open, onOpenChange, onDataExtracted }: AIAutof
             : exp.endDate,
           isCurrent: exp.endDate === null || exp.endDate === "null" || exp.endDate === "",
         })) ?? [],
-        education: parsedData.education?.map((edu: any) => ({
+        education: parsedData.education?.map((edu: Record<string, unknown>) => ({
           institution: edu.institution || "",
           degree: edu.degree || "",
           field: edu.field || "",
@@ -210,7 +206,7 @@ export function AIAutofillModal({ open, onOpenChange, onDataExtracted }: AIAutof
             ? null 
             : edu.endDate,
         })) ?? [],
-        languages: parsedData.languages?.map((lang: any) => ({
+        languages: parsedData.languages?.map((lang: Record<string, unknown>) => ({
           name: lang.name || "",
           level: lang.level || "",
         })) ?? [],
@@ -238,8 +234,8 @@ export function AIAutofillModal({ open, onOpenChange, onDataExtracted }: AIAutof
         handleClose();
         router.refresh();
       }, 1500);
-    } catch (err: any) {
-      setError(err.message || "Failed to save data");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save data");
     }
   };
 

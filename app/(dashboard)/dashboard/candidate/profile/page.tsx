@@ -1,11 +1,22 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, User, Mail, MapPin, FileText, Eye, Upload, FileCheck } from "lucide-react";
+import { AlertTriangle, User, Mail, MapPin, FileText,FileCheck } from "lucide-react";
 import Link from "next/link";
 import { CandidateProfileForm } from "@/components/dashboard/candidate-profile-form";
+import type { Prisma } from "@prisma/client";
+
+type CandidateWithRelations = Prisma.CandidateGetPayload<{
+  include: {
+    user: true;
+    experiences: { orderBy: { startDate: "desc" } };
+    education: { orderBy: { startDate: "desc" } };
+    languages: true;
+    skills: true;
+  };
+}>;
 
 function getMissingPreferences(candidate: {
   preferredJobTypes?: string[];
@@ -31,6 +42,31 @@ function getMissingPreferences(candidate: {
   return missing;
 }
 
+function calculateProfileCompletion(candidate: {
+  headline?: string | null;
+  summary?: string | null;
+  location?: string | null;
+  resumeUrl?: string | null;
+  linkedinUrl?: string | null;
+  experiences?: unknown[];
+  education?: unknown[];
+  skills?: unknown[];
+}): number {
+  let completed = 0;
+  const total = 8;
+
+  if (candidate.headline) completed++;
+  if (candidate.summary) completed++;
+  if (candidate.location) completed++;
+  if (candidate.resumeUrl) completed++;
+  if (candidate.linkedinUrl) completed++;
+  if (candidate.experiences?.length) completed++;
+  if (candidate.education?.length) completed++;
+  if (candidate.skills?.length) completed++;
+
+  return Math.round((completed / total) * 100);
+}
+
 export default async function CandidateProfilePage() {
   const session = await auth();
 
@@ -53,7 +89,7 @@ export default async function CandidateProfilePage() {
       languages: true,
       skills: true,
     },
-  }) as any;
+  }) as CandidateWithRelations | null;
 
   if (!candidate) {
     // If no candidate profile exists, redirect to onboarding
@@ -225,23 +261,7 @@ export default async function CandidateProfilePage() {
       </div>
 
       {/* Edit Form */}
-      <CandidateProfileForm candidate={candidate as any} />
+      <CandidateProfileForm candidate={candidate as unknown as Parameters<typeof CandidateProfileForm>[0]["candidate"]} />
     </div>
   );
-}
-
-function calculateProfileCompletion(candidate: any): number {
-  let completed = 0;
-  const total = 8;
-
-  if (candidate.headline) completed++;
-  if (candidate.summary) completed++;
-  if (candidate.location) completed++;
-  if (candidate.resumeUrl) completed++;
-  if (candidate.linkedinUrl) completed++;
-  if (candidate.experiences?.length > 0) completed++;
-  if (candidate.education?.length > 0) completed++;
-  if (candidate.skills?.length > 0) completed++;
-
-  return Math.round((completed / total) * 100);
 }

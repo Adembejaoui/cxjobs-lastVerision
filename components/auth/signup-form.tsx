@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { validatePasswordStrength } from '@/lib/utils';
 
 export default function SignupForm() {
   const router = useRouter();
@@ -26,6 +27,7 @@ export default function SignupForm() {
     }));
   };
 
+  const passwordValidation = validatePasswordStrength(formData.password);
   const passwordRequirements = {
     minLength: formData.password.length >= 8,
     uppercase: /[A-Z]/.test(formData.password),
@@ -36,12 +38,8 @@ export default function SignupForm() {
   const isFormValid = 
     formData.fullName.trim() !== '' && 
     formData.email.trim() !== '' && 
-    formData.password !== '' && 
     formData.termsAccepted &&
-    passwordRequirements.minLength &&
-    passwordRequirements.uppercase &&
-    passwordRequirements.lowercase &&
-    passwordRequirements.number;
+    passwordValidation.valid;
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -276,6 +274,7 @@ export default function SignupForm() {
               </svg>
               Number
             </div>
+
           </div>
         </div>
 

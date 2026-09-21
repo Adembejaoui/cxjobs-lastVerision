@@ -1,9 +1,10 @@
 "use client"
 
+/* eslint-disable @next/next/no-img-element */
+
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { MapPin, DollarSign, Briefcase } from "lucide-react"
 
 interface JobOffer {
   id: string
@@ -26,7 +27,6 @@ interface JobOffer {
     name: string
     slug: string
     logoUrl: string | null
-    industry: string | null
     location: string | null
   }
   _count: {

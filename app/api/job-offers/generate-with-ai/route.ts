@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { generateJobDescription, isAIConfigured } from "@/lib/ai-service";
 import { jobGenerationSchema } from "@/lib/validations/ai";
+import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
+import { logger } from "@/lib/logger";
+
+const AI_GENERATE_LIMIT = { windowMs: 60_000, max: 5 };
 
 
 
@@ -12,7 +16,6 @@ import { jobGenerationSchema } from "@/lib/validations/ai";
  * Request body:
  * - title: string (required)
  * - company: string (optional)
- * - industry: string (optional)
  * - location: string (optional)
  * - contractType: ContractType (optional)
  * - workMode: WorkMode (optional)
@@ -35,6 +38,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Rate limiting (stricter for AI endpoints)
+    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    const rl = await checkRateLimitAsync(`ai-generate:${ip}`, AI_GENERATE_LIMIT);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { success: false, error: "Too many requests. Please try again later.", code: "RATE_LIMITED" },
+        { status: 429, headers: getRateLimitHeaders(rl) }
+      );
+    }
 
     // Authentication check
     const session = await auth();
@@ -76,7 +87,6 @@ export async function POST(request: NextRequest) {
     const result = await generateJobDescription({
       title: validationResult.data.title,
       company: validationResult.data.company,
-      industry: validationResult.data.industry,
       location: validationResult.data.location,
       contractType: validationResult.data.contractType ?? undefined,
       workMode: validationResult.data.workMode ?? undefined,
@@ -91,7 +101,7 @@ export async function POST(request: NextRequest) {
       data: result,
     });
   } catch (error) {
-    console.error("AI job generation error:", error);
+    logger.error("AI job generation error", { error });
     
     if (error instanceof Error && error.message === "Failed to generate job description") {
       return NextResponse.json(

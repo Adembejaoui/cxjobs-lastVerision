@@ -3,6 +3,10 @@ import { auth } from "@/lib/auth";
 import { extractJobFromUrlText, isAIConfigured } from "@/lib/ai-service";
 import { fetchUrlText } from "@/lib/job-scraper";
 import { scrapeJobUrlSchema, type ScrapeJobUrlInput } from "@/lib/validations/job";
+import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
+import { logger } from "@/lib/logger";
+
+const SCRAPE_LIMIT = { windowMs: 60_000, max: 5 };
 
 // Hard timeout prevents this route from hanging forever if the target
 // site is slow.  22 seconds leaves headroom before Vercel/edge timeout.
@@ -28,7 +32,17 @@ export async function POST(request: NextRequest) {
   const outerTimer = setTimeout(() => outer.abort(), ROUTE_TIMEOUT_MS);
 
   try {
-    // ─── 2. Auth guard (company role required) ───
+    // ─── 2. Rate limiting ───
+    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    const rl = await checkRateLimitAsync(`scrape:${ip}`, SCRAPE_LIMIT);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { success: false, error: "Too many requests. Please try again later.", code: "RATE_LIMITED" },
+        { status: 429, headers: getRateLimitHeaders(rl) }
+      );
+    }
+
+    // ─── 3. Auth guard (company role required) ───
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json(
@@ -112,7 +126,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.error("[scrape-from-url] unexpected error:", error);
+    logger.error("scrape-from-url unexpected error", { error });
     return NextResponse.json(
       { success: false, error: "Failed to scrape job offer", code: "INTERNAL_ERROR" },
       { status: 500 }

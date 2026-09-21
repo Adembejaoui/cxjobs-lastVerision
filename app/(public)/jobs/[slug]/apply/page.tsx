@@ -1,12 +1,14 @@
 'use client';
 
+/* eslint-disable @next/next/no-img-element */
+
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
+import { useUser } from "@/components/auth/user-provider";
 import { ArrowLeft, MapPin, CheckCircle, Loader2, AlertCircle, User, FileText, Languages } from 'lucide-react';
 
 interface JobLanguage {
@@ -32,7 +34,6 @@ interface Company {
   name: string
   slug: string
   logoUrl: string | null
-  industry: string | null
   location: string | null
   website: string | null
   description: string | null
@@ -76,7 +77,7 @@ interface CandidateProfile {
 export default function JobApplyPage() {
   const params = useParams();
   const router = useRouter();
-  const { data: session, status } = useSession();
+  const user = useUser();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [job, setJob] = useState<JobOffer | null>(null);
@@ -91,12 +92,23 @@ export default function JobApplyPage() {
 
   useEffect(() => {
     async function fetchData() {
-      if (status === 'unauthenticated') {
+      // Check auth and role
+      if (!user) {
         router.push(`/login?callbackUrl=/jobs/${params.slug}/apply`);
         return;
       }
+      
+      if (user.role !== 'CANDIDATE') {
+        router.push(`/jobs/${params.slug}`);
+        return;
+      }
+      
+      if (user.isOnboarded === false) {
+        router.push(`/onboarding/candidate`);
+        return;
+      }
 
-      if (status === 'authenticated' && params.slug) {
+      if (params.slug) {
         try {
           // Fetch job and candidate profile in parallel
           const [jobRes, profileRes] = await Promise.all([
@@ -148,7 +160,7 @@ export default function JobApplyPage() {
             if (!cand.location) required.push('location');
             setMissingFields(required);
           }
-        } catch (err) {
+        } catch {
           setError('Failed to load data');
         } finally {
           setLoading(false);
@@ -157,7 +169,7 @@ export default function JobApplyPage() {
     }
 
     fetchData();
-  }, [params.slug, status, router]);
+  }, [params.slug, router, user]);
 
   const handleCoverLetterChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value;
@@ -189,7 +201,7 @@ export default function JobApplyPage() {
       } else {
         setError(data.error || 'Failed to submit application');
       }
-    } catch (err) {
+    } catch {
       setError('Failed to submit application');
     } finally {
       setSubmitting(false);
@@ -314,9 +326,9 @@ export default function JobApplyPage() {
         {!submitted && (
           <Card className="p-5 mb-6 border-slate-200 bg-white rounded-2xl shadow-sm">
             <div className="flex gap-4">
-              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-[#162f67] to-[#1e4d9c] flex items-center justify-center overflow-hidden flex-shrink-0">
+              <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-[#162f67] to-[#1e4d9c] flex items-center justify-center overflow-hidden flex-shrink-0">
                 {job.company.logoUrl ? (
-                  <img src={job.company.logoUrl} alt={job.company.name} className="w-full h-full object-cover" />
+                  <img src={job.company.logoUrl} alt={job.company.name} className="w-full h-full object-contain p-2" />
                 ) : (
                   <span className="text-lg font-bold text-white">{job.company.name.charAt(0)}</span>
                 )}
@@ -350,7 +362,7 @@ export default function JobApplyPage() {
             </div>
             <h2 className="text-3xl font-bold text-slate-900 mb-3">Application Submitted!</h2>
             <p className="text-slate-600 max-w-md mx-auto mb-8">
-              Thank you for applying to <strong>{job.title}</strong> at <strong>{job.company.name}</strong>. We'll review your application soon.
+              Thank you for applying to <strong>{job.title}</strong> at <strong>{job.company.name}</strong>. We&apos;ll review your application soon.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Button variant="outline" onClick={() => router.push('/dashboard/candidate/applications')} className="rounded-xl">

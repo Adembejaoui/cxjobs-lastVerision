@@ -97,12 +97,7 @@ const SheetContent = React.forwardRef<HTMLDivElement, SheetContentProps>(
 
     if (!open) return null
 
-    const sideOffset = {
-      top: "top-0 left-0 right-0 h-screen",
-      bottom: "bottom-0 left-0 right-0 h-screen",
-      left: "left-0 top-0 bottom-0 w-[300px]",
-      right: "right-0 top-0 bottom-0 w-[300px]",
-    }
+
 
     return (
       <>
@@ -134,7 +129,7 @@ const SheetContent = React.forwardRef<HTMLDivElement, SheetContentProps>(
 )
 SheetContent.displayName = "SheetContent"
 
-interface SheetHeaderProps extends React.HTMLAttributes<HTMLDivElement> {}
+type SheetHeaderProps = React.HTMLAttributes<HTMLDivElement>
 
 const SheetHeader = React.forwardRef<HTMLDivElement, SheetHeaderProps>(
   ({ className, ...props }, ref) => (
@@ -147,7 +142,7 @@ const SheetHeader = React.forwardRef<HTMLDivElement, SheetHeaderProps>(
 )
 SheetHeader.displayName = "SheetHeader"
 
-interface SheetTitleProps extends React.HTMLAttributes<HTMLHeadingElement> {}
+type SheetTitleProps = React.HTMLAttributes<HTMLHeadingElement>
 
 const SheetTitle = React.forwardRef<HTMLHeadingElement, SheetTitleProps>(
   ({ className, ...props }, ref) => (

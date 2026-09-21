@@ -24,11 +24,18 @@ import {
   ListChecks,
   MapPin,
   Globe,
-  Sparkles,
-  Heart
+  Sparkles
 } from "lucide-react";
 import { z } from "zod";
 import { showSuccess, showError } from "@/lib/toast";
+import { logger } from "@/lib/logger";
+import {
+  contractTypeSchema,
+  employmentTypeSchema,
+  activityTypeSchema,
+  applicationMethodSchema,
+  languageLevelSchema,
+} from "@/lib/validations/job";
 
 interface JobBenefit {
   id: string;
@@ -63,7 +70,9 @@ export interface JobOffer {
    contractType?: string;
    isRemote?: boolean;
    isHybrid?: boolean;
-   experienceLevel?: string | null;
+   employmentType?: string | null;
+   activityType?: string | null;
+   activityCustom?: string | null;
    salary?: string | null;
    salaryMin?: number | null;
    salaryMax?: number | null;
@@ -75,6 +84,7 @@ export interface JobOffer {
    softSkills?: string[];
    applicationType?: string;
    externalApplyUrl?: string | null;
+   expiresAt?: string | null;
  }
 
 interface JobFormDialogProps {
@@ -89,20 +99,15 @@ interface FieldErrors {
 }
 
 const CONTRACT_TYPES = [
-  { value: "CDI", label: "CDI (Permanent)" },
-  { value: "CDD", label: "CDD (Fixed-term)" },
+  { value: "CDI", label: "CDI" },
+  { value: "CIVP", label: "CIVP" },
+  { value: "KARAMA", label: "Karama" },
   { value: "FREELANCE", label: "Freelance" },
-  { value: "INTERNSHIP", label: "Internship" },
-  { value: "PART_TIME", label: "Part-time" },
-  { value: "APPRENTICESHIP", label: "Apprenticeship" },
 ];
 
-const EXPERIENCE_LEVELS = [
-  { value: "JUNIOR", label: "Junior (0-2 years)" },
-  { value: "MID", label: "Mid-Level (2-5 years)" },
-  { value: "SENIOR", label: "Senior (5+ years)" },
-  { value: "LEAD", label: "Team Lead" },
-  { value: "EXECUTIVE", label: "Executive" },
+const EMPLOYMENT_TYPES = [
+  { value: "FULL_TIME", label: "Full-time" },
+  { value: "PART_TIME", label: "Part-time" },
 ];
 
 const LANGUAGE_LEVELS = [
@@ -144,6 +149,16 @@ const SOFT_SKILLS = [
   "Team Collaboration", "Adaptability",
 ];
 
+const ACTIVITY_TYPES = [
+  { value: "CUSTOMER_SERVICE", label: "Customer Service" },
+  { value: "SALES_LEAD_GENERATION", label: "Sales & Lead Generation" },
+  { value: "TECHNICAL_IT_SUPPORT", label: "Technical & IT Support" },
+  { value: "DEBT_COLLECTION_LITIGATION", label: "Debt Collection & Litigation" },
+  { value: "BACK_OFFICE_DIGITAL_SERVICES", label: "Back-office & Digital Services" },
+  { value: "SURVEYS_MARKET_RESEARCH", label: "Surveys & Market Research" },
+  { value: "OTHER", label: "Other" },
+];
+
 // Zod validation schema for job offer
 const jobOfferSchema = z.object({
   title: z
@@ -163,26 +178,13 @@ const jobOfferSchema = z.object({
 
   location: z.string().optional(),
 
-  contractType: z.enum([
-    "CDI",
-    "CDD",
-    "FREELANCE",
-    "INTERNSHIP",
-    "PART_TIME",
-    "APPRENTICESHIP",
-  ]),
+  contractType: contractTypeSchema,
 
   isRemote: z.boolean(),
 
   isHybrid: z.boolean(),
 
-  experienceLevel: z.enum([
-    "JUNIOR",
-    "MID",
-    "SENIOR",
-    "LEAD",
-    "EXECUTIVE",
-  ]),
+  employmentType: employmentTypeSchema,
 
   salary: z.string().optional(),
 
@@ -200,11 +202,7 @@ const jobOfferSchema = z.object({
  .array(
    z.object({
      language: z.string().trim().min(1),
-     level: z.enum([
-       "REQUIRED",
-       "PREFERRED",
-       "NICE_TO_HAVE",
-     ]),
+level: languageLevelSchema,
    })
  )
  .default([])
@@ -222,14 +220,39 @@ const jobOfferSchema = z.object({
 
   slug: z.string().optional(),
 
-  applicationType: z.enum(["INTERNAL", "EXTERNAL"]).optional().default("INTERNAL"),
+  activityType: activityTypeSchema.optional().default("CUSTOMER_SERVICE"),
 
-  externalApplyUrl: z
-    .string()
-    .trim()
-    .url("Please enter a valid URL")
-    .optional()
-    .nullable(),
+  activityCustom: z.string().max(100).optional().nullable(),
+
+  applicationType: applicationMethodSchema.optional().default("INTERNAL"),
+
+   externalApplyUrl: z
+     .string()
+     .trim()
+     .url("Please enter a valid URL")
+     .optional()
+     .nullable(),
+   expiresAt: z
+     .string()
+     .refine((val) => {
+       if (!val || val.trim().length === 0) return true;
+       const selectedDate = new Date(val);
+       const today = new Date();
+       today.setHours(0, 0, 0, 0);
+       return selectedDate > today;
+     }, {
+       message: "Expiration date must be strictly greater than today",
+     })
+     .optional()
+     .nullable(),
+ }).refine((data) => {
+  if (data.activityType === "OTHER" && (!data.activityCustom || data.activityCustom.trim().length === 0)) {
+    return false;
+  }
+  return true;
+}, {
+  message: "Custom activity name is required when activity type is 'Other'",
+  path: ["activityCustom"],
 }).refine((data) => {
   if (data.applicationType === "EXTERNAL") {
     return !!data.externalApplyUrl && data.externalApplyUrl.length > 0;
@@ -239,15 +262,6 @@ const jobOfferSchema = z.object({
   message: "External apply URL is required when application type is EXTERNAL",
   path: ["externalApplyUrl"],
 });
-
-const REQUIRED_FIELDS = [
-  "title",
-  "contractType",
-  "experienceLevel",
-  "customLocation",
-  "description",
-  "languages",
-];
 
 export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDialogProps) {
   const router = useRouter();
@@ -266,7 +280,9 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
     contractType: job?.contractType || "CDI",
     isRemote: job?.isRemote || false,
     isHybrid: job?.isHybrid || false,
-    experienceLevel: job?.experienceLevel || "JUNIOR",
+    employmentType: job?.employmentType || "FULL_TIME",
+    activityType: job?.activityType || "CUSTOMER_SERVICE",
+    activityCustom: job?.activityCustom || null,
     salary: job?.salary || "",
     salaryMin: job?.salaryMin || null,
     salaryMax: job?.salaryMax || null,
@@ -278,6 +294,7 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
     softSkills: job?.softSkills || [],
     applicationType: job?.applicationType || "INTERNAL",
     externalApplyUrl: job?.externalApplyUrl || null,
+    expiresAt: job?.expiresAt || "",
   });
 
   const [newRequirement, setNewRequirement] = useState("");
@@ -302,7 +319,9 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
               contractType: fullJob.contractType || "CDI",
               isRemote: fullJob.isRemote || false,
               isHybrid: fullJob.isHybrid || false,
-              experienceLevel: fullJob.experienceLevel || "JUNIOR",
+              employmentType: fullJob.employmentType || "FULL_TIME",
+              activityType: fullJob.activityType || "CUSTOMER_SERVICE",
+              activityCustom: fullJob.activityCustom || null,
               salary: fullJob.salary || "",
               salaryMin: fullJob.salaryMin || null,
               salaryMax: fullJob.salaryMax || null,
@@ -313,13 +332,14 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
               technicalTools: fullJob.technicalTools || [],
               softSkills: fullJob.softSkills || [],
               location: fullJob.location || "",
-              applicationType: fullJob.applicationType || "INTERNAL",
-              externalApplyUrl: fullJob.externalApplyUrl || null,
-            });
+               applicationType: fullJob.applicationType || "INTERNAL",
+               externalApplyUrl: fullJob.externalApplyUrl || null,
+               expiresAt: fullJob.expiresAt ? new Date(fullJob.expiresAt).toISOString().split("T")[0] : "",
+             });
           }
         })
-        .catch(err => {
-          console.error("Error fetching job:", err);
+        .catch(() => {
+          logger.error("Error fetching job");
           showError("Failed to load job details", {
             description: "Please try again later.",
           });
@@ -335,7 +355,9 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
         contractType: job?.contractType || "CDI",
         isRemote: job?.isRemote || false,
         isHybrid: job?.isHybrid || false,
-        experienceLevel: job?.experienceLevel || "JUNIOR",
+        employmentType: job?.employmentType || "FULL_TIME",
+        activityType: job?.activityType || "CUSTOMER_SERVICE",
+        activityCustom: job?.activityCustom || null,
         salary: job?.salary || "",
         salaryMin: job?.salaryMin || null,
         salaryMax: job?.salaryMax || null,
@@ -353,8 +375,10 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
         location: job?.location || "",
         applicationType: job?.applicationType || "INTERNAL",
         externalApplyUrl: job?.externalApplyUrl || null,
+        expiresAt: job?.expiresAt || "",
       });
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, isEditMode, job?.id]);
 
   useEffect(() => {
@@ -367,8 +391,8 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
             setAdditionalBenefits(data.data.additional || []);
           }
         })
-        .catch(err => {
-          console.error("Error fetching company benefits:", err);
+        .catch(() => {
+          logger.error("Error fetching company benefits");
         });
     }
   }, [open]);
@@ -559,10 +583,11 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
             : "Your job has been saved as a draft.",
         });
       }
-    } catch (err: any) {
-      setError(err.message || "Failed to save job");
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : "Failed to save job";
+      setError(errMsg);
       showError("Failed to save job", {
-        description: err.message || "Please try again later.",
+        description: errMsg || "Please try again later.",
       });
     } finally {
       setIsSubmitting(false);
@@ -687,29 +712,78 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
                   </div>
 
                   <div className="group">
-                    <Label className="text-xs font-medium text-slate-600 mb-1.5 block">Experience Level <span className="text-red-500">*</span></Label>
+                    <Label className="text-xs font-medium text-slate-600 mb-1.5 block">Employment Type <span className="text-red-500">*</span></Label>
                     <div className="relative">
                       <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
                       <select
-                        value={formData.experienceLevel || ""}
-                        onChange={(e) => handleSelectChange("experienceLevel", e.target.value)}
+                        value={formData.employmentType || ""}
+                        onChange={(e) => handleSelectChange("employmentType", e.target.value)}
                         className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:bg-white focus:border-[#162f67] transition-all appearance-none cursor-pointer"
                         style={{ backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: 'right 0.75rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.25rem 1.25rem' }}
                       >
-                        {EXPERIENCE_LEVELS.map((level) => (
-                          <option key={level.value} value={level.value}>
-                            {level.label}
+                        {EMPLOYMENT_TYPES.map((type) => (
+                          <option key={type.value} value={type.value}>
+                            {type.label}
                           </option>
                         ))}
                       </select>
                     </div>
-                    {fieldErrors.experienceLevel && (
+                    {fieldErrors.employmentType && (
                       <p className="text-xs text-red-500 mt-1.5">
-                        {fieldErrors.experienceLevel[0]}
+                        {fieldErrors.employmentType[0]}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="group">
+                    <Label className="text-xs font-medium text-slate-600 mb-1.5 block">Type of Activity <span className="text-red-500">*</span></Label>
+                    <div className="relative">
+                      <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+                      <select
+                        value={formData.activityType || "CUSTOMER_SERVICE"}
+                        onChange={(e) => {
+                          setFormData((prev) => ({ ...prev, activityType: e.target.value, activityCustom: e.target.value !== "OTHER" ? null : prev.activityCustom }));
+                        }}
+                        className="w-full h-11 pl-10 pr-4 rounded-xl border border-slate-200 bg-slate-50 text-sm focus:bg-white focus:border-[#162f67] transition-all appearance-none cursor-pointer"
+                        style={{ backgroundImage: `url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`, backgroundPosition: 'right 0.75rem center', backgroundRepeat: 'no-repeat', backgroundSize: '1.25rem 1.25rem' }}
+                      >
+                        {ACTIVITY_TYPES.map((type) => (
+                          <option key={type.value} value={type.value}>
+                            {type.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {fieldErrors.activityType && (
+                      <p className="text-xs text-red-500 mt-1.5">
+                        {fieldErrors.activityType[0]}
                       </p>
                     )}
                   </div>
                 </div>
+
+                {formData.activityType === "OTHER" && (
+                  <div className="group">
+                    <Label htmlFor="activityCustom" className="text-xs font-medium text-slate-600 mb-1.5 block">
+                      Custom Activity <span className="text-red-500">*</span>
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="activityCustom"
+                        name="activityCustom"
+                        value={formData.activityCustom || ""}
+                        onChange={(e) => setFormData((prev) => ({ ...prev, activityCustom: e.target.value }))}
+                        placeholder="e.g. Customer Support, Telemarketing"
+                        className={`pl-10 h-11 bg-slate-50 rounded-xl transition-all ${fieldErrors.activityCustom ? 'border-red-500 focus:border-red-500' : formData.activityCustom ? 'border-emerald-500 focus:border-emerald-500' : 'border-slate-200 focus:border-[#162f67]'}`}
+                      />
+                    </div>
+                    {fieldErrors.activityCustom && (
+                      <p className="text-xs text-red-500 mt-1.5">
+                        {fieldErrors.activityCustom[0]}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 <div className="group">
                   <Label htmlFor="customLocation" className="text-xs font-medium text-slate-600 mb-1.5 block">
@@ -753,6 +827,32 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
                     <span className="text-sm text-slate-600">Hybrid</span>
                   </label>
                 </div>
+              </div>
+            </section>
+
+            <section className="space-y-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="h-6 w-1 rounded-full bg-gradient-to-b from-rose-400 to-rose-500"></div>
+                <h3 className="text-sm font-semibold text-slate-900 uppercase tracking-wide">
+                  Expiration Date
+                </h3>
+              </div>
+
+              <div className="group">
+                <Label htmlFor="expiresAt" className="text-xs font-medium text-slate-600 mb-1.5 block">
+                  Expiration Date <span className="text-slate-400">(optional)</span>
+                </Label>
+                <Input
+                  id="expiresAt"
+                  name="expiresAt"
+                  type="date"
+                  value={formData.expiresAt || ""}
+                  onChange={handleChange}
+                  className="pl-10 h-11 bg-slate-50 rounded-xl transition-all focus:border-[#162f67]"
+                />
+                <p className="text-xs text-slate-400 mt-1.5">
+                  Leave empty to auto-close 1 month after publication
+                </p>
               </div>
             </section>
 
@@ -803,7 +903,7 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
                   />
                   <div className="flex-1">
                     <p className="text-sm font-medium text-slate-900">External ATS / Website</p>
-                    <p className="text-xs text-slate-500 mt-0.5">Redirect to company's application page</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Redirect to company&apos;s application page</p>
                   </div>
                 </label>
               </div>

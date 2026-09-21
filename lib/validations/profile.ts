@@ -15,6 +15,12 @@ export const workModeSchema = z.enum(["ONSITE", "REMOTE", "HYBRID"]);
 
 export const shiftTypeSchema = z.enum(["DAY", "NIGHT", "FLEXIBLE", "ROTATION"]);
 
+export const genderSchema = z.enum([
+  "male",
+  "female",
+  "Prefer not to say",
+]);
+
 export const skillLevelSchema = z.string();
 
 export const skillSchema = z.object({
@@ -61,6 +67,16 @@ export const candidateProfileSchema = z.object({
   preferredJobTypes: z.array(z.string()).optional().nullable(),
   workMode: workModeSchema.optional().nullable(),
   shiftType: shiftTypeSchema.optional().nullable(),
+  dateOfBirth: z.preprocess(
+    (val) => {
+      if (val === "" || val === null || val === undefined) return null;
+      if (val instanceof Date) return val;
+      const d = new Date(val as string);
+      return Number.isNaN(d.getTime()) ? null : d;
+    },
+    z.date().nullable().optional()
+  ),
+  gender: genderSchema.optional().nullable(),
   salaryExpectation: z.number().optional().nullable(),
   skills: z.array(skillSchema).optional().nullable(),
   experiences: z.array(experienceSchema).optional().nullable(),
@@ -70,7 +86,7 @@ export const candidateProfileSchema = z.object({
 
 // ==================== Company Schemas ====================
 
-export const companySizeSchema = z.enum(["STARTUP", "SMALL", "MEDIUM", "LARGE", "ENTERPRISE"]);
+export const companySizeSchema = z.string();
 
 export const subscriptionPlanSchema = z.enum(["ESSENTIAL", "GROW", "PREMIUM"]);
 
@@ -100,6 +116,7 @@ export const cultureItemSchema = z.object({
   title: z.string().min(1, "Title is required"),
   description: z.string().optional().default(""),
   imageUrl: z.string().optional().nullable(),
+  icon: z.string().optional().nullable(),
 });
 
 export const companyProfileSchema = z.object({
@@ -109,11 +126,9 @@ export const companyProfileSchema = z.object({
     .min(2, "Slug must be at least 2 characters")
     .regex(/^[a-z0-9-]+$/, "Slug must contain only lowercase letters, numbers, and hyphens"),
   description: z.string().max(5000, "Description must be 5000 characters or less").optional().nullable(),
-  mission: z.string().max(2000, "Mission must be 2000 characters or less").optional().nullable(),
   logoUrl: z.string().optional().nullable(),
   coverImageUrl: z.string().optional().nullable(),
   website: z.string().url("Invalid website URL").optional().or(z.literal("")).nullable(),
-  industry: z.string().optional().nullable(),
   companySize: companySizeSchema.optional().nullable(),
   location: z.string().optional().nullable(),
   foundedYear: z.number().min(1800).max(new Date().getFullYear()).optional().nullable(),

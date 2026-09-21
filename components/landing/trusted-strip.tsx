@@ -1,20 +1,6 @@
 "use client"
 
-interface TrustedStripProps {
-  palette: {
-    navy: string
-    navyDark: string
-    green: string
-    greenSoft: string
-    bg: string
-    text: string
-    muted: string
-    border: string
-    white: string
-  }
-}
-
-export function TrustedStrip({ palette }: TrustedStripProps) {
+export function TrustedStrip() {
   const companies = [
     { name: "Teleperformance", color: "#0066CC" },
     { name: "Concentrix", color: "#FF6B00" },

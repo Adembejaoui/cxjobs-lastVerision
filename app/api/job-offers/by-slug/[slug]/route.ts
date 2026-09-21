@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import  prisma from "@/lib/prisma";
 import { unstable_cache } from "next/cache";
+import { logger } from "@/lib/logger";
+import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
+import { getClientIp } from "@/lib/utils";
 
 // Cached function for fetching a single published job offer by slug
 const getPublicJobOfferBySlug = unstable_cache(
@@ -19,7 +22,6 @@ const getPublicJobOfferBySlug = unstable_cache(
             name: true,
             slug: true,
             logoUrl: true,
-            industry: true,
             location: true,
             website: true,
             description: true,
@@ -40,7 +42,8 @@ const getPublicJobOfferBySlug = unstable_cache(
       },
     });
   },
-  ["public-job-offer-by-slug"],
+  // Cache key per slug - Next.js includes the function args (slug) in the invocation key
+  ["public-job-offer-by-slug"] as unknown as string[],
   { revalidate: 60, tags: ["job-offer"] }
 );
 
@@ -50,6 +53,16 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
+    const ip = getClientIp(request);
+    const GET_SINGLE_LIMIT = { windowMs: 60_000, max: 120 };
+    const rl = await checkRateLimitAsync(`job-offer-single:${ip}`, GET_SINGLE_LIMIT);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { success: false, error: "Too many requests. Please try again later.", code: "RATE_LIMITED" },
+        { status: 429, headers: getRateLimitHeaders(rl) }
+      );
+    }
+
     const { slug } = await params;
     const session = await auth();
 
@@ -70,6 +83,10 @@ export async function GET(
       return NextResponse.json({
         success: true,
         data: jobOffer,
+      }, {
+        headers: {
+          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=30',
+        },
       });
     }
 
@@ -83,7 +100,6 @@ export async function GET(
             name: true,
             slug: true,
             logoUrl: true,
-            industry: true,
             location: true,
             website: true,
             description: true,
@@ -129,7 +145,7 @@ export async function GET(
       data: jobOffer,
     });
   } catch (error) {
-    console.error("Error fetching job offer:", error);
+    logger.error("Error fetching job offer", { error });
     return NextResponse.json(
       { success: false, error: "Failed to fetch job offer" },
       { status: 500 }

@@ -1,5 +1,7 @@
 import React from 'react'
 
+/* eslint-disable @next/next/no-img-element */
+
 interface CoverImageProps {
   imageUrl?: string | null
   companyName?: string

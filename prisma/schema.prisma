@@ -122,6 +122,8 @@ model Candidate {
   shiftType         ShiftType?
   targetJobRole     JobRoleTarget?   @default(GENERAL)
   workMode          WorkMode?
+  dateOfBirth       DateTime?
+  gender            String?
   applications      Application[]
   skills            CandidateSkill[]
   user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -130,6 +132,8 @@ model Candidate {
   languages         Language[]
 
   @@index([userId])
+  @@index([dateOfBirth])
+  @@index([gender])
   @@map("candidates")
 }
 
@@ -228,13 +232,14 @@ model JobOffer {
   contractType     ContractType      @default(CDI)
   isRemote         Boolean           @default(false)
   isHybrid         Boolean           @default(false)
-  experienceLevel  ExperienceLevel?
+  employmentType   EmploymentType    @default(FULL_TIME)
   salary           String?
   salaryMin        Int?
   salaryMax        Int?
   salaryCurrency   String?           @default("USD")
   status           JobOfferStatus    @default(DRAFT)
   publishedAt      DateTime?
+  closedAt         DateTime?
   expiresAt        DateTime?
   featured         Boolean           @default(false)
   highlight        Boolean           @default(false)
@@ -242,11 +247,14 @@ model JobOffer {
   metaDescription  String?
   aiGenerated      Boolean           @default(false)
   aiModel          String?
+  views            Int               @default(0)
   deletedAt        DateTime?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   softSkills       String[]          @default([])
   technicalTools   String[]          @default([])
+  activityType     ActivityType      @default(CUSTOMER_SERVICE)
+  activityCustom   String?
   applicationType  ApplicationMethod @default(INTERNAL)
   externalApplyUrl String?
   applications     Application[]
@@ -258,7 +266,8 @@ model JobOffer {
   @@index([status])
   @@index([slug])
   @@index([contractType])
-  @@index([experienceLevel])
+  @@index([employmentType])
+  @@index([activityType])
   @@index([companyId, status, deletedAt])
   @@index([companyId, status, createdAt])
   @@index([status, createdAt])
@@ -324,13 +333,11 @@ model companies {
   slug                  String           @unique
   logoUrl               String?
   coverImageUrl         String?
-  industry              String?
   companySize           String?
   location              String?
   website               String?
   foundedYear           Int?
   description           String?
-  mission               String?
   culture               String?
   isRemoteFriendly      Boolean          @default(false)
   isHybridFriendly      Boolean          @default(false)
@@ -349,7 +356,6 @@ model companies {
   count                 CompanyCount?
   jobs                  JobOffer[]
 
-  @@index([industry])
   @@index([slug])
   @@index([userId])
   @@index([name])
@@ -408,19 +414,14 @@ enum JobOfferStatus {
 
 enum ContractType {
   CDI
-  CDD
+  CIVP
+  KARAMA
   FREELANCE
-  INTERNSHIP
-  PART_TIME
-  APPRENTICESHIP
 }
 
-enum ExperienceLevel {
-  JUNIOR
-  MID
-  SENIOR
-  LEAD
-  EXECUTIVE
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
 }
 
 enum LanguageLevel {
@@ -440,4 +441,14 @@ enum ApplicationStatus {
   ENTRETIEN
   EMBAUCHES
   REFUSE
+}
+
+enum ActivityType {
+  CUSTOMER_SERVICE
+  SALES_LEAD_GENERATION
+  TECHNICAL_IT_SUPPORT
+  DEBT_COLLECTION_LITIGATION
+  BACK_OFFICE_DIGITAL_SERVICES
+  SURVEYS_MARKET_RESEARCH
+  OTHER
 }

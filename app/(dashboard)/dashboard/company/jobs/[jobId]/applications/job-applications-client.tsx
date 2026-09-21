@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
+
 import { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -12,10 +14,11 @@ import {
   Bookmark,
   ChevronDown,
   Eye,
-
+  Download,
 } from "lucide-react";
 import { CandidateReviewModal } from "./candidate-review-modal";
 import type { Candidate, Application } from "./types";
+import { logger } from "@/lib/logger";
 
 interface Stats {
   total: number;
@@ -110,11 +113,11 @@ export function JobApplicationsClient({
 
   // Lazy-load full candidate data when the review modal is opened
   const handleOpenModal = useCallback(
-    async (originalIndex: number) => {
-      setCurrentAppIndex(originalIndex);
+    async (filteredIndex: number) => {
+      setCurrentAppIndex(filteredIndex);
       setIsModalOpen(true);
 
-      const app = filteredWithIndices[originalIndex]?.app;
+      const app = filteredWithIndices[filteredIndex]?.app;
       if (!app) return;
 
       // If we already fetched full details for this candidate, no need to refetch
@@ -154,8 +157,8 @@ export function JobApplicationsClient({
       });
 
       if (!response.ok) throw new Error("Failed to update status");
-    } catch (error) {
-      console.error("Failed to update application status:", error);
+    } catch {
+      logger.error("Failed to update application status");
       if (previousApp) {
         setApplications((prev) =>
           prev.map((app) => (app.id === applicationId ? previousApp : app))
@@ -177,8 +180,8 @@ export function JobApplicationsClient({
       });
 
       if (!response.ok) throw new Error("Failed to toggle saved status");
-    } catch (error) {
-      console.error("Failed to toggle saved status:", error);
+    } catch {
+      logger.error("Failed to toggle saved status");
       setApplications((prev) =>
         prev.map((app) => (app.id === applicationId ? { ...app, isSaved: !isSaved } : app))
       );
@@ -188,7 +191,9 @@ export function JobApplicationsClient({
   // Merge full candidate details onto the lean list row for the modal
   const getEnrichedApplication = useCallback(
     (filteredIndex: number) => {
-      const { app } = filteredWithIndices[filteredIndex];
+      const entry = filteredWithIndices[filteredIndex];
+      if (!entry) return null;
+      const { app } = entry;
       if (!app) return null;
       const full = fullCandidates[app.id];
       return {
@@ -248,6 +253,29 @@ export function JobApplicationsClient({
     });
   };
 
+  const exportCandidates = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `/api/job-offers/${jobOffer.id}/applications/export`,
+        { cache: "no-store" }
+      );
+      if (!res.ok) throw new Error("Failed to export");
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const contentDisposition = res.headers.get("Content-Disposition");
+      const fileNameMatch = contentDisposition?.match(/filename="?([^"]+)"?/);
+      a.download = fileNameMatch ? fileNameMatch[1] : "candidates.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      logger.error("Failed to export candidates", { error });
+    }
+  }, [jobOffer.id]);
+
   const statsCards = [
     { title: "Total Applicants", value: stats.total.toString(), change: `${stats.recent} this week`, icon: "👥" },
     { title: "New", value: stats.new.toString(), change: "Awaiting review", icon: "🆕" },
@@ -277,6 +305,13 @@ export function JobApplicationsClient({
                 {jobOffer.customLocation || "Location not specified"}
               </p>
             </div>
+            <Button
+              onClick={exportCandidates}
+              className="inline-flex items-center gap-2 rounded-xl bg-[#162f67] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#162f67]/90 transition-colors shrink-0"
+            >
+              <Download className="h-4 w-4" />
+              Export
+            </Button>
           </div>
         </div>
 
@@ -344,8 +379,8 @@ export function JobApplicationsClient({
               <div>Action</div>
             </div>
 
-            {filteredWithIndices.map(({ app, originalIndex }) => {
-              const enriched = getEnrichedApplication(originalIndex);
+            {filteredWithIndices.map(({ app }, filteredIndex) => {
+              const enriched = getEnrichedApplication(filteredIndex);
               const candidate = enriched?.candidate;
 
               return (
@@ -426,7 +461,7 @@ export function JobApplicationsClient({
 
                   <div>
                     <button
-                      onClick={() => handleOpenModal(originalIndex)}
+                      onClick={() => handleOpenModal(filteredIndex)}
                       className="inline-flex items-center gap-1.5 rounded-lg bg-[#162f67] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#162f67]/90 transition-colors"
                     >
                       <Eye className="h-3.5 w-3.5" />

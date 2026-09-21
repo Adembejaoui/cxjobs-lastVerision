@@ -3,6 +3,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { pdf } from "@react-pdf/renderer";
 import { CVPDFDocument, Candidate } from "@/components/cv/cv-pdf-document";
+import { logger } from "@/lib/logger";
 
 interface UseCVPDFOptions {
   candidate: Candidate;
@@ -106,9 +107,6 @@ export function useCVPDF({ candidate, watermarkSrc }: UseCVPDFOptions): UseCVPDF
         <CVPDFDocument candidate={sanitizedCandidate} watermarkSrc={watermarkDataUrl ?? watermarkSrc ?? null} />
       ).toBlob();
 
-      console.log("[CV PDF] Blob size", blob?.size || 0);
-      console.log("[CV PDF] Blob type", blob?.type || null);
-
       if (!blob || blob.size === 0) {
         throw new Error("Generated PDF is empty");
       }
@@ -140,13 +138,13 @@ export function useCVPDF({ candidate, watermarkSrc }: UseCVPDFOptions): UseCVPDF
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to generate PDF";
-      console.error("PDF generation error:", err);
+      logger.error("PDF generation failed");
       setError(errorMessage);
       return false;
     } finally {
       setIsGenerating(false);
     }
-  }, [resolveWatermarkSrc, sanitizedCandidate]);
+  }, [resolveWatermarkSrc, sanitizedCandidate, watermarkSrc]);
 
   return {
     generatePDF,

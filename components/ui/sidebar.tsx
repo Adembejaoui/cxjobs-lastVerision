@@ -10,7 +10,6 @@ import {
   Briefcase, 
   Users, 
   Settings, 
-  Bell, 
   LogOut,
   Menu,
   X,
@@ -18,13 +17,10 @@ import {
   Search,
   FileText,
   User,
-  ChevronDown,
   PanelLeft,
-  PlusCircle,
   BarChart3,
   Shield
 } from "lucide-react";
-import { auth } from "@/lib/auth";
 
 interface NavItem {
   title: string;
@@ -44,7 +40,6 @@ const candidateNavItems: NavItem[] = [
   { title: "Dashboard", href: "/dashboard", icon: <LayoutDashboard className="w-5 h-5" /> },
   { title: "Browse Jobs", href: "/jobs", icon: <Search className="w-5 h-5" /> },
   { title: "My Applications", href: "/dashboard/applications", icon: <FileText className="w-5 h-5" /> },
-  { title: "Job Alerts", href: "/dashboard/alerts", icon: <Bell className="w-5 h-5" /> },
   { title: "Profile", href: "/dashboard/candidate", icon: <User className="w-5 h-5" /> },
   { title: "Settings", href: "/dashboard/settings", icon: <Settings className="w-5 h-5" /> },
 ];

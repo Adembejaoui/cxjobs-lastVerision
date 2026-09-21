@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
-import { PlusCircle, Eye, Edit, Trash2, MapPin, Search, ChevronDown, Users } from "lucide-react";
+import { PlusCircle, Eye, Edit, Trash2, MapPin, Search, ChevronDown, Users, CheckCircle, Lock, Archive, RotateCcw } from "lucide-react";
 import { JobPostFlow } from "@/components/dashboard/job-post-flow";
 import { JobFormDialog } from "@/components/dashboard/job-form-dialog";
 import { showSuccess, showError, showWarning } from "@/lib/toast";
@@ -18,7 +18,8 @@ interface JobOffer {
   status: string;
   isRemote: boolean;
   isHybrid: boolean;
-  experienceLevel: string | null;
+  activityType: string | null;
+  activityCustom: string | null;
   createdAt: Date;
   _count?: {
     applications: number;
@@ -99,6 +100,20 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
     }
   };
 
+  const activityTypeLabel = (type: string | null, custom: string | null): string => {
+    if (!type) return '';
+    const labels: Record<string, string> = {
+      CUSTOMER_SERVICE: 'Customer Service',
+      SALES_LEAD_GENERATION: 'Sales & Lead Generation',
+      TECHNICAL_IT_SUPPORT: 'Technical & IT Support',
+      DEBT_COLLECTION_LITIGATION: 'Debt Collection & Litigation',
+      BACK_OFFICE_DIGITAL_SERVICES: 'Back-office & Digital Services',
+      SURVEYS_MARKET_RESEARCH: 'Surveys & Market Research',
+      OTHER: custom || 'Other',
+    };
+    return labels[type] || type;
+  };
+
   const formatDate = (date: Date) =>
     new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
@@ -123,8 +138,8 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
             }
             showSuccess("Job deleted successfully", { description: `"${jobTitle}" has been removed.` });
             router.refresh();
-          } catch (error: any) {
-            showError("Failed to delete job", { description: error.message || "Please try again later." });
+           } catch (error) {
+            showError("Failed to delete job", { description: error instanceof Error ? error.message : "Please try again later." });
           } finally {
             setDeletingJobId(null);
           }
@@ -134,6 +149,36 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
   };
 
   // ─── Stats cards ───────────────────────────────────────────────────────────
+
+  const handleJobStatusChange = async (jobId: string, newStatus: string) => {
+    try {
+      const response = await fetch(`/api/job-offers/${jobId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "Failed to update status");
+      }
+
+      const statusLabels: Record<string, string> = {
+        PUBLISHED: "published",
+        CLOSED: "closed",
+        ARCHIVED: "archived",
+        DRAFT: "restored",
+      };
+      showSuccess(`Job ${statusLabels[newStatus] || "updated"} successfully`, {
+        description: "The job status has been updated.",
+      });
+      router.refresh();
+    } catch (error) {
+      showError("Failed to update job status", {
+        description: error instanceof Error ? error.message : "Please try again later.",
+      });
+    }
+  };
 
   const statsCards = [
     { title: "Active Jobs", value: stats.activeJobs.toString(), change: "Currently published", icon: "▣" },
@@ -225,78 +270,134 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
         {filteredJobs.length > 0 ? (
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             {/* Table header */}
-            <div className="grid grid-cols-[2fr_0.8fr_1fr_0.8fr_0.6fr] gap-3 border-b border-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
-              <div>Job Title</div>
-              <div>Status</div>
-              <div>Posted Date</div>
-              <div>Applicants</div>
-              <div className="text-right">Actions</div>
-            </div>
+<div className="grid grid-cols-[2fr_1fr_0.8fr_1fr_0.8fr_0.6fr] gap-3 border-b border-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+               <div>Job Title</div>
+               <div>Activity Type</div>
+               <div>Status</div>
+               <div>Posted Date</div>
+               <div>Applicants</div>
+               <div className="text-right">Actions</div>
+             </div>
 
-            {filteredJobs.map((job) => (
-              <div
-                key={job.id}
-                className="grid grid-cols-[2fr_0.8fr_1fr_0.8fr_0.6fr] items-center gap-3 border-b border-slate-100 px-4 py-4 last:border-b-0 hover:bg-slate-50"
-              >
-                <div>
-                  <Link
-                    href={`/jobs/${job.slug}`}
-                    className="text-sm font-semibold text-slate-900 hover:text-primary hover:underline"
-                  >
-                    {job.title}
-                  </Link>
-                  <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">
-                    <MapPin className="h-3 w-3" />
-                    {job.customLocation || job.company?.location || "Location not specified"}
-                    {job.isRemote && " (Remote)"}
-                    {job.isHybrid && " (Hybrid)"}
-                  </div>
-                </div>
+             {filteredJobs.map((job) => (
+               <div
+                 key={job.id}
+                 className="grid grid-cols-[2fr_1fr_0.8fr_1fr_0.8fr_0.6fr] items-center gap-3 border-b border-slate-100 px-4 py-4 last:border-b-0 hover:bg-slate-50"
+               >
+                 <div>
+                   <Link
+                     href={`/jobs/${job.slug}`}
+                     className="text-sm font-semibold text-slate-900 hover:text-primary hover:underline"
+                   >
+                     {job.title}
+                   </Link>
+                   <div className="mt-1 flex items-center gap-1 text-xs text-slate-500">
+                     <MapPin className="h-3 w-3" />
+                     {job.customLocation || job.company?.location || "Location not specified"}
+                     {job.isRemote && " (Remote)"}
+                     {job.isHybrid && " (Hybrid)"}
+                   </div>
+                 </div>
 
-                <div>
-                  <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${getStatusStyle(job.status)}`}>
-                    {job.status}
-                  </span>
-                </div>
+                 <div>
+                   <span className="inline-flex rounded-full bg-purple-50 px-2 py-0.5 text-xs font-bold text-purple-700">
+                     {activityTypeLabel(job.activityType, job.activityCustom)}
+                   </span>
+                 </div>
 
-                <div className="text-sm text-slate-600">{formatDate(job.createdAt)}</div>
+                 <div>
+                   <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-bold ${getStatusStyle(job.status)}`}>
+                     {job.status}
+                   </span>
+                 </div>
 
-                <Link
-                  href={`/dashboard/company/jobs/${job.id}/applications`}
-                  className="flex items-center gap-1.5 text-sm font-semibold text-emerald-600 hover:text-emerald-700"
-                  title="View applicants"
-                >
-                  <Users className="h-4 w-4" />
-                  {job._count?.applications}
-                </Link>
+                 <div className="text-sm text-slate-600">{formatDate(job.createdAt)}</div>
 
-                <div className="flex items-center justify-end gap-1 text-slate-500">
-                  <Link
-                    href={`/jobs/${job.slug}`}
-                    className="rounded p-1.5 hover:bg-slate-100"
-                    title="View"
-                  >
-                    <Eye className="h-4 w-4" />
-                  </Link>
-                  <button
-                    onClick={() => {
-                      setEditingJob(job);
-                      setIsEditDialogOpen(true);
-                    }}
-                    className="rounded p-1.5 hover:bg-slate-100"
-                    title="Edit"
-                  >
-                    <Edit className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => handleDeleteJob(job.id, job.title)}
-                    disabled={deletingJobId === job.id}
-                    className="rounded p-1.5 hover:bg-slate-100 disabled:opacity-50"
-                    title="Delete"
-                  >
-                    <Trash2 className="h-4 w-4 text-red-500" />
-                  </button>
-                </div>
+                 <Link
+                   href={`/dashboard/company/jobs/${job.id}/applications`}
+                   className="flex items-center gap-1.5 text-sm font-semibold text-emerald-600 hover:text-emerald-700"
+                   title="View applicants"
+                 >
+                   <Users className="h-4 w-4" />
+                   {job._count?.applications}
+                 </Link>
+
+                 <div className="flex items-center justify-end gap-1 text-slate-500">
+                   <Link
+                     href={`/jobs/${job.slug}`}
+                     className="rounded p-1.5 hover:bg-slate-100"
+                     title="View"
+                   >
+                     <Eye className="h-4 w-4" />
+                   </Link>
+                   {(job.status === "DRAFT" || job.status === "PUBLISHED") && (
+                     <button
+                       onClick={() => {
+                         setEditingJob(job);
+                         setIsEditDialogOpen(true);
+                       }}
+                       className="rounded p-1.5 hover:bg-slate-100"
+                       title="Edit"
+                     >
+                       <Edit className="h-4 w-4" />
+                     </button>
+                   )}
+                   {job.status === "DRAFT" && (
+                     <>
+                       <button
+                         onClick={() => handleJobStatusChange(job.id, "PUBLISHED")}
+                         className="rounded p-1.5 hover:bg-emerald-100"
+                         title="Publish"
+                       >
+                         <CheckCircle className="h-4 w-4 text-emerald-600" />
+                       </button>
+                       <button
+                         onClick={() => handleDeleteJob(job.id, job.title)}
+                         disabled={deletingJobId === job.id}
+                         className="rounded p-1.5 hover:bg-slate-100 disabled:opacity-50"
+                         title="Delete"
+                       >
+                         <Trash2 className="h-4 w-4 text-red-500" />
+                       </button>
+                     </>
+                   )}
+                   {job.status === "PUBLISHED" && (
+                     <>
+                       <button
+                         onClick={() => handleJobStatusChange(job.id, "CLOSED")}
+                         className="rounded p-1.5 hover:bg-slate-100"
+                         title="Close"
+                       >
+                         <Lock className="h-4 w-4 text-amber-600" />
+                       </button>
+                       <button
+                         onClick={() => handleJobStatusChange(job.id, "ARCHIVED")}
+                         className="rounded p-1.5 hover:bg-blue-100"
+                         title="Archive"
+                       >
+                         <Archive className="h-4 w-4 text-blue-600" />
+                       </button>
+                     </>
+                   )}
+                   {job.status === "CLOSED" && (
+                     <button
+                       onClick={() => handleJobStatusChange(job.id, "ARCHIVED")}
+                       className="rounded p-1.5 hover:bg-blue-100"
+                       title="Archive"
+                     >
+                       <Archive className="h-4 w-4 text-blue-600" />
+                     </button>
+                   )}
+                   {job.status === "ARCHIVED" && (
+                     <button
+                       onClick={() => handleJobStatusChange(job.id, "DRAFT")}
+                       className="rounded p-1.5 hover:bg-emerald-100"
+                       title="Restore"
+                     >
+                       <RotateCcw className="h-4 w-4 text-emerald-600" />
+                     </button>
+                   )}
+                 </div>
               </div>
             ))}
 
@@ -326,11 +427,7 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
                 ? "Try adjusting your search or filters"
                 : "Create your first job listing to start receiving applications"}
             </p>
-            {!searchQuery && statusFilter === "ALL" && (
-              <div className="mt-6">
-                <JobPostFlow />
-              </div>
-            )}
+          
             {(searchQuery || statusFilter !== "ALL") && (
               <Button
                 variant="outline"

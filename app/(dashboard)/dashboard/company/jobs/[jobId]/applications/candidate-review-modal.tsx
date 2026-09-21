@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+/* eslint-disable @next/next/no-img-element */
+
+import { useState, useMemo } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { X, ChevronLeft, ChevronRight, Mail, Phone, Download, Bookmark } from "lucide-react";
@@ -34,22 +36,15 @@ export function CandidateReviewModal({
   onStatusUpdate,
   onToggleSaved,
 }: CandidateReviewModalProps) {
-  const [notes, setNotes] = useState("");
-  const [selectedStatus, setSelectedStatus] = useState<string>("");
-
   const application = useMemo(() => {
     return applications[currentIndex];
   }, [applications, currentIndex]);
 
   const candidate = application?.candidate as Candidate | undefined;
 
-  // Sync notes and status when application changes
-  useEffect(() => {
-    if (application) {
-      setNotes(application.notes || "");
-      setSelectedStatus(application.status);
-    }
-  }, [application]);
+  // Use lazy initialization for state to avoid syncing in effects
+  const [notes, setNotes] = useState(() => application?.notes || "");
+  const [selectedStatus, setSelectedStatus] = useState<string>(() => application?.status || "");
 
   const handleOpenChange = (open: boolean) => {
     if (!open) {
@@ -116,7 +111,7 @@ export function CandidateReviewModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-[1240px] p-0 overflow-hidden border-0 rounded-[24px]" showCloseButton={false}>
+      <DialogContent key={application?.id} className="max-w-[1240px] p-0 overflow-hidden border-0 rounded-[24px]" showCloseButton={false}>
         <DialogTitle className="sr-only">
           Candidate Review - {fullName}
         </DialogTitle>

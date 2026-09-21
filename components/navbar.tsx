@@ -1,9 +1,11 @@
-"use client"
+"use client";
+
+/* eslint-disable @next/next/no-img-element */
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { useSession, signOut } from "next-auth/react"
+import { signOut } from "next-auth/react"
 import { 
   DropdownMenu,
   DropdownMenuContent,
@@ -12,22 +14,29 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { User, LogOut, Settings, LayoutDashboard, Menu, X } from "lucide-react"
+import { User, LogOut, LayoutDashboard, Menu, X } from "lucide-react"
 import { useState } from "react"
+
+interface UserData {
+  id?: string;
+  name?: string | null;
+  email?: string | null;
+  image?: string | null;
+  role?: string;
+}
 
 const navigation = [
   { name: "Find Jobs", href: "/jobs" },
   { name: "Companies", href: "/companies" },
-  { name: "About Us", href: "/about" },
-
 ]
 
-export function Navbar() {
+interface NavbarProps {
+  user: UserData | null;
+}
+
+export function Navbar({ user }: NavbarProps) {
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const { data: session, status } = useSession()
-  const isLoading = status === "loading"
-  const user = session?.user
 
   // Determine dashboard link based on user role
   const getDashboardLink = () => {
@@ -43,21 +52,6 @@ export function Navbar() {
         return "/dashboard"
     }
   }
-
-  const getDashboardName = () => {
-    if (!user) return ""
-    switch (user.role) {
-      case "ADMIN":
-        return "Admin Dashboard"
-      case "COMPANY":
-        return "My Jobs"
-      case "CANDIDATE":
-        return "My Applications"
-      default:
-        return "Dashboard"
-    }
-  }
-
   return (
     <header className="border-b bg-white">
       <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">

@@ -4,13 +4,33 @@ import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
 import prisma from "./prisma";
+import { logger } from "./logger";
+
+const DUMMY_PASSWORD_HASH =
+  "$2b$12$Tzq0gYe4R7DTwIx4PZoKxucAmQLvVLBoUrVni61m/TL.bIq6vqwG6";
+
+interface AuthUser {
+  id: string;
+  email: string;
+  name?: string | null;
+  role: string;
+  isOnboarded: boolean;
+}
+
+if (!process.env.AUTH_SECRET) {
+  throw new Error(
+    "AUTH_SECRET environment variable is required. Generate one with: openssl rand -base64 32"
+  );
+}
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
   trustHost: true,
-adapter: PrismaAdapter(prisma as Parameters<typeof PrismaAdapter>[0]),
-  secret: process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET,
+   adapter: PrismaAdapter(prisma as unknown as Parameters<typeof PrismaAdapter>[0]),
+  secret: process.env.AUTH_SECRET,
   session: {
     strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60,
+    updateAge: 24 * 60 * 60,
   },
   pages: {
     signIn: "/login",
@@ -39,7 +59,8 @@ adapter: PrismaAdapter(prisma as Parameters<typeof PrismaAdapter>[0]),
           where: { email },
         });
 
-        if (!user || !user.passwordHash) {
+        if (!user || !user.passwordHash || !user.isActive) {
+          await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
           return null;
         }
 
@@ -61,14 +82,31 @@ adapter: PrismaAdapter(prisma as Parameters<typeof PrismaAdapter>[0]),
   ],
   callbacks: {
     async jwt({ token, user, trigger, session }) {
-      // Initial sign in - add user data to token
       if (user) {
         token.id = user.id;
         token.role = user.role;
         token.isOnboarded = user.isOnboarded;
+        token.iat = Math.floor(Date.now() / 1000);
       }
 
-      // Update session when user data changes
+      if (token.id) {
+        const now = Math.floor(Date.now() / 1000);
+        const tokenAge = now - (token.iat as number);
+
+        if (tokenAge > 3600) {
+          const dbUser = await prisma.user.findUnique({
+            where: { id: token.id as string },
+            select: { role: true, isOnboarded: true, isActive: true },
+          });
+
+          if (dbUser) {
+            token.role = dbUser.role;
+            token.isOnboarded = dbUser.isOnboarded;
+            token.iat = Math.floor(Date.now() / 1000);
+          }
+        }
+      }
+
       if (trigger === "update" && session) {
         token = { ...token, ...session };
       }
@@ -76,7 +114,6 @@ adapter: PrismaAdapter(prisma as Parameters<typeof PrismaAdapter>[0]),
       return token;
     },
     async session({ session, token }) {
-      // Add token data to session
       if (token) {
         session.user.id = token.id as string;
         session.user.role = token.role as string;
@@ -85,15 +122,19 @@ adapter: PrismaAdapter(prisma as Parameters<typeof PrismaAdapter>[0]),
       return session;
     },
     async signIn({ user, account }) {
-      // For OAuth providers, check if user exists
       if (account?.provider === "google") {
+        if (!user.email) {
+          return false;
+        }
+
         const existingUser = await prisma.user.findUnique({
-          where: { email: user.email! },
+          where: { email: user.email },
         });
 
-        // If user doesn't exist, they will be created by the adapter
-        // If user exists but has no password (OAuth only), allow sign in
         if (existingUser) {
+          if (!existingUser.isActive) {
+            return false;
+          }
           return true;
         }
       }
@@ -102,13 +143,14 @@ adapter: PrismaAdapter(prisma as Parameters<typeof PrismaAdapter>[0]),
   },
   events: {
     async createUser({ user }) {
-      // Log new user creation
-      console.log(`New user created: ${user.email}`);
+      logger.info("New user created", {
+        userId: user.id,
+        role: user.role,
+      });
     },
   },
 });
 
-// Type extensions for NextAuth
 declare module "next-auth" {
   interface User {
     role?: string;
@@ -132,5 +174,8 @@ declare module "@auth/core/jwt" {
     id?: string;
     role?: string;
     isOnboarded?: boolean;
+    iat?: number;
   }
 }
+
+export type { AuthUser };

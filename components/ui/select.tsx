@@ -34,7 +34,6 @@ export function Select({
   value,
   onValueChange,
   children,
-  disabled,
 }: SelectProps) {
   const [open, setOpen] = React.useState(false);
 
@@ -54,7 +53,7 @@ export interface SelectTriggerProps
 
 export const SelectTrigger = React.forwardRef<HTMLButtonElement, SelectTriggerProps>(
   ({ className, children, disabled, ...props }, ref) => {
-    const { open, setOpen, value } = useSelectContext();
+    const { open, setOpen} = useSelectContext();
 
     return (
       <button
@@ -165,7 +164,7 @@ export interface SelectItemProps
 }
 
 export function SelectItem({
-  value,
+  value: _value,
   disabled,
   children,
   className,
@@ -173,6 +172,8 @@ export function SelectItem({
   isSelected,
   ...props
 }: SelectItemProps & { onSelect?: () => void; isSelected?: boolean }) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const __value = _value;
   return (
     <div
       role="option"

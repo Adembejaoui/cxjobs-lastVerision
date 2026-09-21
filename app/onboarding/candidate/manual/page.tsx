@@ -1,9 +1,12 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
+
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
+import { useUser } from "@/components/auth/user-provider";
 import { JOB_ROLES, getJobRoleConfig } from "@/lib/job-role-config";
+import { logger } from "@/lib/logger";
 
 interface FormData {
   targetJobRole: string;
@@ -20,6 +23,8 @@ interface FormData {
   workMode: string;
   shiftType: string;
   preferredJobTypes: string[];
+  dateOfBirth: string;
+  gender: string;
   skills: { name: string; level?: string }[];
   experiences: { title: string; company: string; location: string; startDate: string; endDate: string; current: boolean; description: string }[];
   languages: { name: string; level: string }[];
@@ -41,6 +46,8 @@ const initialFormData: FormData = {
   workMode: "",
   shiftType: "",
   preferredJobTypes: [],
+  dateOfBirth: "",
+  gender: "",
   skills: [],
   experiences: [],
   languages: [],
@@ -81,10 +88,16 @@ const SHIFT_TYPES = [
 const JOB_TYPES = [
   { id: "FULL_TIME", label: "Full-time" },
   { id: "PART_TIME", label: "Part-time" },
-  { id: "CDI", label: "CDI (Permanent)" },
-  { id: "CDD", label: "CDD (Contract)" },
-  { id: "INTERNSHIP", label: "Internship" },
+  { id: "CDI", label: "CDI" },
+  { id: "CIVP", label: "CIVP" },
+  { id: "KARAMA", label: "Karama" },
   { id: "FREELANCE", label: "Freelance" },
+];
+
+const GENDER_OPTIONS = [
+  { id: "male", label: "male" },
+  { id: "female", label: "female" },
+  { id: "Prefer not to say", label: "Prefer not to say" },
 ];
 
 const STEPS = ["profile", "role", "skills", "languages", "experience", "education", "preferences"];
@@ -100,7 +113,10 @@ const STEP_TITLES: Record<string, string> = {
 
 export default function ManualOnboardingPage() {
   const router = useRouter();
-  const { data: session, status, update } = useSession();
+  const user = useUser();
+  const email = user?.email ?? "";
+  const name = user?.name ?? null;
+  const isOnboarded = user?.isOnboarded ?? false;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
@@ -131,18 +147,18 @@ export default function ManualOnboardingPage() {
   });
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/login");
-    } else if (status === "authenticated") {
-      setFormData((prev) => ({
-        ...prev,
-        email: session.user?.email || "",
-        firstName: session.user?.name?.split(" ")[0] || "",
-        lastName: session.user?.name?.split(" ").slice(1).join(" ") || "",
-      }));
-      setLoading(false);
+    if (isOnboarded) {
+      router.push("/dashboard");
+      return;
     }
-  }, [status, router, session]);
+    setFormData((prev) => ({
+      ...prev,
+      email: email || "",
+      firstName: name?.split(" ")[0] || "",
+      lastName: name?.split(" ").slice(1).join(" ") || "",
+    }));
+    setLoading(false);
+  }, [isOnboarded, router, email, name]);
 
   useEffect(() => {
     if (formData.targetJobRole) {
@@ -154,7 +170,7 @@ export default function ManualOnboardingPage() {
         }
       }
     }
-  }, [formData.targetJobRole]);
+  }, [formData.targetJobRole, formData.headline]);
 
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -174,8 +190,8 @@ export default function ManualOnboardingPage() {
       if (data.success && data.data?.url) {
         setFormData((prev) => ({ ...prev, avatarUrl: data.data.url }));
       }
-    } catch (error) {
-      console.error("Upload error:", error);
+    } catch {
+      logger.error("Avatar upload failed");
     } finally {
       setAvatarUploading(false);
     }
@@ -366,7 +382,6 @@ export default function ManualOnboardingPage() {
       const data = await res.json();
 
       if (data.success) {
-        await update({ isOnboarded: true });
         router.push("/dashboard/candidate/profile");
         router.refresh();
       } else {
@@ -499,7 +514,33 @@ export default function ManualOnboardingPage() {
                 placeholder="https://linkedin.com/in/..."
               />
             </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
+                <input
+                  type="date"
+                  value={formData.dateOfBirth}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, dateOfBirth: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+                <select
+                  value={formData.gender}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, gender: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="" disabled>Select gender</option>
+                  {GENDER_OPTIONS.map((g) => (
+                    <option key={g.id} value={g.id}>{g.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
+          
         );
 
       case "role":

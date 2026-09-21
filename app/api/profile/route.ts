@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import  prisma  from "@/lib/prisma";
 import { candidateProfileSchema, companyProfileSchema } from "@/lib/validations/profile";
+import { logger } from "@/lib/logger";
 
 type InteractiveTx = Omit<typeof prisma, "$connect" | "$disconnect" | "$on" | "$transaction" | "$extends">;
 
@@ -51,7 +52,7 @@ export async function GET() {
       data: user,
     });
   } catch (error) {
-    console.error("Get profile error:", error);
+    logger.error("Get profile error", { error });
     return NextResponse.json(
       { success: false, error: "Failed to fetch profile", code: "INTERNAL_ERROR" },
       { status: 500 }
@@ -96,7 +97,7 @@ export async function POST(request: NextRequest) {
       );
     }
   } catch (error) {
-    console.error("Update profile error:", error);
+    logger.error("Update profile error", { error });
     return NextResponse.json(
       { success: false, error: "Failed to update profile", code: "INTERNAL_ERROR" },
       { status: 500 }
@@ -307,25 +308,23 @@ async function upsertCompanyProfile(userId: string, data: unknown) {
   // Transform culture array to JSON string for storage
   const cultureJson = culture && culture.length > 0 ? JSON.stringify(culture) : null;
 
-   // Build company data object with properly typed fields
-   const companyData = {
-     name: profileData.name!,
-     description: profileData.description || null,
-     mission: profileData.mission || null,
-     logoUrl: profileData.logoUrl || null,
-     coverImageUrl: profileData.coverImageUrl || null,
-     website: profileData.website || null,
-     linkedinUrl: profileData.linkedinUrl || null,
-     twitterUrl: profileData.twitterUrl || null,
-     facebookUrl: profileData.facebookUrl || null,
-     industry: profileData.industry || null,
-     companySize: profileData.companySize || null,
-     location: profileData.location || null,
-     foundedYear: profileData.foundedYear || null,
-     isRemoteFriendly: profileData.isRemoteFriendly ?? false,
-     isHybridFriendly: profileData.isHybridFriendly ?? false,
-     culture: cultureJson,
-   };
+    // Build company data object with properly typed fields
+    const companyData = {
+      name: profileData.name!,
+      description: profileData.description || null,
+      logoUrl: profileData.logoUrl || null,
+      coverImageUrl: profileData.coverImageUrl || null,
+      website: profileData.website || null,
+      linkedinUrl: profileData.linkedinUrl || null,
+      twitterUrl: profileData.twitterUrl || null,
+      facebookUrl: profileData.facebookUrl || null,
+      companySize: profileData.companySize || null,
+      location: profileData.location || null,
+      foundedYear: profileData.foundedYear || null,
+      isRemoteFriendly: profileData.isRemoteFriendly ?? false,
+      isHybridFriendly: profileData.isHybridFriendly ?? false,
+      culture: cultureJson,
+    };
 
   const company = await prisma.$transaction(async (tx: InteractiveTx) => {
     const existingCompany = await tx.companies.findUnique({

@@ -2,8 +2,9 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
-import { JOB_ROLES, getJobRoleConfig } from "@/lib/job-role-config";
+import { useUser } from "@/components/auth/user-provider";
+import { JOB_ROLES } from "@/lib/job-role-config";
+import { logger } from "@/lib/logger";
 
 interface FormData {
   targetJobRole: string;
@@ -67,7 +68,10 @@ const ROLE_COLORS: Record<string, string> = {
 
 export default function CVOnboardingPage() {
   const router = useRouter();
-  const { data: session, status, update } = useSession();
+  const user = useUser();
+  const email = user?.email ?? "";
+  const name = user?.name ?? null;
+  const isOnboarded = user?.isOnboarded ?? false;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
@@ -80,18 +84,18 @@ export default function CVOnboardingPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/login");
-    } else if (status === "authenticated") {
-      setFormData((prev) => ({
-        ...prev,
-        email: session.user?.email || "",
-        firstName: session.user?.name?.split(" ")[0] || "",
-        lastName: session.user?.name?.split(" ").slice(1).join(" ") || "",
-      }));
-      setLoading(false);
+    if (isOnboarded) {
+      router.push("/dashboard");
+      return;
     }
-  }, [status, router, session]);
+    setFormData((prev) => ({
+      ...prev,
+      email: email || "",
+      firstName: name?.split(" ")[0] || "",
+      lastName: name?.split(" ").slice(1).join(" ") || "",
+    }));
+    setLoading(false);
+  }, [isOnboarded, router, email, name]);
 
   const handleCVFileSelect = (file: File) => {
     if (file.type !== "application/pdf") {
@@ -158,8 +162,8 @@ export default function CVOnboardingPage() {
           if (uploadData.success && uploadData.data?.url) {
             uploadedResumeUrl = uploadData.data.url;
           }
-        } catch (uploadError) {
-          console.error("CV upload error:", uploadError);
+        } catch {
+          logger.error("CV upload failed");
         }
 
         const updatedFormData = {
@@ -202,8 +206,8 @@ export default function CVOnboardingPage() {
       } else {
         setError(data.error || "Failed to parse CV. Please try again or choose manual onboarding.");
       }
-    } catch (err) {
-      console.error("CV upload error:", err);
+    } catch {
+      logger.error("CV parsing failed");
       setError("An error occurred while parsing your CV. Please try again.");
     } finally {
       setCvParsing(false);
@@ -240,7 +244,6 @@ export default function CVOnboardingPage() {
       const data = await res.json();
 
       if (data.success) {
-        await update({ isOnboarded: true });
         router.push("/dashboard/candidate/profile");
         router.refresh();
       } else {
@@ -253,9 +256,9 @@ export default function CVOnboardingPage() {
     }
   };
 
-  const selectedRole = formData.targetJobRole ? getJobRoleConfig(formData.targetJobRole) : null;
 
-  if (loading || status === "loading") {
+
+  if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50 flex items-center justify-center">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
@@ -271,7 +274,7 @@ export default function CVOnboardingPage() {
             <div className="space-y-6">
               <div className="text-center mb-6">
                 <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Upload Your CV</h1>
-                <p className="text-sm text-gray-600">We'll extract your information from the PDF</p>
+                <p className="text-sm text-gray-600">We&apos;ll extract your information from the PDF</p>
               </div>
 
               <div
@@ -357,7 +360,7 @@ export default function CVOnboardingPage() {
             <div className="space-y-6">
               <div className="text-center mb-6">
                 <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">Choose Your Target Role</h1>
-                <p className="text-sm text-gray-600">Select the type of job you're looking for</p>
+                <p className="text-sm text-gray-600">Select the type of job you&apos;re looking for</p>
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">

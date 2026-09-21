@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
+
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -7,8 +9,6 @@ import {
   Briefcase,
   Building2,
   FileText,
-  Bell,
-  Settings,
   LogOut,
   Search,
   User,
@@ -16,6 +16,7 @@ import {
   ChevronRight,
   X,
   Menu,
+  ChartNoAxesCombined,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { signOut } from "next-auth/react";
@@ -48,15 +49,14 @@ const companyNavItems: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard/company" },
   { label: "Manage Jobs", icon: Briefcase, href: "/dashboard/company/jobs" },
   { label: "Company Profile", icon: Building2, href: "/dashboard/company/profile" },
+  { label: "Analytics", icon: ChartNoAxesCombined, href: "/dashboard/company/analytics" },
 ];
 
 const candidateNavItems: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard/candidate" },
   { label: "Browse Jobs", icon: Search, href: "/jobs" },
   { label: "My Applications", icon: FileText, href: "/dashboard/candidate/applications" },
-  { label: "Job Alerts", icon: Bell, href: "/dashboard/candidate/alerts" },
   { label: "Profile", icon: User, href: "/dashboard/candidate/profile" },
-  { label: "Settings", icon: Settings, href: "/dashboard/candidate/settings" },
 ];
 
 function getInitials(name?: string | null) {

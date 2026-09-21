@@ -16,16 +16,18 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Globe, Linkedin, MapPin, Save, Loader2, Twitter, Facebook, Image as ImageIcon } from "lucide-react";
+import { Building2, Globe, Linkedin, Save, Loader2, Twitter, Facebook, Image as ImageIcon } from "lucide-react";
 import { CroppableImageUpload } from "@/components/dashboard/croppable-image-upload";
 import { CultureEditor } from "@/components/dashboard/culture-editor";
 import { CompanyBenefitsEditor, BenefitItem } from "@/components/dashboard/company-benefits-editor";
+import { logger } from "@/lib/logger";
 
 interface CultureItem {
   id: string;
   title: string;
   description: string;
   imageUrl: string;
+  icon: string;
 }
 
 interface CompanyBenefit {
@@ -48,13 +50,11 @@ interface Company {
   linkedinUrl: string | null;
   twitterUrl: string | null;
   facebookUrl: string | null;
-  industry: string | null;
   companySize: string | null;
   location: string | null;
   foundedYear: number | null;
   benefits: CompanyBenefit[];
-  culture: any;
-  mission: string | null;
+  culture: string | unknown;
   userId: string;
   isRemoteFriendly: boolean;
   isHybridFriendly: boolean;
@@ -64,29 +64,39 @@ interface CompanyProfileFormProps {
   company: Company;
 }
 
-const INDUSTRIES = [
-  "Technology",
-  "Finance & Banking",
-  "Healthcare",
-  "E-commerce",
-  "Education",
-  "Manufacturing",
-  "Media & Entertainment",
-  "Consulting",
-  "Real Estate",
-  "Telecommunications",
-  "Transportation",
-  "Energy",
-  "Retail",
-  "Other",
+const COMPANY_SIZES = [
+  { value: "1-10", label: "1-10 employees" },
+  { value: "11-50", label: "11-50 employees" },
+  { value: "51-200", label: "51-200 employees" },
+  { value: "201-1000", label: "201-1000 employees" },
+  { value: "1000+", label: "1000+ employees" },
 ];
 
-const COMPANY_SIZES = [
-  { value: "STARTUP", label: "1-10 employees" },
-  { value: "SMALL", label: "11-50 employees" },
-  { value: "MEDIUM", label: "51-200 employees" },
-  { value: "LARGE", label: "201-1000 employees" },
-  { value: "ENTERPRISE", label: "1000+ employees" },
+const LOCATIONS = [
+  "Tunis",
+  "Zaghouan",
+  "Ariana",
+  "Béja",
+  "Ben Arous",
+  "Bizerte",
+  "Gabès",
+  "Gafsa",
+  "Jendouba",
+  "Kairouan",
+  "Kasserine",
+  "Kebili",
+  "Kef",
+  "Mahdia",
+  "Manouba",
+  "Medenine",
+  "Monastir",
+  "Nabeul",
+  "Sfax",
+  "Sidi Bouzid",
+  "Siliana",
+  "Sousse",
+  "Tataouine",
+  "Tozeur",
 ];
 
 export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
@@ -101,23 +111,25 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
       try {
         const parsed = JSON.parse(company.culture);
         if (Array.isArray(parsed)) {
-          return parsed.map((item: any, index: number) => ({
+           return parsed.map((item: { title?: string; description?: string; imageUrl?: string; icon?: string }, index: number) => ({
             id: `culture-${index}-${Date.now()}`,
             title: item.title || "",
             description: item.description || "",
             imageUrl: item.imageUrl || "",
+            icon: item.icon || "",
           }));
         }
-      } catch (e) {
-        console.warn("Failed to parse culture data");
+      } catch {
+        logger.warn("Failed to parse culture data");
       }
     }
     if (Array.isArray(company.culture)) {
-      return company.culture.map((item: any, index: number) => ({
+      return company.culture.map((item: { title?: string; description?: string; imageUrl?: string; icon?: string }, index: number) => ({
         id: `culture-${index}-${Date.now()}`,
         title: item.title || "",
         description: item.description || "",
         imageUrl: item.imageUrl || "",
+        icon: item.icon || "",
       }));
     }
     return [];
@@ -126,12 +138,10 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
   const [formData, setFormData] = useState({
     name: company.name || "",
     description: company.description || "",
-    mission: company.mission || "",
     website: company.website || "",
     linkedinUrl: company.linkedinUrl || "",
     twitterUrl: company.twitterUrl || "",
     facebookUrl: company.facebookUrl || "",
-    industry: company.industry || "",
     companySize: company.companySize || "",
     location: company.location || "",
     foundedYear: company.foundedYear?.toString() || "",
@@ -155,6 +165,7 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
 
   useEffect(() => {
     setCultureItems(parseCulture());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [company.culture]);
 
   const handleChange = (
@@ -210,12 +221,10 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
           name: formData.name,
           slug: company.slug,
           description: formData.description || null,
-          mission: formData.mission || null,
           website: formData.website || null,
           linkedinUrl: formData.linkedinUrl || null,
           twitterUrl: formData.twitterUrl || null,
           facebookUrl: formData.facebookUrl || null,
-          industry: formData.industry || null,
           companySize: formData.companySize || null,
           location: formData.location || null,
           foundedYear: formData.foundedYear
@@ -237,8 +246,8 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
 
       setSuccess("Company profile updated successfully!");
       router.refresh();
-    } catch (err: any) {
-      setError(err.message || "Failed to update profile");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to update profile");
     } finally {
       setIsSaving(false);
     }
@@ -275,7 +284,7 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
               type="logo"
               label="Company Logo"
               maxSize="2MB"
-              previewClassName="w-32 h-32"
+              previewClassName="w-48 h-48"
             />
             <CroppableImageUpload
               value={formData.coverImageUrl}
@@ -296,7 +305,7 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
             Basic Information
           </CardTitle>
           <CardDescription>
-            Update your company's basic information
+            Update your company&apos;s basic information
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -311,25 +320,6 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
                 placeholder="Enter company name"
                 required
               />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="industry">Industry</Label>
-              <Select
-                value={formData.industry}
-                onValueChange={(value) => handleSelectChange("industry", value)}
-              >
-                <SelectTrigger id="industry">
-                  <SelectValue placeholder="Select industry" />
-                </SelectTrigger>
-                <SelectContent>
-                  {INDUSTRIES.map((industry) => (
-                    <SelectItem key={industry} value={industry}>
-                      {industry}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
 
             <div className="space-y-2">
@@ -355,17 +345,21 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
 
             <div className="space-y-2">
               <Label htmlFor="location">Location</Label>
-              <div className="relative">
-                <MapPin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <Input
-                  id="location"
-                  name="location"
-                  value={formData.location}
-                  onChange={handleChange}
-                  placeholder="City, Country"
-                  className="pl-10"
-                />
-              </div>
+              <Select
+                value={formData.location}
+                onValueChange={(value) => handleSelectChange("location", value)}
+              >
+                <SelectTrigger id="location">
+                  <SelectValue placeholder="Select location" />
+                </SelectTrigger>
+                <SelectContent>
+                  {LOCATIONS.map((loc) => (
+                    <SelectItem key={loc} value={loc}>
+                      {loc}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="space-y-2">
@@ -405,25 +399,10 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
         <CardHeader>
           <CardTitle>About Your Company</CardTitle>
           <CardDescription>
-            Tell candidates about your company story and mission
+            Tell candidates about your company and what makes you unique
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="mission">Mission</Label>
-            <Textarea
-              id="mission"
-              name="mission"
-              value={formData.mission}
-              onChange={handleChange}
-              placeholder="What is your company's mission and purpose?"
-              rows={3}
-            />
-            <p className="text-xs text-slate-500">
-              {formData.mission.length}/1000 characters
-            </p>
-          </div>
-
           <div className="space-y-2">
             <Label htmlFor="description">About the Company</Label>
             <Textarea
@@ -479,7 +458,7 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
             <CardHeader>
               <CardTitle>Social Media Links</CardTitle>
               <CardDescription>
-                Connect your company's social media profiles
+                Connect your company&apos;s social media profiles
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -538,7 +517,7 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
             <CardHeader>
               <CardTitle>Work Settings</CardTitle>
               <CardDescription>
-                Define your company's default work policies
+                Define your company&apos;s default work policies
               </CardDescription>
             </CardHeader>
             <CardContent>

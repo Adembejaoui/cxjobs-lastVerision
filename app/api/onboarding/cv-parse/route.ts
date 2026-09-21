@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { parseCV, isValidPDF, getFileSizeMB } from "@/lib/cv-parser";
+import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
+import { logger } from "@/lib/logger";
+
+const CV_PARSE_LIMIT = { windowMs: 60_000, max: 10 };
 
 // Maximum file size: 5MB
 const MAX_FILE_SIZE_MB = 5;
@@ -16,6 +20,15 @@ const MAX_FILE_SIZE_MB = 5;
  */
 export async function POST(request: NextRequest) {
   try {
+
+    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    const rl = await checkRateLimitAsync(`cv-parse:${ip}`, CV_PARSE_LIMIT);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { success: false, error: "Too many requests. Please try again later.", code: "RATE_LIMITED" },
+        { status: 429, headers: getRateLimitHeaders(rl) }
+      );
+    }
 
     // Authentication check
     const session = await auth();
@@ -106,17 +119,14 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("CV parsing error:", error);
+    logger.error("CV parsing error", { error });
 
-    // Return more detailed error for debugging
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    
-    if (errorMessage === "Failed to parse PDF file") {
+    if (error instanceof Error && error.message === "Failed to parse PDF file") {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Failed to parse PDF file. Please ensure the file is not corrupted or password-protected.",
-          code: "PARSE_ERROR",
+        { 
+          success: false, 
+          error: "Failed to parse CV. Please ensure the file is not corrupted or password-protected.",
+          code: "PARSE_ERROR" 
         },
         { status: 400 }
       );
@@ -125,7 +135,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       { 
         success: false, 
-        error: `Failed to parse CV: ${errorMessage}`, 
+        error: "Failed to parse CV", 
         code: "INTERNAL_ERROR" 
       },
       { status: 500 }

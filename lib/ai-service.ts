@@ -1,4 +1,6 @@
+import { ContractType, EmploymentType } from "@/app/generated/prisma/enums";
 import OpenAI from "openai";
+import { logger } from "./logger";
 
 // Initialize OpenAI client
 const getOpenAIClient = () => {
@@ -16,9 +18,9 @@ const getOpenAIClient = () => {
 export interface JobGenerationInput {
   title: string;
   company?: string;
-  industry?: string;
   location?: string;
-  contractType?: string;
+  contractType?: ContractType;
+  employmentType?: EmploymentType;
   workMode?: string;
   requirements?: string[];
   benefits?: string[];
@@ -59,6 +61,8 @@ export interface JobUrlScrapeOutput {
   experienceLevel?: string;
   isRemote?: boolean;
   isHybrid?: boolean;
+  activityType?: string;
+  activityCustom?: string;
   technicalTools?: string[];
   softSkills?: string[];
   languages?: Array<{ name: string; level?: string }>;
@@ -82,7 +86,7 @@ export async function generateJobDescription(
   };
 
   const workModeLabels: Record<string, string> = {
-    ON_SITE: "On-site",
+    ONSITE: "On-site",
     REMOTE: "Remote",
     HYBRID: "Hybrid",
   };
@@ -90,10 +94,9 @@ export async function generateJobDescription(
   const prompt = language === "fr" 
     ? `Générez une offre d'emploi professionnelle pour le poste suivant:
     
-Titre: ${input.title}
-Entreprise: ${input.company || "Une entreprise leader"}
-Industrie: ${input.industry || "Non spécifiée"}
-Lieu: ${input.location || "Non spécifié"}
+      Titre: ${input.title}
+      Entreprise: ${input.company || "Une entreprise leader"}
+      Lieu: ${input.location || "Non spécifié"}
 Type de contrat: ${input.contractType ? contractTypeLabels[input.contractType] : "Non spécifié"}
 Mode de travail: ${input.workMode ? workModeLabels[input.workMode] : "Non spécifié"}
 
@@ -109,10 +112,9 @@ Veuillez fournir:
 Format de réponse JSON avec les clés: description, requirements (tableau), benefits (tableau), excerpt.`
     : `Generate a professional job description for the following position:
     
-Title: ${input.title}
-Company: ${input.company || "A leading company"}
-Industry: ${input.industry || "Not specified"}
-Location: ${input.location || "Not specified"}
+      Title: ${input.title}
+      Company: ${input.company || "A leading company"}
+      Location: ${input.location || "Not specified"}
 Contract Type: ${input.contractType ? contractTypeLabels[input.contractType] : "Not specified"}
 Work Mode: ${input.workMode ? workModeLabels[input.workMode] : "Not specified"}
 
@@ -151,7 +153,7 @@ Format the response as JSON with keys: description, requirements (array), benefi
       excerpt: result.excerpt || "",
     };
   } catch (error) {
-    console.error("AI generation error:", error);
+    logger.error("AI generation failed", { error });
     throw new Error("Failed to generate job description");
   }
 }
@@ -304,7 +306,14 @@ Expected JSON:
     }
 
     const result = JSON.parse(content);
-    console.log("AI parsed result:", JSON.stringify(result).substring(0, 500));
+
+    // Log a safe summary — never log full PII fields (name, email, phone, etc.)
+    logger.info("AI parsed CV result", {
+      skillsCount: Array.isArray(result.skills) ? result.skills.length : 0,
+      experiencesCount: Array.isArray(result.experiences) ? result.experiences.length : 0,
+      educationCount: Array.isArray(result.education) ? result.education.length : 0,
+      languagesCount: Array.isArray(result.languages) ? result.languages.length : 0,
+    });
 
     return {
       name: result.name || "",
@@ -319,7 +328,7 @@ Expected JSON:
       languages: Array.isArray(result.languages) ? result.languages.filter((l: { name?: string }) => l && l.name) : [],
     };
   } catch (error) {
-    console.error("AI CV parsing error:", error);
+    logger.error("AI CV parsing failed", { error });
     throw new Error("Failed to parse CV with AI");
   }
 }
@@ -355,6 +364,8 @@ Extrais TOUTES les informations d'offre d'emploi que tu peux trouver et retourne
   "location": "Paris, France",
   "contractType": "CDI" | "CDD" | "FREELANCE" | "INTERNSHIP" | "PART_TIME" | "APPRENTICESHIP",
   "experienceLevel": "JUNIOR" | "MID" | "SENIOR" | "LEAD" | "EXECUTIVE",
+  "activityType": "CUSTOMER_SERVICE" | "SALES_LEAD_GENERATION" | "TECHNICAL_IT_SUPPORT" | "DEBT_COLLECTION_LITIGATION" | "BACK_OFFICE_DIGITAL_SERVICES" | "SURVEYS_MARKET_RESEARCH" | "OTHER",
+  "activityCustom": "string (required if activityType is OTHER)",
   "isRemote": true,
   "isHybrid": false,
   "technicalTools": ["Salesforce", "HubSpot"],
@@ -366,7 +377,8 @@ RÈGLES CRITIQUES:
 - title, description, et location sont OBLIGATOIRES - si absent, utilise une chaîne vide "".
 - Si une information n'est PAS clairement présente, utilise null (pour les nombres) ou false (pour les booléens) ou un tableau vide [].
 - NE JAMAIS inventer d'informations. Utilise seulement ce qui est visible dans le texte.
-- Pour contractType et experienceLevel, utilise UNIQUEMENT les valeurs de la liste ci-dessus.
+- Pour contractType, experienceLevel, et activityType, utilise UNIQUEMENT les valeurs de la liste ci-dessus.
+- Pour activityType, choisis la valeur la plus appropriée selon le poste. Si aucun ne correspond, utilise "OTHER" et remplis activityCustom.
 - Pour les langues, extrais TOUTES les langues mentionnées dans les exigences ou la description.
 - Pour les salaires, convertis TOUJOURS en nombres (pas de texte comme "negociable" ou "competitive").`
     : `You are a job-offer extraction assistant. Extract all job information from the raw content below.
@@ -387,6 +399,8 @@ Extract ALL available job information and return ONLY valid JSON with these exac
   "location": "City, Country",
   "contractType": "CDI" | "CDD" | "FREELANCE" | "INTERNSHIP" | "PART_TIME" | "APPRENTICESHIP",
   "experienceLevel": "JUNIOR" | "MID" | "SENIOR" | "LEAD" | "EXECUTIVE",
+  "activityType": "CUSTOMER_SERVICE" | "SALES_LEAD_GENERATION" | "TECHNICAL_IT_SUPPORT" | "DEBT_COLLECTION_LITIGATION" | "BACK_OFFICE_DIGITAL_SERVICES" | "SURVEYS_MARKET_RESEARCH" | "OTHER",
+  "activityCustom": "string (required if activityType is OTHER)",
   "isRemote": true,
   "isHybrid": false,
   "technicalTools": ["Salesforce", "HubSpot"],
@@ -398,7 +412,8 @@ CRITICAL RULES:
 - title, description, and location ARE REQUIRED - if not found, use an empty string "".
 - If information is NOT clearly present, use null (for strings/numbers), false (for booleans), or an empty array [].
 - NEVER invent information. Only use what is visible in the text.
-- For contractType and experienceLevel, use ONLY the values listed above.
+- For contractType, experienceLevel, and activityType, use ONLY the values listed above.
+- For activityType, choose the most appropriate value based on the job. If none match, use "OTHER" and fill activityCustom.
 - For languages, extract ALL languages mentioned in requirements or description.
 - For salary, if you see a range like "35k-45k", convert to 35000 and 45000. If only a single number, set both salaryMin and salaryMax to it.
 - If salary is described as "competitive", "negotiable", or "based on experience", return null.`;
@@ -418,7 +433,7 @@ CRITICAL RULES:
     const result: JobUrlScrapeOutput = JSON.parse(content);
     return result;
   } catch (error) {
-    console.error("Job URL scraping error:", error);
+    logger.error("Job URL scraping failed", { error });
     throw new Error("Failed to extract job data from URL");
   }
 }

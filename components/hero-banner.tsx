@@ -20,7 +20,7 @@ export function HeroBanner() {
             Build Your Future with CloudSphere
           </h1>
           <p className="text-slate-200 mb-6 leading-relaxed">
-            We're expanding our technical support teams in Austin and Remote. Experience a culture of innovation, competitive pay, and rapid career growth.
+            We&apos;re expanding our technical support teams in Austin and Remote. Experience a culture of innovation, competitive pay, and rapid career growth.
           </p>
 
           {/* Stats */}

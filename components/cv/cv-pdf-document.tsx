@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable jsx-a11y/alt-text */
+
 import { Document, Page, Text, View, StyleSheet, Svg, Path, Circle, Image } from "@react-pdf/renderer";
 
 // ─── Design Tokens ────────────────────────────────────────────────────────────

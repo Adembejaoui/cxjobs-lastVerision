@@ -1,4 +1,5 @@
 import { parseCVWithAI, isAIConfigured, CVParseOutput } from "./ai-service";
+import { logger } from "./logger";
 
 /**
  * Common skills to look for in CVs
@@ -47,7 +48,7 @@ export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
       pdfjsLib.GlobalWorkerOptions.workerSrc = "";
     }
     
-    console.log("Loading PDF with pdfjs-dist, buffer length:", buffer.length);
+    logger.debug("Loading PDF", { bufferLength: buffer.length });
     
     // Load the PDF document
     const loadingTask = pdfjsLib.getDocument({
@@ -55,7 +56,7 @@ export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
     });
     
     const pdf = await loadingTask.promise;
-    console.log("PDF loaded, number of pages:", pdf.numPages);
+    logger.debug("PDF loaded", { numPages: pdf.numPages });
     
     // Extract text from all pages
     let fullText = "";
@@ -69,10 +70,14 @@ export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
       fullText += pageText + "\n";
     }
     
-    console.log("Extracted text length:", fullText.length);
+    logger.debug("PDF text extracted", { textLength: fullText.length });
     return fullText;
   } catch (error) {
-    console.error("PDF parsing error:", error);
+    if (error instanceof Error) {
+      logger.error("PDF parsing error", { error: error.message });
+    } else {
+      logger.error("PDF parsing unknown error", { error });
+    }
     throw new Error("Failed to parse PDF file");
   }
 }
@@ -208,8 +213,8 @@ function extractSummary(text: string): string | undefined {
  * Basic CV parsing without AI
  */
 export function basicCVParse(text: string): Partial<CVParseOutput> {
-  console.log("Running basic CV parsing, text length:", text.length);
-  
+  logger.debug("Running basic CV parsing", { textLength: text.length });
+
   const name = extractName(text);
   const email = extractEmail(text);
   const phone = extractPhone(text);
@@ -217,9 +222,14 @@ export function basicCVParse(text: string): Partial<CVParseOutput> {
   const title = extractJobTitle(text);
   const summary = extractSummary(text);
   const skills = extractSkills(text);
-  
-  console.log("Basic parsing results - name:", name, "email:", email, "phone:", phone, "location:", location, "skills:", skills);
-  
+
+  logger.debug("Basic parsing results", {
+    skillsFound: skills.length,
+    hasName: !!name,
+    hasEmail: !!email,
+    hasPhone: !!phone,
+  });
+
   return {
     name,
     email,
@@ -247,11 +257,11 @@ export async function parseCV(
   const useAI = options?.useAI !== false && isAIConfigured();
   const language = options?.language || "en";
   
-  console.log("CV parse options - useAI:", useAI, "language:", language, "isAIConfigured:", isAIConfigured());
+  logger.debug("CV parse options", { useAI, language, isAIConfigured: isAIConfigured() });
 
   // Extract text from PDF
   const text = await extractTextFromPDF(buffer);
-  console.log("PDF text extracted, length:", text.length);
+  logger.debug("PDF text extracted", { textLength: text.length });
 
   // Basic extraction (always performed)
   const basicData = basicCVParse(text);
@@ -261,18 +271,12 @@ export async function parseCV(
     try {
       const aiResult = await parseCVWithAI({ text, language });
 
-      console.log("========== CV PARSING RESULTS ==========");
-      console.log("NAME:", aiResult.name || "NOT FOUND");
-      console.log("EMAIL:", aiResult.email || "NOT FOUND");
-      console.log("PHONE:", aiResult.phone || "NOT FOUND");
-      console.log("LOCATION:", aiResult.location || "NOT FOUND");
-      console.log("TITLE:", aiResult.title || "NOT FOUND");
-      console.log("SUMMARY:", aiResult.summary || "NOT FOUND");
-      console.log("SKILLS:", aiResult.skills?.join(", ") || "NOT FOUND");
-      console.log("EXPERIENCES:", JSON.stringify(aiResult.experiences, null, 2) || "NOT FOUND");
-      console.log("EDUCATION:", JSON.stringify(aiResult.education, null, 2) || "NOT FOUND");
-      console.log("LANGUAGES:", JSON.stringify(aiResult.languages, null, 2) || "NOT FOUND");
-      console.log("========================================");
+      logger.debug("CV parsing (AI)", {
+        skillsCount: aiResult.skills.length,
+        experiencesCount: aiResult.experiences.length,
+        educationCount: aiResult.education.length,
+        languagesCount: aiResult.languages.length,
+      });
 
       // Merge AI results with basic extraction (basic takes precedence for email/phone)
       return {
@@ -288,20 +292,14 @@ export async function parseCV(
         languages: aiResult.languages,
       };
     } catch (error) {
-      console.error("AI CV parsing failed, falling back to basic parsing:", error);
+      logger.warn("AI CV parsing failed, falling back to basic parsing", { error });
     }
   }
 
   // Return basic parsing results
-  console.log("========== CV PARSING RESULTS (BASIC) ==========");
-  console.log("NAME:", basicData.name || "NOT FOUND");
-  console.log("EMAIL:", basicData.email || "NOT FOUND");
-  console.log("PHONE:", basicData.phone || "NOT FOUND");
-  console.log("LOCATION:", basicData.location || "NOT FOUND");
-  console.log("TITLE:", basicData.title || "NOT FOUND");
-  console.log("SUMMARY:", basicData.summary || "NOT FOUND");
-  console.log("SKILLS:", basicData.skills?.join(", ") || "NOT FOUND");
-  console.log("====================================================");
+  logger.debug("CV parsing (basic)", {
+    skillsCount: basicData.skills?.length || 0,
+  });
 
   return {
     ...basicData,

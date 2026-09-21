@@ -1,15 +1,15 @@
 import Link from "next/link"
 
+/* eslint-disable @next/next/no-img-element */
+
 interface CompanyCardProps {
   name: string
   slug: string
   description: string
-  industry: string
   location: string
   size: string
   jobsCount: number
-  rating: number
-  reviews: number
+
   logoUrl?: string | null
   coverUrl?: string | null
 }
@@ -18,12 +18,10 @@ export function CompanyCard({
   name, 
   slug,
   description, 
-  industry, 
   location, 
   size, 
   jobsCount, 
-  rating, 
-  reviews,
+  
   logoUrl,
   coverUrl 
 }: CompanyCardProps) {
@@ -52,21 +50,21 @@ export function CompanyCard({
         
         {/* Logo overlay at bottom center */}
         <div className="absolute -bottom-8 left-1/2 -translate-x-1/2">
-          <div className="flex h-[64px] w-[64px] items-center justify-center rounded-[16px] border-4 border-white bg-[#eef2f6] shadow-lg ring-1 ring-[#dde5ef]">
+          <div className="flex h-[80px] w-[80px] items-center justify-center rounded-[16px] border-4 border-white bg-[#eef2f6] shadow-lg ring-1 ring-[#dde5ef]">
             {logoUrl ? (
               <img 
                 src={logoUrl} 
                 alt={name}
-                className="h-full w-full object-cover rounded-[10px]"
+                className="h-full w-full object-contain rounded-[10px]"
               />
             ) : (
-              <div className="flex h-[40px] w-[40px] items-center justify-center rounded-[6px] bg-[#0f3040] text-[12px] font-bold tracking-[0.14em] text-[#dce8dd]">
+              <div className="flex h-[48px] w-[48px] items-center justify-center rounded-[6px] bg-[#0f3040] text-[12px] font-bold tracking-[0.14em] text-[#dce8dd]">
                 {name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase()}
               </div>
             )}
           </div>
         </div>
-      </div>
+        </div>
 
       {/* Lower Part - Company Info */}
       <div className="flex flex-1 flex-col p-5 pt-10">
@@ -75,7 +73,6 @@ export function CompanyCard({
           <h3 className="text-[18px] font-black tracking-[-0.02em] text-[#18345b] line-clamp-2 leading-tight">
             {name}
           </h3>
-          <p className="mt-1 text-[14px] font-bold text-[#7b8ca3]">{industry}</p>
         </div>
 
         {/* Badges */}
@@ -83,9 +80,7 @@ export function CompanyCard({
           <span className="rounded-full bg-[#e8f8ef] px-3 py-1 text-[11px] font-extrabold tracking-[0.04em] text-[#42be84]">
             {jobsCount} JOBS
           </span>
-          <span className="rounded-full bg-[#edf1f6] px-3 py-1 text-[11px] font-extrabold tracking-[0.04em] text-[#5d7393]">
-            ★ {rating}
-          </span>
+       
         </div>
 
         {/* Description */}
@@ -114,5 +109,6 @@ export function CompanyCard({
         </Link>
       </div>
     </article>
+    
   )
 }

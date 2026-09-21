@@ -3,22 +3,28 @@ import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { isValidUuid } from "@/lib/utils";
 import { z } from "zod";
-import { getCachedDashboardStats, setCachedDashboardStats } from "@/lib/redis";
+import { getCachedDashboardStats } from "@/lib/local-cache";
+import { logger } from "@/lib/logger";
+import { benefitCategorySchema, benefitScopeSchema } from "@/lib/validations/profile";
 
 const COMPANY_STATS_KEY = (companyId: string) => `dashboard:company:${companyId}`;
-const COMPANY_STATS_TTL = 30;
 
 // Validation schema for company profile update
 const updateCompanySchema = z.object({
   name: z.string().min(2).optional(),
   description: z.string().optional().nullable(),
-  industry: z.string().optional().nullable(),
-  companySize: z.enum(["STARTUP", "SMALL", "MEDIUM", "LARGE", "ENTERPRISE"]).optional().nullable(),
+  companySize: z.string().optional().nullable(),
   location: z.string().optional().nullable(),
   website: z.string().url().optional().or(z.literal("")).nullable(),
   linkedinUrl: z.string().optional().nullable(),
   foundedYear: z.number().min(1800).max(new Date().getFullYear()).optional().nullable(),
-  benefits: z.array(z.string()).optional().nullable(),
+  benefits: z.array(z.object({
+    name: z.string().min(1),
+    description: z.string().optional(),
+    icon: z.string().optional(),
+    category: benefitCategorySchema.optional().default("OTHER"),
+    scope: benefitScopeSchema.optional().default("ADDITIONAL"),
+  })).optional().nullable(),
   culture: z.array(z.object({
     title: z.string(),
     description: z.string()
@@ -46,6 +52,12 @@ export async function GET() {
       );
     }
 
+    const cacheKey = COMPANY_STATS_KEY(session.user.id);
+    const cached = await getCachedDashboardStats(cacheKey);
+    if (cached) {
+      return NextResponse.json({ success: true, data: JSON.parse(cached) });
+    }
+
     const company = await prisma.companies.findUnique({
       where: { userId: session.user.id },
       include: {
@@ -70,12 +82,6 @@ export async function GET() {
       );
     }
 
-    const cacheKey = COMPANY_STATS_KEY(company.id);
-    const cached = await getCachedDashboardStats(cacheKey);
-    if (cached) {
-      return NextResponse.json({ success: true, data: JSON.parse(cached) });
-    }
-
     // Get job offer statistics
     const jobStats = await prisma.jobOffer.groupBy({
       by: ["status"],
@@ -86,13 +92,6 @@ export async function GET() {
       _count: true,
     });
 
-    // Get total applications across all jobs
-    const totalApplications = await prisma.application.count({
-      where: {
-        jobOffer: { companyId: company.id },
-      },
-    });
-
     // Get application statistics by status
     const applicationStats = await prisma.application.groupBy({
       by: ["status"],
@@ -101,6 +100,9 @@ export async function GET() {
       },
       _count: true,
     });
+
+    // Total applications derived from grouped status counts (same where clause)
+    const totalApplications = applicationStats.reduce((sum, stat) => sum + stat._count, 0);
 
     // Get recent applications
     const recentApplications = await prisma.application.findMany({
@@ -153,7 +155,9 @@ export async function GET() {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    const applicationsPerDay = await prisma.$queryRaw<Array<{ date: Date; count: bigint }>>`
+     const applicationsPerDay = await prisma.$queryRaw<
+      Array<{ date: Date; count: number }>
+    >`
       SELECT DATE(created_at) as date, COUNT(*) as count
       FROM applications a
       JOIN job_offers j ON a.job_offer_id = j.id
@@ -172,7 +176,7 @@ export async function GET() {
       EXPIRED: 0,
     };
 
-    jobStats.forEach((stat: any) => {
+    jobStats.forEach((stat: { status: string; _count: number }) => {
       jobStatsMap[stat.status as keyof typeof jobStatsMap] = stat._count;
     });
 
@@ -184,30 +188,29 @@ export async function GET() {
       REFUSE: 0,
     };
 
-    applicationStats.forEach((stat: any) => {
+    applicationStats.forEach((stat: { status: string; _count: number }) => {
       applicationStatsMap[stat.status as keyof typeof applicationStatsMap] = stat._count;
     });
 
     return NextResponse.json({
       success: true,
       data: {
-        company: {
-          id: company.id,
-          name: company.name,
-          slug: company.slug,
-          description: company.description,
-          logoUrl: company.logoUrl,
-          coverImage: company.coverImageUrl,
-          website: company.website,
-          linkedin: company.linkedinUrl,
-          industry: company.industry,
-          companySize: company.companySize,
-          location: company.location,
-          foundedYear: company.foundedYear,
-          benefits: company.benefits,
-          culture: company.culture,
-          subscriptionPlan: company.subscriptionPlan,
-        },
+          company: {
+            id: company.id,
+            name: company.name,
+            slug: company.slug,
+            description: company.description,
+            logoUrl: company.logoUrl,
+            coverImage: company.coverImageUrl,
+            website: company.website,
+            linkedin: company.linkedinUrl,
+            companySize: company.companySize,
+            location: company.location,
+            foundedYear: company.foundedYear,
+            benefits: company.benefits,
+            culture: company.culture,
+            subscriptionPlan: company.subscriptionPlan,
+          },
         stats: {
           totalJobs: company._count.jobs,
           jobsByStatus: jobStatsMap,
@@ -216,14 +219,14 @@ export async function GET() {
         },
         recentApplications,
         activeJobs,
-        applicationsPerDay: applicationsPerDay.map((item: { date: Date; count: bigint }) => ({
+        applicationsPerDay: applicationsPerDay.map((item: { date: Date; count: number }) => ({
           date: item.date,
-          count: Number(item.count),
+          count: item.count,
         })),
       },
     });
   } catch (error) {
-    console.error("Get company dashboard error:", error);
+    logger.error("Get company dashboard error", { error });
     return NextResponse.json(
       { success: false, error: "Failed to fetch dashboard data", code: "INTERNAL_ERROR" },
       { status: 500 }
@@ -282,7 +285,6 @@ export async function PUT(request: NextRequest) {
     const { 
       name, 
       description, 
-      industry, 
       companySize, 
       location, 
       website, 
@@ -295,25 +297,47 @@ export async function PUT(request: NextRequest) {
     } = validationResult.data;
 
     // Build update data - only include fields that are defined
-    const updateData: any = {}
-    
+    const updateData: Record<string, unknown> = {}
+
     if (name) updateData.name = name
     if (description !== undefined) updateData.description = description
-    if (industry !== undefined) updateData.industry = industry
     if (companySize) updateData.companySize = companySize
     if (location !== undefined) updateData.location = location
     if (website !== undefined) updateData.website = website || null
     if (linkedinUrl !== undefined) updateData.linkedinUrl = linkedinUrl
     if (foundedYear !== undefined) updateData.foundedYear = foundedYear
-    if (benefits !== undefined) updateData.benefits = benefits || []
     if (culture !== undefined) updateData.culture = JSON.stringify(culture)
     if (logoUrl !== undefined) updateData.logoUrl = logoUrl || null
     if (coverImageUrl !== undefined) updateData.coverImageUrl = coverImageUrl || null
 
-    // Update company profile
-    const updatedCompany = await prisma.companies.update({
-      where: { id: company.id },
-      data: updateData,
+    // Update company profile and benefits in a transaction
+    const updatedCompany = await prisma.$transaction(async (tx) => {
+      const updated = await tx.companies.update({
+        where: { id: company.id },
+        data: updateData,
+      });
+
+      // Manage benefits relationally — replace all existing benefits
+      if (benefits !== undefined) {
+        await tx.companyBenefit.deleteMany({
+          where: { companyId: company.id },
+        });
+
+        if (benefits && benefits.length > 0) {
+          await tx.companyBenefit.createMany({
+            data: benefits.map((b: { name: string; description?: string; icon?: string; category?: string; scope?: string }) => ({
+              companyId: company.id,
+              name: b.name,
+              description: b.description || null,
+              icon: b.icon || null,
+              category: (b.category as "HEALTH" | "FINANCIAL" | "WORK_ENVIRONMENT" | "CAREER_GROWTH" | "WORK_LIFE_BALANCE" | "OTHER") || "OTHER",
+              scope: (b.scope as "CORE" | "ADDITIONAL") || "ADDITIONAL",
+            })),
+          });
+        }
+      }
+
+      return updated;
     });
 
     return NextResponse.json({
@@ -321,7 +345,7 @@ export async function PUT(request: NextRequest) {
       data: updatedCompany,
     });
   } catch (error) {
-    console.error("Update company profile error:", error);
+    logger.error("Update company profile error", { error });
     return NextResponse.json(
       { success: false, error: "Failed to update profile", code: "INTERNAL_ERROR" },
       { status: 500 }
