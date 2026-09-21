@@ -310,7 +310,7 @@ export async function POST(request: NextRequest) {
 
     // Send notification to company
     try {
-    
+      // TODO: Implement notification
     } catch (notificationError) {
       // Log but don't fail the request
       logger.warn("Failed to send notification", { error: notificationError });

@@ -33,7 +33,7 @@ const prisma =
         : ["query", "error", "warn"],
   });
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+globalForPrisma.prisma = prisma;
 
 export const connectPrisma = async () => {
   if (process.env.NODE_ENV === "production") {

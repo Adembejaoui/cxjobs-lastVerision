@@ -31,9 +31,9 @@ async function runTest(concurrency: number, iterations: number): Promise<TestRes
         const latency = Date.now() - start;
         latencies.push(latency);
         success++;
-      } catch (err: any) {
+      } catch (err: unknown) {
         failure++;
-        const errorMsg = err?.message ?? String(err);
+        const errorMsg = err instanceof Error ? err.message : String(err);
         console.log("Actual error:", errorMsg);
         const errorKey = errorMsg.includes("P2024") ? "P2024"
           : errorMsg.includes("P1001") ? "P1001"

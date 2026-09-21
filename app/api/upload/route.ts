@@ -140,9 +140,7 @@ export async function POST(request: NextRequest) {
 
     // Authentication check
     if (config.requiresAuth) {
-      const session = await auth();
-
-      if (!session?.user?.id) {
+      if (!userSession?.user?.id) {
         return NextResponse.json(
           { success: false, error: "Unauthorized", code: "UNAUTHORIZED" },
           { status: 401 }
@@ -150,7 +148,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Role check
-      if (config.allowedRoles && !config.allowedRoles.includes(session.user.role)) {
+      if (config.allowedRoles && !config.allowedRoles.includes(userSession.user.role)) {
         return NextResponse.json(
           { success: false, error: "You don't have permission to upload this file type", code: "FORBIDDEN" },
           { status: 403 }
@@ -193,8 +191,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Authenticated user (needed for path ownership check)
-    const session = await auth();
-    const userId = session?.user?.id;
+    const userId = userSession.user.id;
 
     if (!userId) {
       return NextResponse.json(
