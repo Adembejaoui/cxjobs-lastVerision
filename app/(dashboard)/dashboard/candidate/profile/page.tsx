@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { AlertTriangle, User, Mail, MapPin, FileText,FileCheck } from "lucide-react";
 import Link from "next/link";
 import { CandidateProfileForm } from "@/components/dashboard/candidate-profile-form";
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "@/app/generated/prisma/client";
 
 type CandidateWithRelations = Prisma.CandidateGetPayload<{
   include: {
