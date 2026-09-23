@@ -16,11 +16,28 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Building2, Globe, Linkedin, Save, Loader2, Twitter, Facebook, Image as ImageIcon } from "lucide-react";
+import {
+  Building2,
+  Globe,
+  Linkedin,
+  Save,
+  Loader2,
+  Twitter,
+  Facebook,
+  Image as ImageIcon,
+  AlertCircle,
+  CheckCircle2,
+  Users,
+  MapPin,
+  Calendar,
+  FileText,
+  Sparkles,
+} from "lucide-react";
 import { CroppableImageUpload } from "@/components/dashboard/croppable-image-upload";
 import { CultureEditor } from "@/components/dashboard/culture-editor";
 import { CompanyBenefitsEditor, BenefitItem } from "@/components/dashboard/company-benefits-editor";
 import { logger } from "@/lib/logger";
+import { showError, showSuccess } from "@/lib/toast";
 
 interface CultureItem {
   id: string;
@@ -99,6 +116,19 @@ const LOCATIONS = [
   "Tozeur",
 ];
 
+// Small reusable section marker used to give each block of the form a
+// consistent, quiet identity without wrapping everything in a card.
+function SectionIcon({ icon: Icon }: { icon: React.ElementType }) {
+  return (
+    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-[#071738]">
+      <Icon className="h-4 w-4 text-white" />
+    </div>
+  );
+}
+
+const pillTriggerClass =
+  "rounded-full border border-slate-200 px-4 py-1.5 text-sm font-medium text-slate-600 transition-colors data-[state=active]:border-[#071738] data-[state=active]:bg-[#071738] data-[state=active]:text-white data-[state=active]:shadow-none";
+
 export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
   const router = useRouter();
   const [isSaving, setIsSaving] = useState(false);
@@ -159,7 +189,7 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
       description: b.description || '',
       icon: b.icon || 'Heart',
       category: b.category || 'HEALTH',
-      scope: 'COMPANY' as const
+      scope: b.scope || 'ADDITIONAL'
     }))
   );
 
@@ -203,7 +233,7 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
         }));
 
       const benefitsData = benefitItems
-        .filter((b) => b.name.trim() !== "")
+        .filter((b) => b.name.trim().length >= 3)
         .map((b) => ({
           name: b.name,
           description: b.description || null,
@@ -245,315 +275,334 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
       }
 
       setSuccess("Company profile updated successfully!");
+      showSuccess("Company profile updated successfully", {
+        description: "Your changes have been saved.",
+      });
       router.refresh();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to update profile");
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to update profile";
+      setError(errorMessage);
+      showError("Failed to update company profile", {
+        description: errorMessage,
+      });
     } finally {
       setIsSaving(false);
     }
   };
 
+  const activeBenefitsCount = benefitItems.filter((b) => b.name.trim() !== "").length;
+  const activeCultureCount = cultureItems.filter((c) => c.title.trim() !== "").length;
+
   return (
     <form onSubmit={handleSubmit}>
+      <div className="mb-8">
+        <h1 className="text-2xl font-semibold text-slate-900">Company Profile</h1>
+        <p className="mt-1 text-sm text-slate-500">This is how candidates will see your company.</p>
+      </div>
+
       {error && (
-        <div className="rounded-lg bg-red-50 p-4 text-sm text-red-600 mb-6">
-          {error}
+        <div className="mb-6 flex items-start gap-3 rounded-lg bg-red-50 p-4 text-sm text-red-600">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{error}</span>
         </div>
       )}
       {success && (
-        <div className="rounded-lg bg-green-50 p-4 text-sm text-green-600 mb-6">
-          {success}
+        <div className="mb-6 flex items-start gap-3 rounded-lg bg-green-50 p-4 text-sm text-green-600">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{success}</span>
         </div>
       )}
 
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <ImageIcon className="h-5 w-5" />
-            Company Images
-          </CardTitle>
-          <CardDescription>
-            Upload your company logo and cover image
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-6 md:grid-cols-2">
-            <CroppableImageUpload
-              value={formData.logoUrl}
-              onChange={handleLogoChange}
-              type="logo"
-              label="Company Logo"
-              maxSize="2MB"
-              previewClassName="w-48 h-48"
-            />
-            <CroppableImageUpload
-              value={formData.coverImageUrl}
-              onChange={handleCoverChange}
-              type="cover-image"
-              label="Cover Image"
-              maxSize="5MB"
-              previewClassName="h-32"
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Building2 className="h-5 w-5" />
-            Basic Information
-          </CardTitle>
-          <CardDescription>
-            Update your company&apos;s basic information
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid gap-6 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="name">Company Name *</Label>
-              <Input
-                id="name"
-                name="name"
-                value={formData.name}
-                onChange={handleChange}
-                placeholder="Enter company name"
-                required
-              />
+      <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_320px]">
+        {/* Main column: a single flowing document instead of stacked cards */}
+        <div>
+          <section className="border-b border-slate-200 pb-8">
+            <div className="mb-6 flex items-start gap-3">
+              <SectionIcon icon={Building2} />
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">Basic Information</h2>
+                <p className="text-sm text-slate-500">Update your company&apos;s basic information</p>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="companySize">Company Size</Label>
-              <Select
-                value={formData.companySize}
-                onValueChange={(value) =>
-                  handleSelectChange("companySize", value)
-                }
-              >
-                <SelectTrigger id="companySize">
-                  <SelectValue placeholder="Select company size" />
-                </SelectTrigger>
-                <SelectContent>
-                  {COMPANY_SIZES.map((size) => (
-                    <SelectItem key={size.value} value={size.value}>
-                      {size.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="location">Location</Label>
-              <Select
-                value={formData.location}
-                onValueChange={(value) => handleSelectChange("location", value)}
-              >
-                <SelectTrigger id="location">
-                  <SelectValue placeholder="Select location" />
-                </SelectTrigger>
-                <SelectContent>
-                  {LOCATIONS.map((loc) => (
-                    <SelectItem key={loc} value={loc}>
-                      {loc}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="foundedYear">Founded Year</Label>
-              <Input
-                id="foundedYear"
-                name="foundedYear"
-                type="number"
-                min="1800"
-                max={new Date().getFullYear()}
-                value={formData.foundedYear}
-                onChange={handleChange}
-                placeholder="e.g. 2015"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="website">Website</Label>
-              <div className="relative">
-                <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <div className="grid gap-6 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="name">Company Name *</Label>
                 <Input
-                  id="website"
-                  name="website"
-                  type="url"
-                  value={formData.website}
+                  id="name"
+                  name="name"
+                  value={formData.name}
                   onChange={handleChange}
-                  placeholder="https://example.com"
-                  className="pl-10"
+                  placeholder="Enter company name"
+                  required
                 />
               </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="companySize" className="flex items-center gap-1.5">
+                  <Users className="h-3.5 w-3.5 text-slate-400" />
+                  Company Size
+                </Label>
+                <Select
+                  value={formData.companySize}
+                  onValueChange={(value) =>
+                    handleSelectChange("companySize", value)
+                  }
+                >
+                  <SelectTrigger id="companySize">
+                    <SelectValue placeholder="Select company size" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COMPANY_SIZES.map((size) => (
+                      <SelectItem key={size.value} value={size.value}>
+                        {size.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="location" className="flex items-center gap-1.5">
+                  <MapPin className="h-3.5 w-3.5 text-slate-400" />
+                  Location
+                </Label>
+                <Select
+                  value={formData.location}
+                  onValueChange={(value) => handleSelectChange("location", value)}
+                >
+                  <SelectTrigger id="location">
+                    <SelectValue placeholder="Select location" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LOCATIONS.map((loc) => (
+                      <SelectItem key={loc} value={loc}>
+                        {loc}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="foundedYear" className="flex items-center gap-1.5">
+                  <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                  Founded Year
+                </Label>
+                <Input
+                  id="foundedYear"
+                  name="foundedYear"
+                  type="number"
+                  min="1800"
+                  max={new Date().getFullYear()}
+                  value={formData.foundedYear}
+                  onChange={handleChange}
+                  placeholder="e.g. 2015"
+                />
+              </div>
+
+              <div className="space-y-2 sm:col-span-2">
+                <Label htmlFor="website">Website</Label>
+                <div className="relative">
+                  <Globe className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    id="website"
+                    name="website"
+                    type="url"
+                    value={formData.website}
+                    onChange={handleChange}
+                    placeholder="https://example.com"
+                    className="pl-10"
+                  />
+                </div>
+              </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </section>
 
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>About Your Company</CardTitle>
-          <CardDescription>
-            Tell candidates about your company and what makes you unique
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <Label htmlFor="description">About the Company</Label>
-            <Textarea
-              id="description"
-              name="description"
-              value={formData.description}
-              onChange={handleChange}
-              placeholder="Tell candidates about your company, values, team culture, and what makes you unique..."
-              rows={6}
-            />
-            <p className="text-xs text-slate-500">
-              {formData.description.length}/5000 characters
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+          <section className="border-b border-slate-200 py-8">
+            <div className="mb-6 flex items-start gap-3">
+              <SectionIcon icon={FileText} />
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">About Your Company</h2>
+                <p className="text-sm text-slate-500">
+                  Tell candidates about your company and what makes you unique
+                </p>
+              </div>
+            </div>
 
-      <Tabs defaultValue="benefits" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="benefits">Company Benefits</TabsTrigger>
-          <TabsTrigger value="culture">Company Culture</TabsTrigger>
-          <TabsTrigger value="social">Social Media</TabsTrigger>
-          <TabsTrigger value="settings">Work Settings</TabsTrigger>
-        </TabsList>
+            <div className="space-y-2">
+              <Textarea
+                id="description"
+                name="description"
+                value={formData.description}
+                onChange={handleChange}
+                placeholder="Tell candidates about your company, values, team culture, and what makes you unique..."
+                rows={6}
+              />
+              <p className="text-right text-xs text-slate-500">
+                {formData.description.length}/5000 characters
+              </p>
+            </div>
+          </section>
 
-        <TabsContent value="benefits" className="mt-6">
-          <CompanyBenefitsEditor
-            benefits={benefitItems}
-            onChange={setBenefitItems}
-          />
-        </TabsContent>
+          <section className="pt-8">
+            <div className="mb-6 flex items-start gap-3">
+              <SectionIcon icon={Sparkles} />
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">Culture, Benefits &amp; More</h2>
+                <p className="text-sm text-slate-500">Round out your profile for candidates</p>
+              </div>
+            </div>
 
-        <TabsContent value="culture" className="mt-6">
-          <Card className="mb-6">
+            <Tabs defaultValue="benefits" className="w-full">
+              <TabsList className="mb-6 flex h-auto w-full flex-wrap justify-start gap-2 border-b border-slate-200 bg-transparent p-0 pb-4">
+                <TabsTrigger value="benefits" className={pillTriggerClass}>
+                  Benefits{activeBenefitsCount > 0 ? ` (${activeBenefitsCount})` : ""}
+                </TabsTrigger>
+                <TabsTrigger value="culture" className={pillTriggerClass}>
+                  Culture{activeCultureCount > 0 ? ` (${activeCultureCount})` : ""}
+                </TabsTrigger>
+                <TabsTrigger value="social" className={pillTriggerClass}>
+                  Social Media
+                </TabsTrigger>
+                <TabsTrigger value="settings" className={pillTriggerClass}>
+                  Work Settings
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="benefits">
+                <CompanyBenefitsEditor
+                  benefits={benefitItems}
+                  onChange={setBenefitItems}
+                />
+              </TabsContent>
+
+              <TabsContent value="culture">
+                <CultureEditor
+                  value={cultureItems}
+                  onChange={setCultureItems}
+                  maxItems={12}
+                />
+              </TabsContent>
+
+              <TabsContent value="social">
+                <div className="grid gap-6 sm:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="linkedinUrl">LinkedIn</Label>
+                    <div className="relative">
+                      <Linkedin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Input
+                        id="linkedinUrl"
+                        name="linkedinUrl"
+                        value={formData.linkedinUrl}
+                        onChange={handleChange}
+                        placeholder="company-name"
+                        className="pl-10"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="twitterUrl">Twitter / X</Label>
+                    <div className="relative">
+                      <Twitter className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Input
+                        id="twitterUrl"
+                        name="twitterUrl"
+                        value={formData.twitterUrl}
+                        onChange={handleChange}
+                        placeholder="@companyname"
+                        className="pl-10"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="facebookUrl">Facebook</Label>
+                    <div className="relative">
+                      <Facebook className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Input
+                        id="facebookUrl"
+                        name="facebookUrl"
+                        value={formData.facebookUrl}
+                        onChange={handleChange}
+                        placeholder="companyname"
+                        className="pl-10"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="settings">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="flex items-center justify-between rounded-lg border border-slate-200 p-4">
+                    <div>
+                      <p className="font-medium text-slate-900">Remote Work</p>
+                      <p className="text-sm text-slate-500">Allow employees to work from anywhere</p>
+                    </div>
+                    <Switch
+                      checked={formData.isRemoteFriendly}
+                      onCheckedChange={(checked) =>
+                        setFormData((prev) => ({ ...prev, isRemoteFriendly: checked }))
+                      }
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between rounded-lg border border-slate-200 p-4">
+                    <div>
+                      <p className="font-medium text-slate-900">Hybrid Work</p>
+                      <p className="text-sm text-slate-500">Allow mix of office and remote work</p>
+                    </div>
+                    <Switch
+                      checked={formData.isHybridFriendly}
+                      onCheckedChange={(checked) =>
+                        setFormData((prev) => ({ ...prev, isHybridFriendly: checked }))
+                      }
+                    />
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </section>
+        </div>
+
+        {/* Right rail: the one boxed module on the page, kept in view while the
+            document column scrolls */}
+        <div className="lg:sticky lg:top-6 lg:self-start">
+          <Card className="border-slate-200 shadow-none">
             <CardHeader>
-              <CardTitle>Company Culture</CardTitle>
-              <CardDescription>
-                Showcase your work environment and company values
-              </CardDescription>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <ImageIcon className="h-4 w-4 text-[#071738]" />
+                Company Images
+              </CardTitle>
+              <CardDescription>Upload your company logo and cover image</CardDescription>
             </CardHeader>
-            <CardContent>
-              <CultureEditor
-                value={cultureItems}
-                onChange={setCultureItems}
-                maxItems={12}
+            <CardContent className="space-y-6">
+              <CroppableImageUpload
+                value={formData.logoUrl}
+                onChange={handleLogoChange}
+                type="logo"
+                label="Company Logo"
+                maxSize="2MB"
+                previewClassName="w-full h-40"
+              />
+              <CroppableImageUpload
+                value={formData.coverImageUrl}
+                onChange={handleCoverChange}
+                type="cover-image"
+                label="Cover Image"
+                maxSize="5MB"
+                previewClassName="h-32"
               />
             </CardContent>
           </Card>
-        </TabsContent>
+        </div>
+      </div>
 
-        <TabsContent value="social" className="mt-6">
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>Social Media Links</CardTitle>
-              <CardDescription>
-                Connect your company&apos;s social media profiles
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-6 sm:grid-cols-3">
-                <div className="space-y-2">
-                  <Label htmlFor="linkedinUrl">LinkedIn</Label>
-                  <div className="relative">
-                    <Linkedin className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <Input
-                      id="linkedinUrl"
-                      name="linkedinUrl"
-                      value={formData.linkedinUrl}
-                      onChange={handleChange}
-                      placeholder="company-name"
-                      className="pl-10"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="twitterUrl">Twitter / X</Label>
-                  <div className="relative">
-                    <Twitter className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <Input
-                      id="twitterUrl"
-                      name="twitterUrl"
-                      value={formData.twitterUrl}
-                      onChange={handleChange}
-                      placeholder="@companyname"
-                      className="pl-10"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="facebookUrl">Facebook</Label>
-                  <div className="relative">
-                    <Facebook className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <Input
-                      id="facebookUrl"
-                      name="facebookUrl"
-                      value={formData.facebookUrl}
-                      onChange={handleChange}
-                      placeholder="companyname"
-                      className="pl-10"
-                    />
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="settings" className="mt-6">
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle>Work Settings</CardTitle>
-              <CardDescription>
-                Define your company&apos;s default work policies
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-6 sm:grid-cols-2">
-                <div className="flex items-center justify-between rounded-lg border border-slate-200 p-4">
-                  <div>
-                    <p className="font-medium text-slate-900">Remote Work</p>
-                    <p className="text-sm text-slate-500">Allow employees to work from anywhere</p>
-                  </div>
-                  <Switch
-                    checked={formData.isRemoteFriendly}
-                    onCheckedChange={(checked) =>
-                      setFormData((prev) => ({ ...prev, isRemoteFriendly: checked }))
-                    }
-                  />
-                </div>
-
-                <div className="flex items-center justify-between rounded-lg border border-slate-200 p-4">
-                  <div>
-                    <p className="font-medium text-slate-900">Hybrid Work</p>
-                    <p className="text-sm text-slate-500">Allow mix of office and remote work</p>
-                  </div>
-                  <Switch
-                    checked={formData.isHybridFriendly}
-                    onCheckedChange={(checked) =>
-                      setFormData((prev) => ({ ...prev, isHybridFriendly: checked }))
-                    }
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-
-      <div className="flex justify-end mt-6">
+      <div className="sticky bottom-0 z-10 mt-10 flex items-center justify-between gap-4 border-t border-slate-200 bg-white/95 py-4 backdrop-blur-sm">
+        <p className="text-xs text-slate-500">* Required field</p>
         <Button
           type="submit"
           disabled={isSaving}
@@ -568,7 +617,7 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
           ) : (
             <>
               <Save className="h-4 w-4" />
-              Save All Changes
+              Save Changes
             </>
           )}
         </Button>

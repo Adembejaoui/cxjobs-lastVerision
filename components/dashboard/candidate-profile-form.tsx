@@ -20,8 +20,9 @@ import {
 import { 
   User, MapPin, Phone, Linkedin, Calendar,
   Save, Loader2, Plus, Trash2, Briefcase, GraduationCap, Languages,
-  Settings, Upload,Eye
+  Settings, Upload, Eye
 } from "lucide-react";
+import { CroppableImageUpload } from "@/components/dashboard/croppable-image-upload";
 
 interface Experience {
   id?: string;
@@ -199,7 +200,6 @@ export function CandidateProfileForm({ candidate }: CandidateProfileFormProps) {
   const filteredGovernorates = TUNISIA_GOVERNORATES.filter(g => 
     g.toLowerCase().includes(locationQuery.toLowerCase())
   );
-const fileInputRef = useRef<HTMLInputElement>(null);
   const cvInputRef = useRef<HTMLInputElement>(null);
   const locationInputRef = useRef<HTMLDivElement>(null);
 
@@ -399,34 +399,6 @@ const fileInputRef = useRef<HTMLInputElement>(null);
       i === index ? { ...skill, [field]: value } : skill
     ));
   };
-
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsUploading(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const res = await fetch("/api/upload?type=avatar", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await res.json();
-      if (data.success && data.data?.url) {
-        setPersonalData(prev => ({ ...prev, avatarUrl: data.data.url }));
-      } else {
-        setError(data.error || "Failed to upload avatar");
-      }
-    } catch {
-      setError("Failed to upload avatar");
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
   const handleCVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -583,36 +555,14 @@ const fileInputRef = useRef<HTMLInputElement>(null);
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Avatar Upload */}
-              <div className="flex items-center gap-6">
-                <div className="relative">
-                  <div className="w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden border-4 border-white shadow-lg">
-                    {personalData.avatarUrl ? (
-                      <img src={personalData.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
-                    ) : (
-                      <User className="w-12 h-12 text-gray-400" />
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploading}
-                    className="absolute bottom-0 right-0 bg-blue-600 text-white p-2 rounded-full shadow-lg hover:bg-blue-700 transition-colors"
-                  >
-                    {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleAvatarUpload}
-                    className="hidden"
-                  />
-                </div>
-                <div>
-                  <p className="font-medium">Profile Photo</p>
-                  <p className="text-sm text-gray-500">Click to upload</p>
-                </div>
-              </div>
+              <CroppableImageUpload
+                value={personalData.avatarUrl}
+                onChange={(url) => setPersonalData((prev) => ({ ...prev, avatarUrl: url || "" }))}
+                type="avatar"
+                label="Profile Photo"
+                maxSize="2MB"
+                previewClassName="w-24 h-24 rounded-full"
+              />
 
               <div className="grid gap-6 sm:grid-cols-2">
                 <div className="space-y-2">

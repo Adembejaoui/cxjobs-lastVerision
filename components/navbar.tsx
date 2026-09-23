@@ -45,9 +45,9 @@ export function Navbar({ user }: NavbarProps) {
       case "ADMIN":
         return "/dashboard"
       case "COMPANY":
-        return "/dashboard/company/jobs"
+        return "/dashboard/company"
       case "CANDIDATE":
-        return "/dashboard/candidate/applications"
+        return "/dashboard/candidate"
       default:
         return "/dashboard"
     }

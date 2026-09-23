@@ -10,6 +10,7 @@ import {
   ArrowLeft,
   Bookmark
 } from 'lucide-react'
+import { DynamicIcon } from "@/lib/icon-map";
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import { logger } from "@/lib/logger";
@@ -21,7 +22,7 @@ export interface JobBenefit {
     name: string
     description: string | null
     icon: string | null
-    category: string
+    category: string  
   }
   customDescription: string | null
 }
@@ -42,7 +43,9 @@ export interface Company {
   description: string | null
   isRemoteFriendly: boolean
   isHybridFriendly: boolean
-  benefits: { id: string; name: string }[]
+  benefits: {
+    icon: string | null; id: string; name: string
+  }[]
 }
 
 export interface JobOffer {
@@ -60,6 +63,7 @@ export interface JobOffer {
   salary: string | null
   salaryMin: number | null
   salaryMax: number | null
+  salaryCurrency: string | null
   requirements: string[]
   technicalTools: string[]
   softSkills: string[]
@@ -192,13 +196,20 @@ export function JobDetailClient({ job }: JobDetailClientProps) {
     ? new Date(job.publishedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : new Date(job.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 
-  const salaryDisplay = job.salary || (
+  const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: "$",
+  EUR: "€",
+  TND: "د.ت",
+}
+const currencySymbol = CURRENCY_SYMBOLS[job.salaryCurrency || "USD"] || "$"
+
+const salaryDisplay = job.salary || (
     job.salaryMin && job.salaryMax
-      ? `$${job.salaryMin.toLocaleString()} - $${job.salaryMax.toLocaleString()}`
+      ? `${currencySymbol}${job.salaryMin.toLocaleString()} - ${currencySymbol}${job.salaryMax.toLocaleString()}`
       : job.salaryMin
-        ? `From $${job.salaryMin.toLocaleString()}`
+        ? `From ${currencySymbol}${job.salaryMin.toLocaleString()}`
         : job.salaryMax
-          ? `Up to $${job.salaryMax.toLocaleString()}`
+          ? `Up to ${currencySymbol}${job.salaryMax.toLocaleString()}`
           : 'Competitive'
   )
 
@@ -435,14 +446,14 @@ export function JobDetailClient({ job }: JobDetailClientProps) {
                         {/* Company CORE benefits */}
                         {job.company.benefits.slice(0, 3).map((benefit) => (
                           <div key={benefit.id} className="flex items-center gap-3 text-[15px] text-[#223250]">
-                            <span className="text-[#24c491]">✚</span>
+                            <DynamicIcon name={benefit.icon || "heart"} className="h-4 w-4 text-[#24c491] flex-shrink-0" />
                             <span className="font-medium">{benefit.name}</span>
                           </div>
                         ))}
                         {/* Job-specific (ADDITIONAL) benefits */}
                         {job.benefits.slice(0, 3).map((jb) => (
                           <div key={jb.id} className="flex items-center gap-3 text-[15px] text-[#223250]">
-                            <span className="text-[#24c491]">✚</span>
+                            <DynamicIcon name={jb.benefit?.icon || "heart"} className="h-4 w-4 text-[#24c491] flex-shrink-0" />
                             <span className="font-medium">{jb.benefit?.name}</span>
                           </div>
                         ))}

@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Link from "next/link";
@@ -45,6 +45,9 @@ interface CompanyJobsClientProps {
 
 export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClientProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const createParam = searchParams.get("create");
+  const autoOpenPhase = createParam === "true" ? "choice" : undefined;
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [sortBy, setSortBy] = useState<"newest" | "oldest" | "title">("newest");
@@ -199,7 +202,7 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
               Overview of your current job listings and recruitment performance.
             </p>
           </div>
-          <JobPostFlow />
+          <JobPostFlow defaultPhase={autoOpenPhase} />
         </div>
 
         {/* Stats Cards */}

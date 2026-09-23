@@ -20,6 +20,8 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { validateImageClientSide, ValidationResult } from "@/lib/image-validation-client";
+import { IMAGE_CONFIG, ImageType } from "@/lib/image-config";
 
 // ── Props ──────────────────────────────────────────────────────
 interface CroppableImageUploadProps {
@@ -53,23 +55,27 @@ const DEFAULT_ADJUSTMENTS: Adjustments = {
 };
 
 // ── Crop aspect-ratio config ───────────────────────────────────
-type AspectLabel = "1:1" | "16:9";
+type AspectLabel = "1:1" | "16:5" | "4:3";
 
-const TYPE_TO_ASPECT: Record<string, AspectLabel> = {
-  logo: "1:1",
-  "cover-image": "16:9",
-  "culture-image": "16:9",
+const TYPE_TO_ASPECT: Record<ImageType, AspectLabel> = {
   avatar: "1:1",
+  logo: "1:1",
+  "cover-image": "16:5",
+  "culture-image": "4:3",
+  "hero-banner": "16:5",
+  "square-banner": "1:1",
 };
 
 const ASPECT_VALUE: Record<AspectLabel, number> = {
   "1:1": 1,
-  "16:9": 16 / 9,
+  "16:5": 16 / 5,
+  "4:3": 4 / 3,
 };
 
 const ASPECT_CLASS: Record<AspectLabel, string> = {
   "1:1": "aspect-square",
-  "16:9": "aspect-video",
+  "16:5": "aspect-[16/5]",
+  "4:3": "aspect-[4/3]",
 };
 
 function createImage(url: string): Promise<HTMLImageElement> {
@@ -165,9 +171,33 @@ export function CroppableImageUpload({
     if (!file) return;
 
     setError(null);
+
+    // Client-side validation (MIME type + file size)
+    const validation: ValidationResult = validateImageClientSide({ file, imageType: type });
+    if (!validation.valid) {
+      setError(validation.error || "Invalid file");
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      return;
+    }
+
     const url = URL.createObjectURL(file);
 
     createImage(url).then((img) => {
+      // Check image dimensions against minimum requirements
+      const config = IMAGE_CONFIG[type];
+      if (config?.minDimensions) {
+        if (img.naturalWidth < config.minDimensions.width || img.naturalHeight < config.minDimensions.height) {
+          URL.revokeObjectURL(url);
+          setError(`Image dimensions too small. Minimum: ${config.minDimensions.width}x${config.minDimensions.height}px`);
+          if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+          }
+          return;
+        }
+      }
+
       setRawImage(url);
       setRawImageEl(img);
       setAdj({ ...DEFAULT_ADJUSTMENTS });

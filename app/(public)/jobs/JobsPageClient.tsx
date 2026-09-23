@@ -84,6 +84,7 @@ interface JobOffer {
   slug: string
   salary: string | null
   salaryMax: number | null
+  salaryCurrency: string | null
   isRemote: boolean
   isHybrid: boolean
   customLocation: string | null
@@ -276,12 +277,19 @@ export default function JobsPageClient({ initialJobs = [], totalJobs = 0 }: Jobs
 
   const checkedActivityCount = selectedActivity.filter(item => item.checked).length
 
-  const transformedJobs: JobData[] = jobs.map((job, index) => {
+  const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: "$",
+  EUR: "€",
+  TND: "د.ت",
+}
+
+const transformedJobs: JobData[] = jobs.map((job, index) => {
+    const currencySymbol = CURRENCY_SYMBOLS[job.salaryCurrency || "USD"] || "$"
     const salaryNum = typeof job.salary === 'string' ? parseFloat(job.salary) : job.salary
     const salaryFormatted = salaryNum
-      ? `$${(salaryNum / 1000).toFixed(1)}k/mo`
+      ? `${currencySymbol}${(salaryNum / 1000).toFixed(1)}k/mo`
       : job.salaryMax
-        ? `$${(job.salaryMax / 1000).toFixed(1)}k/mo`
+        ? `${currencySymbol}${(job.salaryMax / 1000).toFixed(1)}k/mo`
         : "Salary TBD"
 
     const workModeLabel = job.isRemote ? "Remote"
@@ -297,7 +305,6 @@ export default function JobsPageClient({ initialJobs = [], totalJobs = 0 }: Jobs
       location,
       salary: salaryFormatted,
       extra: job.contractType || "Full-time",
-      badge1: "ENTRY LEVEL",
       badge2: workModeLabel,
       badge3: activityTypeLabel(job.activityType, job.activityCustom),
       icon: "▣",

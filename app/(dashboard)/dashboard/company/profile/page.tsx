@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { Card, CardContent,} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { MapPin, Users, Calendar, Eye } from "lucide-react";
+import { MapPin, Users, Calendar, Eye, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { CompanyProfileForm } from "@/components/dashboard/company-profile-form";
+import { DynamicIcon } from "@/lib/icon-map";
 
 /* eslint-disable @next/next/no-img-element */
 
@@ -126,6 +127,9 @@ export default async function CompanyProfilePage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Benefits Preview */}
+      
 
       {/* Edit Form */}
       <CompanyProfileForm company={company} />

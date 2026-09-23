@@ -32,7 +32,7 @@ const getPublishedJob = unstable_cache(
               isHybridFriendly: true,
               benefits: {
                 where: { scope: "CORE" },
-                select: { id: true, name: true },
+                select: { id: true, name: true, icon: true },
               },
             },
           },
@@ -62,7 +62,7 @@ const getPublishedJob = unstable_cache(
               id: true, name: true, slug: true, logoUrl: true,
               location: true, website: true, description: true,
               isRemoteFriendly: true, isHybridFriendly: true,
-              benefits: { where: { scope: "CORE" }, select: { id: true, name: true } },
+              benefits: { where: { scope: "CORE" }, select: { id: true, name: true, icon: true } },
             },
           },
           benefits: { include: { benefit: true } },

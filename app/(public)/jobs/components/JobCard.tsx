@@ -9,7 +9,6 @@ export interface JobData {
   location: string
   salary: string
   extra: string
-  badge1: string
   badge2: string
   badge3: string
   icon: string
@@ -44,7 +43,7 @@ export function JobCard({ job, isCompany = false }: JobCardProps) {
 
             <div className="mt-5 flex flex-wrap gap-x-8 gap-y-3 text-[16px] font-semibold text-[#72829a]">
               <InfoText icon="⌖" text={job.location} />
-              <InfoText icon="◫" text={job.salary} />
+              <InfoText icon="" text={job.salary} />
               <InfoText icon="◷" text={job.extra} />
             </div>
           </div>
@@ -52,7 +51,6 @@ export function JobCard({ job, isCompany = false }: JobCardProps) {
 
         <div className="flex flex-col items-start gap-4 lg:items-end">
           <div className="flex flex-wrap gap-2">
-            {job.badge1 ? <Tag variant="green">{job.badge1}</Tag> : null}
             {job.badge2 ? <Tag variant="slate">{job.badge2}</Tag> : null}
             {job.badge3 ? <Tag variant="green">{job.badge3}</Tag> : null}
           </div>

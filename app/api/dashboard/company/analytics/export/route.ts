@@ -2,14 +2,30 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { logger } from "@/lib/logger";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { z } from "zod";
-import { pct, buildJobWhere, buildAppWhere } from "@/lib/analytics-utils";
+import { buildJobWhere, buildAppWhere } from "@/lib/analytics-utils";
 
 const querySchema = z.object({
   days: z.coerce.number().min(7).max(90).default(30),
   language: z.string().default("all"),
 });
+
+// ─── Brand palette ─────────────────────────────────────────────
+const COLOR = {
+  navy: "FF162F67",
+  seafoam: "FF42B883",
+  green: "FF24C491",
+  lightBg: "FFF0FDF9",
+  slate: "FFF1F5F9",
+  white: "FFFFFFFF",
+  text: "FF0E172F",
+  subtext: "FF64748B",
+  border: "FFE2E8F0",
+  red: "FFDC2626",
+};
+
+const FONT = "Calibri";
 
 export async function GET(request: NextRequest) {
   try {
@@ -202,226 +218,20 @@ export async function GET(request: NextRequest) {
     >(ageSql, ...ageParams);
     const ageRow = ageRowsRaw[0] ?? { age_18_24: 0, age_25_34: 0, age_35_44: 0, age_45_55: 0, age_55_plus: 0 };
 
-    // ─── Build styled single-sheet Excel ─────────────
-    const wb = XLSX.utils.book_new();
-    const wsName = "Analytics Report";
-
-    // Build data as array of arrays (all strings for simplicity, style later)
-    const rawData: (string | number)[][] = [];
-
-    // Row 1: Title (merged later)
-    rawData.push(["CXJobs Analytics Report", "", "", "", "", "", "", ""]);
-    // Row 2: Subtitle
-    rawData.push([`Period: Last ${days} days  •  Language: ${language === "all" ? "All" : language}  •  Generated: ${now.toLocaleDateString()}`, "", "", "", "", "", "", ""]);
-    // Row 3: Spacer
-    rawData.push(["", "", "", "", "", "", "", ""]);
-    // Row 4: Section: KEY METRICS
-    rawData.push(["KEY METRICS", "", "", "", "", "", "", ""]);
-    rawData.push(["Total Views", "", "", "Received Applications", "", "", "", ""]);
-    rawData.push(["", String(totalViews), "", "", String(receivedApplications), "", "", ""]);
-    rawData.push(["Total Job Listings", "", "", "Active Job Listings", "", "", "", ""]);
-    rawData.push(["", String(totalJobListings), "", "", String(activeJobListings), "", "", ""]);
-
-    // Spacer
-    rawData.push(["", "", "", "", "", "", "", ""]);
-
-    // Job Performance section
-    rawData.push(["JOB PERFORMANCE", "", "", "", "", "", "", ""]);
-    rawData.push(["Title", "Language", "Location", "Views", "Applications", "Conversion", "Status", ""]);
-
-    jobPerformance.forEach((job) => {
-      rawData.push([
-        job.title,
-        job.languages[0]?.language ?? "N/A",
-        job.customLocation ?? "—",
-        job.views ?? 0,
-        job._count.applications,
-        job.views > 0 ? Number(((job._count.applications / job.views) * 100).toFixed(1)) + "%" : "N/A",
-        job.status,
-        "",
-      ]);
+    // ─── Build workbook ───────────────────────────────────────
+    const buffer = await buildWorkbook({
+      days,
+      language,
+      now,
+      totalViews,
+      receivedApplications,
+      totalJobListings,
+      activeJobListings,
+      jobPerformance,
+      genderRow,
+      ageRow,
     });
 
-    // Spacer
-    rawData.push(["", "", "", "", "", "", "", ""]);
-
-    // Gender Distribution
-    rawData.push(["GENDER DISTRIBUTION", "", "", "", "", "", "", ""]);
-    rawData.push(["Category", "Count", "Percentage", "", "", "", "", ""]);
-    const totalGender = Number(genderRow.total ?? 0);
-    rawData.push(["Female", Number(genderRow.female ?? 0), pct(Number(genderRow.female ?? 0), totalGender) + "%", "", "", "", "", ""]);
-    rawData.push(["Male", Number(genderRow.male ?? 0), pct(Number(genderRow.male ?? 0), totalGender) + "%", "", "", "", "", ""]);
-
-    // Spacer
-    rawData.push(["", "", "", "", "", "", "", ""]);
-
-    // Age Distribution
-    rawData.push(["AGE DISTRIBUTION", "", "", "", "", "", "", ""]);
-    rawData.push(["Age Group", "Count", "", "", "", "", "", ""]);
-    rawData.push(["18-24", Number(ageRow.age_18_24 ?? 0), "", "", "", "", "", ""]);
-    rawData.push(["25-34", Number(ageRow.age_25_34 ?? 0), "", "", "", "", "", ""]);
-    rawData.push(["35-44", Number(ageRow.age_35_44 ?? 0), "", "", "", "", "", ""]);
-    rawData.push(["45-55", Number(ageRow.age_45_55 ?? 0), "", "", "", "", "", ""]);
-    rawData.push(["55+", Number(ageRow.age_55_plus ?? 0), "", "", "", "", "", ""]);
-
-    // Create worksheet from data
-    const ws = XLSX.utils.aoa_to_sheet(rawData as string[][]);
-    ws["!ref"] = `A1:H${rawData.length}`;
-
-    // Apply styles
-    const navyFill = { type: "pattern", pattern: "solid", fgColor: { rgb: "162F67" } };
-    const seafoamFill = { type: "pattern", pattern: "solid", fgColor: { rgb: "42B883" } };
-    const greenFill = { type: "pattern", pattern: "solid", fgColor: { rgb: "24C491" } };
-    const lightFill = { type: "pattern", pattern: "solid", fgColor: { rgb: "F0FDF9" } };
-    const slateFill = { type: "pattern", pattern: "solid", fgColor: { rgb: "F1F5F9" } };
-    const whiteFill = { type: "pattern", pattern: "solid", fgColor: { rgb: "FFFFFF" } };
-    const whiteFont = { color: { rgb: "FFFFFF" }, name: "Calibri" };
-    const textFont = { color: { rgb: "0E172F" }, name: "Calibri" };
-    const lightTextFont = { color: { rgb: "64748B" }, name: "Calibri" };
-    const center = { horizontal: "center" as const };
-
-    // Row 1: Title - navy bg, white font, centered, large
-    for (let c = 0; c < 8; c++) {
-      const cell = ws[XLSX.utils.encode_cell({ r: 0, c })];
-      if (cell) {
-        cell.s = { fill: navyFill, font: { ...whiteFont, sz: 16, bold: true }, alignment: { horizontal: "center", vertical: "center" } };
-      }
-    }
-
-    // Row 2: Subtitle - seafoam bg, white font
-    for (let c = 0; c < 8; c++) {
-      const cell = ws[XLSX.utils.encode_cell({ r: 1, c })];
-      if (cell) {
-        cell.s = { fill: seafoamFill, font: { ...whiteFont, sz: 10 }, alignment: { horizontal: "center" } };
-      }
-    }
-
-    // Row 4: KEY METRICS header - navy bg
-    for (let c = 0; c < 8; c++) {
-      const cell = ws[XLSX.utils.encode_cell({ r: 3, c })];
-      if (cell) {
-        cell.s = { fill: navyFill, font: { ...whiteFont, sz: 12, bold: true } };
-      }
-    }
-
-    // KPI labels (rows 4, 6) - light bg, light text
-    [4, 6].forEach((row) => {
-      for (let c = 0; c < 8; c++) {
-        const cell = ws[XLSX.utils.encode_cell({ r: row, c })];
-        if (cell) {
-          cell.s = { fill: lightFill, font: { ...lightTextFont, sz: 9 } };
-        }
-      }
-    });
-
-    // KPI values (rows 5, 7) - light bg, colored large font
-    [5, 7].forEach((row) => {
-      const isSeafoam = row === 5;
-      const color = isSeafoam ? "42B883" : "162F67";
-      for (let c = 0; c < 8; c++) {
-        const cell = ws[XLSX.utils.encode_cell({ r: row, c })];
-        if (cell) {
-          cell.s = { fill: lightFill, font: { color: { rgb: color }, sz: 16, bold: true, name: "Calibri" } };
-        }
-      }
-    });
-
-    // Section headers (rows after KEY METRICS)
-    let currentRow = 8;
-    while (currentRow < rawData.length) {
-      const rowVal = rawData[currentRow]?.[0];
-      if (rowVal && typeof rowVal === "string" && rowVal === rowVal.toUpperCase() && rowVal.length > 3 && /[A-Z]/.test(rowVal)) {
-        const fill = rowVal.includes("JOB") ? navyFill : (rowVal.includes("GENDER") || rowVal.includes("AGE")) ? seafoamFill : navyFill;
-        for (let c = 0; c < 8; c++) {
-          const cell = ws[XLSX.utils.encode_cell({ r: currentRow, c })];
-          if (cell) {
-            cell.s = { fill, font: { ...whiteFont, sz: 12, bold: true } };
-          }
-        }
-      }
-      // Table headers (rows with "Title", "Category", "Age Group", etc.)
-      if (rowVal === "Title" || rowVal === "Category" || rowVal === "Age Group") {
-        for (let c = 0; c < 8; c++) {
-          const cell = ws[XLSX.utils.encode_cell({ r: currentRow, c })];
-          if (cell) {
-            cell.s = { fill: greenFill, font: { ...whiteFont, sz: 10, bold: true }, alignment: center };
-          }
-        }
-      }
-      currentRow++;
-    }
-
-    // Table data cells - add borders and alternating bg
-    let inTable = false;
-    let tableRowCount = 0;
-    for (let r = 0; r < rawData.length; r++) {
-      const rowVal = rawData[r]?.[0];
-      if (rowVal === "Title") {
-        inTable = true;
-        tableRowCount = 0;
-        continue;
-      }
-      if (inTable) {
-        if (typeof rowVal === "string" && ["JOB PERFORMANCE", "GENDER DISTRIBUTION", "AGE DISTRIBUTION", ""].includes(rowVal)) {
-          inTable = false;
-          continue;
-        }
-        tableRowCount++;
-        const bg = tableRowCount % 2 === 0 ? whiteFill : slateFill;
-        for (let c = 0; c < 8; c++) {
-          const cell = ws[XLSX.utils.encode_cell({ r: r, c })];
-          if (cell) {
-            const baseStyle = cell.s || {};
-            cell.s = {
-              ...baseStyle,
-              fill: bg,
-              font: { ...textFont, sz: 10 },
-              border: {
-                left: { style: "thin", color: { rgb: "E2E8F0" } },
-                right: { style: "thin", color: { rgb: "E2E8F0" } },
-                top: { style: "thin", color: { rgb: "E2E8F0" } },
-                bottom: { style: "thin", color: { rgb: "E2E8F0" } },
-              },
-            };
-          }
-        }
-      }
-    }
-
-    // Highlight Conversion column (col E=5) values in seafoam green
-    for (let r = 0; r < rawData.length; r++) {
-      const cell = ws[XLSX.utils.encode_cell({ r, c: 5 })];
-      if (cell && typeof cell.v === "string" && cell.v.includes("%")) {
-        cell.s = { ...cell.s, font: { color: { rgb: "42B883" }, sz: 10, bold: true } };
-      }
-      // Highlight Views column (col D=4) - dark navy font
-      const viewCell = ws[XLSX.utils.encode_cell({ r, c: 3 })];
-      if (viewCell && typeof viewCell.v === "string" && /^\d+$/.test(viewCell.v)) {
-        viewCell.s = { ...viewCell.s, font: { color: { rgb: "162F67" }, sz: 10, bold: true } };
-      }
-      // Highlight Applications column (col E=4) - seafoam green
-      const appCell = ws[XLSX.utils.encode_cell({ r, c: 4 })];
-      if (appCell && typeof appCell.v === "string" && /^\d+$/.test(appCell.v)) {
-        appCell.s = { ...appCell.s, font: { color: { rgb: "42B883" }, sz: 10, bold: true } };
-      }
-    }
-
-    // Merge cells for title and subtitle rows
-    ws["!merges"] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 7 } },
-      { s: { r: 1, c: 0 }, e: { r: 1, c: 7 } },
-      { s: { r: 3, c: 0 }, e: { r: 3, c: 7 } },
-    ];
-
-    // Set column widths
-    ws["!cols"] = [
-      { wch: 24 }, { wch: 14 }, { wch: 14 }, { wch: 10 },
-      { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 10 },
-    ];
-
-    XLSX.utils.book_append_sheet(wb, ws, wsName);
-
-    const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
     const fileName = `cxjobs-analytics-${days}d-${now.toISOString().slice(0, 10)}.xlsx`;
 
     return new NextResponse(buffer, {
@@ -440,5 +250,418 @@ export async function GET(request: NextRequest) {
       { success: false, error: "Failed to export analytics", code: "INTERNAL_ERROR" },
       { status: 500 }
     );
+  }
+}
+
+// ─── Workbook builder ───────────────────────────────────────────
+
+type JobPerformanceRow = {
+  title: string;
+  status: string;
+  customLocation: string | null;
+  views: number | null;
+  languages: { language: string }[];
+  _count: { applications: number };
+};
+
+async function buildWorkbook(input: {
+  days: number;
+  language: string;
+  now: Date;
+  totalViews: number;
+  receivedApplications: number;
+  totalJobListings: number;
+  activeJobListings: number;
+  jobPerformance: JobPerformanceRow[];
+  genderRow: { total: number; female: number; male: number };
+  ageRow: {
+    age_18_24: number;
+    age_25_34: number;
+    age_35_44: number;
+    age_45_55: number;
+    age_55_plus: number;
+  };
+}) {
+  const { days, language, now, totalViews, receivedApplications, totalJobListings, activeJobListings, jobPerformance, genderRow, ageRow } = input;
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "CXJobs";
+  workbook.created = now;
+  workbook.properties.date1904 = false;
+
+  buildSummarySheet(workbook, { days, language, now, totalViews, receivedApplications, totalJobListings, activeJobListings });
+  buildJobPerformanceSheet(workbook, jobPerformance);
+  buildDemographicsSheet(workbook, genderRow, ageRow);
+
+  const arrayBuffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
+// ─── Sheet 1: Summary ───────────────────────────────────────────
+
+function buildSummarySheet(
+  workbook: ExcelJS.Workbook,
+  data: {
+    days: number;
+    language: string;
+    now: Date;
+    totalViews: number;
+    receivedApplications: number;
+    totalJobListings: number;
+    activeJobListings: number;
+  }
+) {
+  const { days, language, now, totalViews, receivedApplications, totalJobListings, activeJobListings } = data;
+  const sheet = workbook.addWorksheet("Summary", {
+    views: [{ showGridLines: false }],
+  });
+
+  sheet.columns = [
+    { width: 4 }, { width: 22 }, { width: 22 }, { width: 4 },
+    { width: 22 }, { width: 22 }, { width: 4 },
+  ];
+
+  // Title band
+  sheet.mergeCells("A1:G2");
+  const title = sheet.getCell("A1");
+  title.value = "CXJobs Analytics Report";
+  title.font = { name: FONT, size: 22, bold: true, color: { argb: COLOR.white } };
+  title.alignment = { vertical: "middle", horizontal: "left", indent: 2 };
+  sheet.getRow(1).height = 24;
+  sheet.getRow(2).height = 24;
+  fillRowRange(sheet, 1, 2, "A", "G", COLOR.navy);
+
+  // Subtitle band
+  sheet.mergeCells("A3:G3");
+  const subtitle = sheet.getCell("A3");
+  const periodLabel = `Last ${days} days`;
+  const languageLabel = language === "all" ? "All languages" : language;
+  subtitle.value = `${periodLabel}  •  ${languageLabel}  •  Generated ${now.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}`;
+  subtitle.font = { name: FONT, size: 11, color: { argb: COLOR.white } };
+  subtitle.alignment = { vertical: "middle", horizontal: "left", indent: 2 };
+  sheet.getRow(3).height = 22;
+  fillRowRange(sheet, 3, 3, "A", "G", COLOR.seafoam);
+
+  sheet.getRow(4).height = 10;
+
+  // Section label
+  sheet.mergeCells("A5:G5");
+  const sectionLabel = sheet.getCell("A5");
+  sectionLabel.value = "KEY METRICS";
+  sectionLabel.font = { name: FONT, size: 11, bold: true, color: { argb: COLOR.subtext } };
+  sheet.getRow(5).height = 18;
+
+  // KPI cards — 2x2 grid, each spanning 2 columns
+  const kpis: { label: string; value: number; accent: string; format?: string }[] = [
+    { label: "Total Views", value: totalViews, accent: COLOR.navy },
+    { label: "Received Applications", value: receivedApplications, accent: COLOR.seafoam },
+    { label: "Total Job Listings", value: totalJobListings, accent: COLOR.navy },
+    { label: "Active Job Listings", value: activeJobListings, accent: COLOR.seafoam },
+  ];
+
+  const positions = [
+    { row: 6, cols: ["B", "C"] as [string, string] },
+    { row: 6, cols: ["E", "F"] as [string, string] },
+    { row: 10, cols: ["B", "C"] as [string, string] },
+    { row: 10, cols: ["E", "F"] as [string, string] },
+  ];
+
+  kpis.forEach((kpi, i) => {
+    drawKpiCard(sheet, positions[i].row, positions[i].cols, kpi.label, kpi.value, kpi.accent);
+  });
+
+  sheet.getRow(14).height = 10;
+
+  // Footer note
+  sheet.mergeCells("A15:G15");
+  const note = sheet.getCell("A15");
+  note.value = "See the \"Job Performance\" and \"Demographics\" tabs for the full breakdown.";
+  note.font = { name: FONT, size: 9, italic: true, color: { argb: COLOR.subtext } };
+}
+
+function drawKpiCard(
+  sheet: ExcelJS.Worksheet,
+  startRow: number,
+  cols: [string, string],
+  label: string,
+  value: number,
+  accent: string
+) {
+  const [c1, c2] = cols;
+  const labelRange = `${c1}${startRow}:${c2}${startRow}`;
+  const valueRange = `${c1}${startRow + 1}:${c2}${startRow + 2}`;
+
+  sheet.mergeCells(labelRange);
+  sheet.mergeCells(valueRange);
+
+  const labelCell = sheet.getCell(`${c1}${startRow}`);
+  labelCell.value = label.toUpperCase();
+  labelCell.font = { name: FONT, size: 9, bold: true, color: { argb: COLOR.subtext } };
+  labelCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+
+  const valueCell = sheet.getCell(`${c1}${startRow + 1}`);
+  valueCell.value = value;
+  valueCell.numFmt = "#,##0";
+  valueCell.font = { name: FONT, size: 26, bold: true, color: { argb: accent } };
+  valueCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+
+  sheet.getRow(startRow).height = 16;
+  sheet.getRow(startRow + 1).height = 26;
+  sheet.getRow(startRow + 2).height = 8;
+
+  fillRowRange(sheet, startRow, startRow + 2, c1, c2, COLOR.lightBg);
+
+  // left accent bar
+  const accentCell = sheet.getCell(`${c1}${startRow}`);
+  accentCell.border = { left: { style: "thick", color: { argb: accent } } };
+  const accentCell2 = sheet.getCell(`${c1}${startRow + 1}`);
+  accentCell2.border = { left: { style: "thick", color: { argb: accent } } };
+}
+
+function fillRowRange(sheet: ExcelJS.Worksheet, startRow: number, endRow: number, startCol: string, endCol: string, color: string) {
+  const startIdx = colToIndex(startCol);
+  const endIdx = colToIndex(endCol);
+  for (let r = startRow; r <= endRow; r++) {
+    for (let c = startIdx; c <= endIdx; c++) {
+      const cell = sheet.getCell(r, c);
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: color } };
+    }
+  }
+}
+
+function colToIndex(col: string) {
+  let idx = 0;
+  for (let i = 0; i < col.length; i++) {
+    idx = idx * 26 + (col.charCodeAt(i) - 64);
+  }
+  return idx;
+}
+
+// ─── Sheet 2: Job Performance ───────────────────────────────────
+
+function buildJobPerformanceSheet(workbook: ExcelJS.Workbook, jobPerformance: JobPerformanceRow[]) {
+  const sheet = workbook.addWorksheet("Job Performance", {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
+
+  sheet.columns = [
+    { header: "Title", key: "title", width: 34 },
+    { header: "Language", key: "language", width: 14 },
+    { header: "Location", key: "location", width: 20 },
+    { header: "Views", key: "views", width: 10 },
+    { header: "Applications", key: "applications", width: 14 },
+    { header: "Conversion", key: "conversion", width: 12 },
+    { header: "Status", key: "status", width: 12 },
+  ];
+
+  styleHeaderRow(sheet.getRow(1), COLOR.navy);
+  sheet.getRow(1).height = 20;
+
+  jobPerformance.forEach((job) => {
+    const views = job.views ?? 0;
+    const applications = job._count.applications;
+    const conversion = views > 0 ? applications / views : null;
+
+    const row = sheet.addRow({
+      title: job.title,
+      language: job.languages[0]?.language ?? "N/A",
+      location: job.customLocation ?? "—",
+      views,
+      applications,
+      conversion,
+      status: job.status,
+    });
+
+    row.getCell("views").font = { name: FONT, size: 10, bold: true, color: { argb: COLOR.navy } };
+    row.getCell("applications").font = { name: FONT, size: 10, bold: true, color: { argb: COLOR.seafoam } };
+
+    const conversionCell = row.getCell("conversion");
+    if (conversion === null) {
+      conversionCell.value = "N/A";
+      conversionCell.font = { name: FONT, size: 10, italic: true, color: { argb: COLOR.subtext } };
+    } else {
+      conversionCell.numFmt = "0.0%";
+      conversionCell.font = { name: FONT, size: 10, bold: true, color: { argb: COLOR.green } };
+    }
+  });
+
+  if (jobPerformance.length === 0) {
+    const row = sheet.addRow({ title: "No published job listings in this period." });
+    sheet.mergeCells(`A${row.number}:G${row.number}`);
+    row.getCell(1).font = { name: FONT, size: 10, italic: true, color: { argb: COLOR.subtext } };
+  } else {
+    zebraStripe(sheet, 2, sheet.rowCount, 1, sheet.columns.length);
+    sheet.autoFilter = { from: "A1", to: `G${sheet.rowCount}` };
+
+    // Data-bar conditional formatting on the Conversion column for an at-a-glance read.
+    // `cfvo` (the min/max waypoints) is required by ExcelJS's dataBar renderer even though
+    // its own typings mark the field as optional — omitting it throws at write time.
+    // `color` is a real, supported dataBar option at runtime even though the shipped
+    // ExcelJS typings for DataBarRuleType omit it, hence the targeted cast below.
+    sheet.addConditionalFormatting({
+      ref: `F2:F${sheet.rowCount}`,
+      rules: [
+        {
+          type: "dataBar",
+          priority: 1,
+          gradient: true,
+          border: false,
+          minLength: 0,
+          maxLength: 100,
+          cfvo: [{ type: "min" }, { type: "max" }],
+          color: { argb: COLOR.seafoam },
+        } as unknown as ExcelJS.DataBarRuleType,
+      ],
+    });
+  }
+
+  addTableBorders(sheet, 1, sheet.rowCount, 1, sheet.columns.length);
+}
+
+// ─── Sheet 3: Demographics ──────────────────────────────────────
+
+function buildDemographicsSheet(
+  workbook: ExcelJS.Workbook,
+  genderRow: { total: number; female: number; male: number },
+  ageRow: { age_18_24: number; age_25_34: number; age_35_44: number; age_45_55: number; age_55_plus: number }
+) {
+  const sheet = workbook.addWorksheet("Demographics", {
+    views: [{ showGridLines: false }],
+  });
+
+  sheet.columns = [
+    { width: 16 }, { width: 10 }, { width: 12 }, { width: 4 },
+    { width: 14 }, { width: 10 }, { width: 12 },
+  ];
+
+  // Gender section
+  sheet.mergeCells("A1:C1");
+  const genderTitle = sheet.getCell("A1");
+  genderTitle.value = "GENDER DISTRIBUTION";
+  styleSectionHeader(genderTitle, COLOR.navy);
+  sheet.getRow(1).height = 20;
+  fillRowRange(sheet, 1, 1, "A", "C", COLOR.navy);
+
+  const genderHeaderRow = sheet.getRow(2);
+  ["Category", "Count", "Share"].forEach((h, i) => {
+    const cell = genderHeaderRow.getCell(1 + i);
+    cell.value = h;
+  });
+  styleHeaderRow(genderHeaderRow, COLOR.green, 3);
+
+  const totalGender = Number(genderRow.total ?? 0);
+  const genderEntries: [string, number][] = [
+    ["Female", Number(genderRow.female ?? 0)],
+    ["Male", Number(genderRow.male ?? 0)],
+  ];
+  genderEntries.forEach(([label, count], i) => {
+    const r = sheet.getRow(3 + i);
+    r.getCell(1).value = label;
+    r.getCell(2).value = count;
+    r.getCell(3).value = totalGender > 0 ? count / totalGender : 0;
+    r.getCell(3).numFmt = "0.0%";
+    r.getCell(2).font = { name: FONT, size: 10, bold: true, color: { argb: COLOR.navy } };
+    r.getCell(3).font = { name: FONT, size: 10, bold: true, color: { argb: COLOR.seafoam } };
+    r.getCell(1).font = { name: FONT, size: 10, color: { argb: COLOR.text } };
+  });
+  zebraStripe(sheet, 3, 4, 1, 3);
+  addTableBorders(sheet, 2, 4, 1, 3);
+
+  // Age section
+  sheet.mergeCells("E1:G1");
+  const ageTitle = sheet.getCell("E1");
+  ageTitle.value = "AGE DISTRIBUTION";
+  styleSectionHeader(ageTitle, COLOR.seafoam);
+  fillRowRange(sheet, 1, 1, "E", "G", COLOR.seafoam);
+
+  const ageHeaderRow = sheet.getRow(2);
+  ["Age Group", "Count", "Share"].forEach((h, i) => {
+    const cell = ageHeaderRow.getCell(5 + i);
+    cell.value = h;
+  });
+  styleHeaderRow(ageHeaderRow, COLOR.green, 3, 4);
+
+  const ageEntries: [string, number][] = [
+    ["18–24", Number(ageRow.age_18_24 ?? 0)],
+    ["25–34", Number(ageRow.age_25_34 ?? 0)],
+    ["35–44", Number(ageRow.age_35_44 ?? 0)],
+    ["45–55", Number(ageRow.age_45_55 ?? 0)],
+    ["55+", Number(ageRow.age_55_plus ?? 0)],
+  ];
+  const totalAge = ageEntries.reduce((sum, [, count]) => sum + count, 0);
+  ageEntries.forEach(([label, count], i) => {
+    const r = sheet.getRow(3 + i);
+    r.getCell(5).value = label;
+    r.getCell(6).value = count;
+    r.getCell(7).value = totalAge > 0 ? count / totalAge : 0;
+    r.getCell(7).numFmt = "0.0%";
+    r.getCell(6).font = { name: FONT, size: 10, bold: true, color: { argb: COLOR.navy } };
+    r.getCell(7).font = { name: FONT, size: 10, bold: true, color: { argb: COLOR.seafoam } };
+    r.getCell(5).font = { name: FONT, size: 10, color: { argb: COLOR.text } };
+  });
+  zebraStripe(sheet, 3, 7, 5, 7);
+  addTableBorders(sheet, 2, 7, 5, 7);
+
+  sheet.addConditionalFormatting({
+    ref: "G3:G7",
+    rules: [
+      {
+        type: "dataBar",
+        priority: 1,
+        gradient: true,
+        border: false,
+        minLength: 0,
+        maxLength: 100,
+        cfvo: [{ type: "min" }, { type: "max" }],
+        color: { argb: COLOR.navy },
+      } as unknown as ExcelJS.DataBarRuleType,
+    ],
+  });
+}
+
+// ─── Shared styling helpers ──────────────────────────────────────
+
+function styleSectionHeader(cell: ExcelJS.Cell, _accent: string) {
+  cell.font = { name: FONT, size: 12, bold: true, color: { argb: COLOR.white } };
+  cell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+}
+
+function styleHeaderRow(row: ExcelJS.Row, bg: string, colCount?: number, startCol = 1) {
+  const count = colCount ?? row.cellCount;
+  for (let c = startCol; c < startCol + count; c++) {
+    const cell = row.getCell(c);
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } };
+    cell.font = { name: FONT, size: 10, bold: true, color: { argb: COLOR.white } };
+    cell.alignment = { vertical: "middle", horizontal: c === startCol ? "left" : "center" };
+  }
+}
+
+function zebraStripe(sheet: ExcelJS.Worksheet, startRow: number, endRow: number, startCol: number, endCol: number) {
+  for (let r = startRow; r <= endRow; r++) {
+    const isEven = (r - startRow) % 2 === 1;
+    const bg = isEven ? COLOR.slate : COLOR.white;
+    for (let c = startCol; c <= endCol; c++) {
+      const cell = sheet.getCell(r, c);
+      if (!cell.fill || (cell.fill as ExcelJS.FillPattern).fgColor?.argb === undefined) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } };
+      }
+      if (!cell.font) {
+        cell.font = { name: FONT, size: 10, color: { argb: COLOR.text } };
+      }
+    }
+  }
+}
+
+function addTableBorders(sheet: ExcelJS.Worksheet, startRow: number, endRow: number, startCol: number, endCol: number) {
+  for (let r = startRow; r <= endRow; r++) {
+    for (let c = startCol; c <= endCol; c++) {
+      const cell = sheet.getCell(r, c);
+      cell.border = {
+        top: { style: "thin", color: { argb: COLOR.border } },
+        bottom: { style: "thin", color: { argb: COLOR.border } },
+        left: { style: "thin", color: { argb: COLOR.border } },
+        right: { style: "thin", color: { argb: COLOR.border } },
+      };
+    }
   }
 }

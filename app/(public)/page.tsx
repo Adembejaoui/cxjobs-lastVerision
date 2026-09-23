@@ -6,13 +6,13 @@ async function getFeaturedCompanies() {
   const companies = await prisma.companies.findMany({
     where: {
       deletedAt: null,
-      coverImageUrl: { not: null },
+      logoUrl: { not: null },
     },
     select: {
       id: true,
       name: true,
       slug: true,
-      coverImageUrl: true,
+      logoUrl: true,
       location: true,
       foundedYear: true,
     },
@@ -21,7 +21,7 @@ async function getFeaturedCompanies() {
   });
 
   return companies.map((company) => ({
-    src: company.coverImageUrl!,
+    src: company.logoUrl!,
     alt: `${company.name} - Customer Experience Company`,
     companyName: company.name,
     foundedYear: company.foundedYear || new Date().getFullYear(),
@@ -55,7 +55,7 @@ export default async function CXJobsLandingPage() {
             showNavigation
             showPagination
             loop
-            cardWidth="clamp(280px, 30vw, 380px)"
+            cardWidth="clamp(100px, 20vw, 200px)"
             label="Featured CX Companies"
           />
         </div>

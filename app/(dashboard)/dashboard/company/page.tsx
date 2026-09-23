@@ -108,9 +108,8 @@ const QUICK_ACTIONS: QuickActionConfig[] = [
   {
     label: "Create Job Offer",
     icon: PlusCircle,
-    href: "/dashboard/company/jobs",
+    href: "/dashboard/company/jobs?create=true",
   },
-  { label: "View Applications", icon: Users, href: "/dashboard/company/jobs" },
   {
     label: "Manage Job Offers",
     icon: Briefcase,

@@ -171,10 +171,7 @@ const jobOfferSchema = z.object({
     .trim()
     .min(20, "Job description must contain at least 20 characters"),
 
-  customLocation: z
-    .string()
-    .trim()
-    .min(1, "Location is required"),
+  customLocation: z.string().trim().optional().default(""),
 
   location: z.string().optional(),
 
@@ -261,6 +258,14 @@ level: languageLevelSchema,
 }, {
   message: "External apply URL is required when application type is EXTERNAL",
   path: ["externalApplyUrl"],
+}).refine((data) => {
+  if (!data.isRemote && (!data.customLocation || data.customLocation.trim().length === 0)) {
+    return false;
+  }
+  return true;
+}, {
+  message: "Location is required unless the job is Remote",
+  path: ["customLocation"],
 });
 
 export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDialogProps) {

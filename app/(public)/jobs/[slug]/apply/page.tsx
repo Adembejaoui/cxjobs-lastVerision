@@ -49,8 +49,12 @@ interface JobOffer {
   description: string | null
   customLocation: string | null
   contractType: string
+  salary: string | null
   salaryMin: number | null
   salaryMax: number | null
+  salaryCurrency: string | null
+  isRemote: boolean
+  isHybrid: boolean
   applicationType: string
   externalApplyUrl: string | null
   benefits: JobBenefit[]
@@ -223,6 +227,21 @@ export default function JobApplyPage() {
     router.push('/dashboard/candidate/profile');
   };
 
+  const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: "$",
+  EUR: "€",
+  TND: "د.ت",
+}
+
+const formatSalary = (job: JobOffer): string => {
+  const symbol = CURRENCY_SYMBOLS[job.salaryCurrency || "USD"] || "$"
+  if (job.salary) return `${symbol}${job.salary}`
+  if (job.salaryMin && job.salaryMax) return `${symbol}${job.salaryMin.toLocaleString()} - ${symbol}${job.salaryMax.toLocaleString()}`
+  if (job.salaryMin) return `From ${symbol}${job.salaryMin.toLocaleString()}`
+  if (job.salaryMax) return `Up to ${symbol}${job.salaryMax.toLocaleString()}`
+  return "Salary TBD"
+}
+
   if (loading) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -333,14 +352,16 @@ export default function JobApplyPage() {
                   <span className="text-lg font-bold text-white">{job.company.name.charAt(0)}</span>
                 )}
               </div>
-              <div className="flex-1 min-w-0">
+<div className="flex-1 min-w-0">
                 <h1 className="text-lg font-bold text-slate-900 truncate">{job.title}</h1>
                 <p className="text-slate-600 text-sm">{job.company.name}</p>
                 <div className="flex flex-wrap gap-2 items-center text-xs text-slate-500 mt-1">
-<span className="flex items-center gap-1">
-                     <MapPin className="h-3 w-3" />
-                     {job.customLocation || job.company.location || 'Remote'}
-                   </span>
+                  <span className="flex items-center gap-1">
+                    <MapPin className="h-3 w-3" />
+                    {job.customLocation || job.company.location || 'Remote'}
+                  </span>
+                  <span className="text-slate-400">•</span>
+                  <span className="font-semibold text-[#162f67]">{formatSalary(job)}</span>
                   <span className="text-slate-400">•</span>
                   <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700">
                     {getContractTypeLabel(job.contractType)}

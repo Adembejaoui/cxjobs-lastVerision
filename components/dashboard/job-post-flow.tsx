@@ -11,12 +11,14 @@ type ScrapedJobData = JobUrlScrapeOutput;
 
 export function JobPostFlow({
   trigger,
+  defaultPhase,
 }: {
   trigger?: React.ReactNode;
+  defaultPhase?: "closed" | "choice" | "url" | "form";
 }) {
   type Phase = "closed" | "choice" | "url" | "form";
 
-  const [phase, setPhase] = useState<Phase>("closed");
+  const [phase, setPhase] = useState<Phase>(defaultPhase ?? "closed");
   const [scrapedData, setScrapedData] = useState<ScrapedJobData | null>(null);
   const [formKey, setFormKey] = useState(0);
   const isTransitioningRef = useRef(false);

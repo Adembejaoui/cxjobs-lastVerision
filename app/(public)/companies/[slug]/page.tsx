@@ -81,10 +81,15 @@ interface PageProps {
 
 function transformBenefitsForDisplay(
   benefits: Company['benefits']
-): string[] {
+): { id: string; icon: string | null; title: string; description: string | null }[] {
   if (!benefits || benefits.length === 0) return []
 
-  return benefits.map((benefit) => benefit.name || 'Benefit')
+  return benefits.map((benefit) => ({
+    id: benefit.id,
+    icon: benefit.icon,
+    title: benefit.name || 'Benefit',
+    description: benefit.description
+  }))
 }
 
 async function getCompany(slug: string): Promise<Company | null> {

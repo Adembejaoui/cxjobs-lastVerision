@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useUser } from "@/components/auth/user-provider";
 import { JOB_ROLES, getJobRoleConfig } from "@/lib/job-role-config";
 import { logger } from "@/lib/logger";
+import { CroppableImageUpload } from "@/components/dashboard/croppable-image-upload";
 
 interface FormData {
   targetJobRole: string;
@@ -123,8 +124,6 @@ export default function ManualOnboardingPage() {
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState<FormData>(initialFormData);
   const [recommendedSkills, setRecommendedSkills] = useState<string[]>([]);
-  const [avatarUploading, setAvatarUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [newSkill, setNewSkill] = useState("");
   const [newExperience, setNewExperience] = useState({
@@ -171,31 +170,6 @@ export default function ManualOnboardingPage() {
       }
     }
   }, [formData.targetJobRole, formData.headline]);
-
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setAvatarUploading(true);
-    try {
-      const formDataImg = new FormData();
-      formDataImg.append("file", file);
-
-      const res = await fetch("/api/upload?type=avatar", {
-        method: "POST",
-        body: formDataImg,
-      });
-
-      const data = await res.json();
-      if (data.success && data.data?.url) {
-        setFormData((prev) => ({ ...prev, avatarUrl: data.data.url }));
-      }
-    } catch {
-      logger.error("Avatar upload failed");
-    } finally {
-      setAvatarUploading(false);
-    }
-  };
 
   const handleAddSkill = (skillName?: string) => {
     const skill = skillName || newSkill;
@@ -402,39 +376,14 @@ export default function ManualOnboardingPage() {
         return (
           <div className="space-y-5">
             <div className="flex justify-center mb-6">
-              <div className="relative">
-                <div className="w-24 h-24 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden border-4 border-white shadow-lg">
-                  {formData.avatarUrl ? (
-                    <img src={formData.avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
-                  ) : (
-                    <svg className="w-12 h-12 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M24 20.993V24H0v-2.996A14.977 14.977 0 0112.004 15c4.904 0 9.26 2.354 11.996 5.993zM16.002 8.999a4 4 0 11-8 0 4 4 0 018 0z" />
-                    </svg>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={avatarUploading}
-                  className="absolute bottom-0 right-0 bg-blue-600 text-white p-2 rounded-full shadow-lg hover:bg-blue-700 transition-colors"
-                >
-                  {avatarUploading ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                  )}
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleAvatarUpload}
-                  className="hidden"
-                />
-              </div>
+              <CroppableImageUpload
+                value={formData.avatarUrl}
+                onChange={(url) => setFormData((prev) => ({ ...prev, avatarUrl: url || "" }))}
+                type="avatar"
+                label="Profile Photo"
+                maxSize="2MB"
+                previewClassName="w-24 h-24 rounded-full"
+              />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

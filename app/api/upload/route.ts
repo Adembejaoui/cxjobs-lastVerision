@@ -14,51 +14,46 @@ import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
 import sharp from "sharp";
 import path from "path";
+import {
+  IMAGE_CONFIG,
+  UPLOAD_TYPE_TO_IMAGE_TYPE,
+  ImageType,
+} from "@/lib/image-config";
+import { validateImageServerSide } from "@/lib/image-validation";
 
 const UPLOAD_LIMIT = { windowMs: 60_000, max: 20 };
 const DELETE_LIMIT = { windowMs: 60_000, max: 10 };
 
 /**
- * Target dimensions and quality per bucket
- */
-const IMAGE_CONFIG: Record<string, { width: number; height: number; quality: number }> = {
-  [STORAGE_BUCKETS.LOGO]: { width: 500, height: 500, quality: 95 },
-  [STORAGE_BUCKETS.COVER]: { width: 1600, height: 500, quality: 90 },
-  [STORAGE_BUCKETS.CULTURE]: { width: 1280, height: 720, quality: 90 },
-  [STORAGE_BUCKETS.AVATAR]: { width: 256, height: 256, quality: 90 },
-};
-
-/**
- * Process an image with sharp.
- * Logos/avatars keep original format and use contain to preserve full image.
- * Covers/culture use webp with cover fit.
+ * Process an image with sharp using centralized IMAGE_CONFIG.
  */
 async function processImage(
   buffer: Buffer,
-  bucket: string
+  imageType: ImageType
 ): Promise<Buffer> {
-  const config = IMAGE_CONFIG[bucket];
+  const config = IMAGE_CONFIG[imageType];
   if (!config) {
     return buffer;
   }
 
-  const isLogo = bucket === STORAGE_BUCKETS.LOGO;
-  const isAvatar = bucket === STORAGE_BUCKETS.AVATAR;
+  const isLogo = imageType === "logo";
+  const isAvatar = imageType === "avatar";
 
   if (isLogo) {
     return sharp(buffer)
       .resize(config.width, config.height, {
-        fit: "contain",
-        background: { r: 0, g: 0, b: 0, alpha: 0 },
+        fit: config.fit,
+        background: config.background,
       })
+      .png({ quality: config.quality })
       .toBuffer();
   }
 
   if (isAvatar) {
     return sharp(buffer)
       .resize(config.width, config.height, {
-        fit: "contain",
-        background: { r: 0, g: 0, b: 0, alpha: 0 },
+        fit: config.fit,
+        background: config.background,
       })
       .webp({ quality: config.quality })
       .toBuffer();
@@ -66,27 +61,30 @@ async function processImage(
 
   return sharp(buffer)
     .resize(config.width, config.height, {
-      fit: "cover",
-      position: "entropy",
+      fit: config.fit,
+      position: config.position,
     })
-    .sharpen({ sigma: 1.5 })
+    .sharpen(config.sharpen ? { sigma: 1.5 } : undefined)
     .webp({ quality: config.quality })
     .toBuffer();
 }
 
 /**
  * Upload type configuration
+ * Maps upload type (query param) to bucket, auth requirements, and image type
  */
 const UPLOAD_CONFIG: Record<
   string,
-  { bucket: string; requiresAuth: boolean; allowedRoles?: string[] }
+  { bucket: string; requiresAuth: boolean; allowedRoles?: string[]; imageType?: ImageType }
 > = {
   cv: { bucket: STORAGE_BUCKETS.CV, requiresAuth: true, allowedRoles: ["CANDIDATE"] },
-  avatar: { bucket: STORAGE_BUCKETS.AVATAR, requiresAuth: true, allowedRoles: ["CANDIDATE"] },
-  logo: { bucket: STORAGE_BUCKETS.LOGO, requiresAuth: true, allowedRoles: ["COMPANY"] },
-  "cover-image": { bucket: STORAGE_BUCKETS.COVER, requiresAuth: true, allowedRoles: ["COMPANY"] },
-  "culture-image": { bucket: STORAGE_BUCKETS.CULTURE, requiresAuth: true, allowedRoles: ["COMPANY"] },
-  "blog-image": { bucket: STORAGE_BUCKETS.BLOG, requiresAuth: true, allowedRoles: ["ADMIN"] },
+  avatar: { bucket: STORAGE_BUCKETS.AVATAR, requiresAuth: true, allowedRoles: ["CANDIDATE"], imageType: "avatar" },
+  logo: { bucket: STORAGE_BUCKETS.LOGO, requiresAuth: true, allowedRoles: ["COMPANY"], imageType: "logo" },
+  "cover-image": { bucket: STORAGE_BUCKETS.COVER, requiresAuth: true, allowedRoles: ["COMPANY"], imageType: "cover-image" },
+  "culture-image": { bucket: STORAGE_BUCKETS.CULTURE, requiresAuth: true, allowedRoles: ["COMPANY"], imageType: "culture-image" },
+  "blog-image": { bucket: STORAGE_BUCKETS.BLOG, requiresAuth: true, allowedRoles: ["ADMIN"], imageType: "hero-banner" },
+  "hero-banner": { bucket: STORAGE_BUCKETS.BLOG, requiresAuth: true, allowedRoles: ["ADMIN"], imageType: "hero-banner" },
+  "square-banner": { bucket: STORAGE_BUCKETS.CULTURE, requiresAuth: true, allowedRoles: ["COMPANY"], imageType: "square-banner" },
 };
 
 /**
@@ -129,7 +127,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: "Invalid upload type. Allowed: cv, avatar, logo, blog-image",
+          error: "Invalid upload type. Allowed: cv, avatar, logo, cover-image, culture-image, blog-image, hero-banner, square-banner",
           code: "INVALID_TYPE",
         },
         { status: 400 }
@@ -137,6 +135,9 @@ export async function POST(request: NextRequest) {
     }
 
     const config = UPLOAD_CONFIG[uploadType];
+
+    // Determine image type for validation and processing
+    const imageType = config.imageType || UPLOAD_TYPE_TO_IMAGE_TYPE[uploadType];
 
     // Authentication check
     if (config.requiresAuth) {
@@ -207,20 +208,31 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Process image (resize + crop + webp) for image buckets
-    const processedBuffer = await processImage(buffer, config.bucket);
+    // Server-side image validation (Sharp metadata + dimensions + format)
+    if (imageType) {
+      const serverValidation = await validateImageServerSide({ buffer, imageType });
+      if (!serverValidation.valid) {
+        return NextResponse.json(
+          { success: false, error: serverValidation.error, code: "INVALID_IMAGE" },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Process image using centralized config
+    const processedBuffer = imageType ? await processImage(buffer, imageType) : buffer;
 
     // Upload to Supabase Storage (processed image)
-    const isImageBucket =
-      config.bucket === STORAGE_BUCKETS.LOGO ||
-      config.bucket === STORAGE_BUCKETS.COVER ||
-      config.bucket === STORAGE_BUCKETS.AVATAR ||
-      config.bucket === STORAGE_BUCKETS.CULTURE;
+    const contentType = imageType
+      ? IMAGE_CONFIG[imageType].outputFormat === "png"
+        ? "image/png"
+        : "image/webp"
+      : file.type;
 
     const { data, error } = await supabase!.storage
       .from(config.bucket)
       .upload(filePath, processedBuffer, {
-        contentType: isImageBucket ? "image/webp" : file.type,
+        contentType,
         upsert: false,
       });
 

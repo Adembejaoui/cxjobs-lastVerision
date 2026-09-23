@@ -1,13 +1,13 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Plus, X, GripVertical } from "lucide-react";
+import { Plus, X, GripVertical, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { ImageUpload } from "@/components/dashboard/image-upload";
+import { CroppableImageUpload } from "@/components/dashboard/croppable-image-upload";
 import { cn } from "@/lib/utils";
 
 interface CultureItem {
@@ -69,6 +69,19 @@ export function CultureEditor({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
   const idCounter = useRef(0);
+
+  // Single-open (accordion) behavior: setting a new id replaces whichever
+  // id was previously stored, so only one item is ever expanded at a time.
+  const toggleExpanded = (id: string) => {
+    setExpandedId((prev) => (prev === id ? null : id));
+  };
+
+  const handleHeaderKeyDown = (e: React.KeyboardEvent, id: string) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      toggleExpanded(id);
+    }
+  };
 
   const addItem = (template?: CultureTemplate) => {
     if (value.length >= maxItems) return;
@@ -181,106 +194,122 @@ export function CultureEditor({
         </div>
       ) : (
         <div className="space-y-3">
-          {value.map((item) => (
-            <Card key={item.id} className="overflow-hidden">
-              <CardHeader className="p-4 pb-2">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 text-slate-500 cursor-grab">
-                    <GripVertical className="h-4 w-4" />
-                  </div>
-                  <div className="flex-1 flex items-center gap-2">
-                    <span className="text-lg">
-                      {item.icon || getStableIcon(item.title || "culture")}
-                    </span>
-                    <span className="font-medium text-slate-900 truncate flex-1">
-                      {item.title || "Untitled Culture Item"}
-                    </span>
-                  </div>
-                </div>
-              </CardHeader>
+          {value.map((item) => {
+            const isExpanded = expandedId === item.id;
 
-              {expandedId === item.id && (
-                <CardContent className="p-4 pt-2 space-y-4 border-t">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    {/* Icon Selector */}
-                    <div className="space-y-2">
-                      <Label htmlFor={`icon-${item.id}`}>Icon</Label>
-                      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 border border-slate-200 rounded-md">
-                        {ALL_ICONS.map((icon) => (
-                          <button
-                            key={icon}
-                            type="button"
-                            onClick={() => updateItem(item.id, { icon })}
-                            className={`w-8 h-8 flex items-center justify-center rounded-md text-lg transition-colors ${
-                              item.icon === icon
-                                ? "bg-primary/10 border border-primary"
-                                : "hover:bg-slate-100"
-                            }`}
-                          >
-                            {icon}
-                          </button>
-                        ))}
+            return (
+              <Card key={item.id} className="overflow-hidden">
+                <CardHeader className="p-4 pb-2">
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={isExpanded}
+                    onClick={() => toggleExpanded(item.id)}
+                    onKeyDown={(e) => handleHeaderKeyDown(e, item.id)}
+                    className="flex items-center gap-3 cursor-pointer"
+                  >
+                    <div className="flex items-center justify-center w-8 h-8 rounded-full bg-slate-100 text-slate-500 cursor-grab">
+                      <GripVertical className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 flex items-center gap-2 min-w-0">
+                      <span className="text-lg">
+                        {item.icon || getStableIcon(item.title || "culture")}
+                      </span>
+                      <span className="font-medium text-slate-900 truncate flex-1">
+                        {item.title || "Untitled Culture Item"}
+                      </span>
+                    </div>
+                    <ChevronDown
+                      className={`h-4 w-4 shrink-0 text-slate-400 transition-transform duration-200 ${
+                        isExpanded ? "rotate-180" : ""
+                      }`}
+                    />
+                  </div>
+                </CardHeader>
+
+                {isExpanded && (
+                  <CardContent className="p-4 pt-2 space-y-4 border-t">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      {/* Icon Selector */}
+                      <div className="space-y-2">
+                        <Label htmlFor={`icon-${item.id}`}>Icon</Label>
+                        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 border border-slate-200 rounded-md">
+                          {ALL_ICONS.map((icon) => (
+                            <button
+                              key={icon}
+                              type="button"
+                              onClick={() => updateItem(item.id, { icon })}
+                              className={`w-8 h-8 flex items-center justify-center rounded-md text-lg transition-colors ${
+                                item.icon === icon
+                                  ? "bg-primary/10 border border-primary"
+                                  : "hover:bg-slate-100"
+                              }`}
+                            >
+                              {icon}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Image Upload */}
+                      <CroppableImageUpload
+                        value={item.imageUrl}
+                        onChange={(url) => updateItem(item.id, { imageUrl: url || "" })}
+                        type="culture-image"
+                        label="Culture Image"
+                        maxSize="5MB"
+                        previewClassName="h-32"
+                        currentImageUrl={item.imageUrl}
+                      />
+                    </div>
+
+                    <div className="space-y-4">
+                      {/* Title */}
+                      <div className="space-y-2">
+                        <Label htmlFor={`title-${item.id}`}>Title *</Label>
+                        <Input
+                          id={`title-${item.id}`}
+                          value={item.title}
+                          onChange={(e) => updateItem(item.id, { title: e.target.value })}
+                          placeholder="e.g., Team Building Events"
+                          maxLength={100}
+                        />
+                      </div>
+
+                      {/* Description */}
+                      <div className="space-y-2">
+                        <Label htmlFor={`desc-${item.id}`}>Description</Label>
+                        <Textarea
+                          id={`desc-${item.id}`}
+                          value={item.description}
+                          onChange={(e) => updateItem(item.id, { description: e.target.value })}
+                          placeholder="Describe this culture aspect..."
+                          rows={3}
+                          maxLength={500}
+                        />
+                        <p className="text-xs text-slate-400">
+                          {item.description.length}/500 characters
+                        </p>
                       </div>
                     </div>
 
-                    {/* Image Upload */}
-                    <ImageUpload
-                      value={item.imageUrl}
-                      onChange={(url) => updateItem(item.id, { imageUrl: url || "" })}
-                      type="culture-image"
-                      aspectRatio="video"
-                      label="Culture Image"
-                      previewClassName="h-32"
-                      currentImageUrl={item.imageUrl}
-                    />
-                  </div>
-
-                  <div className="space-y-4">
-                    {/* Title */}
-                    <div className="space-y-2">
-                      <Label htmlFor={`title-${item.id}`}>Title *</Label>
-                      <Input
-                        id={`title-${item.id}`}
-                        value={item.title}
-                        onChange={(e) => updateItem(item.id, { title: e.target.value })}
-                        placeholder="e.g., Team Building Events"
-                        maxLength={100}
-                      />
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeItem(item.id)}
+                        className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                      >
+                        <X className="h-4 w-4 mr-1" />
+                        Remove
+                      </Button>
                     </div>
-
-                    {/* Description */}
-                    <div className="space-y-2">
-                      <Label htmlFor={`desc-${item.id}`}>Description</Label>
-                      <Textarea
-                        id={`desc-${item.id}`}
-                        value={item.description}
-                        onChange={(e) => updateItem(item.id, { description: e.target.value })}
-                        placeholder="Describe this culture aspect..."
-                        rows={3}
-                        maxLength={500}
-                      />
-                      <p className="text-xs text-slate-400">
-                        {item.description.length}/500 characters
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => removeItem(item.id)}
-                      className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                    >
-                      <X className="h-4 w-4 mr-1" />
-                      Remove
-                    </Button>
-                  </div>
-                </CardContent>
-              )}
-            </Card>
-          ))}
+                  </CardContent>
+                )}
+              </Card>
+            );
+          })}
         </div>
       )}
 
