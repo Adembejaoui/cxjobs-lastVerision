@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { auth, unstable_update } from "@/lib/auth";
 import  prisma  from "@/lib/prisma";
 import { logger } from "@/lib/logger";
 
@@ -19,7 +19,13 @@ export async function POST(_request: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
-      include: {
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        role: true,
+        isActive: true,
+        isOnboarded: true,
         candidate: true,
         companies: true,
       },
@@ -29,6 +35,13 @@ export async function POST(_request: NextRequest) {
       return NextResponse.json(
         { success: false, error: "User not found", code: "NOT_FOUND" },
         { status: 404 }
+      );
+    }
+
+    if (!user.isActive) {
+      return NextResponse.json(
+        { success: false, error: "Account is disabled", code: "ACCOUNT_DISABLED" },
+        { status: 403 }
       );
     }
 
@@ -63,6 +76,13 @@ export async function POST(_request: NextRequest) {
         email: true,
         name: true,
         role: true,
+        isOnboarded: true,
+      },
+    });
+
+    // Synchronize the updated isOnboarded value into the Auth.js JWT/session
+    await unstable_update({
+      user: {
         isOnboarded: true,
       },
     });

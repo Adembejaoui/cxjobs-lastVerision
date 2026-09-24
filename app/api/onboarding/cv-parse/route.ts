@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getAuthenticatedUser } from "@/lib/auth-helpers";
 import { parseCV, isValidPDF, getFileSizeMB } from "@/lib/cv-parser";
 import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
@@ -31,16 +31,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Authentication check
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized", code: "UNAUTHORIZED" },
-        { status: 401 }
-      );
+    const authResult = await getAuthenticatedUser({ requireActive: true });
+    if (authResult instanceof NextResponse) {
+      return authResult;
     }
+    const { user: session } = authResult;
 
     // Only candidates can parse CVs
-    if (session.user.role !== "CANDIDATE") {
+    if (session.role !== "CANDIDATE") {
       return NextResponse.json(
         {
           success: false,

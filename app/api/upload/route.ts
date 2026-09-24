@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getAuthenticatedUser } from "@/lib/auth-helpers";
 import {
   supabase,
   STORAGE_BUCKETS,
@@ -103,15 +103,13 @@ const UPLOAD_CONFIG: Record<
  */
 export async function POST(request: NextRequest) {
   try {
-    const userSession = await auth();
-    if (!userSession?.user?.id) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized", code: "UNAUTHORIZED" },
-        { status: 401 }
-      );
+    const authResult = await getAuthenticatedUser({ requireActive: true });
+    if (authResult instanceof NextResponse) {
+      return authResult;
     }
+    const { user: userSession } = authResult;
 
-    const rl = await checkRateLimitAsync(`upload:${userSession.user.id}`, UPLOAD_LIMIT);
+    const rl = await checkRateLimitAsync(`upload:${userSession.id}`, UPLOAD_LIMIT);
     if (!rl.allowed) {
       return NextResponse.json(
         { success: false, error: "Too many uploads. Please try again later.", code: "RATE_LIMITED" },
@@ -141,7 +139,7 @@ export async function POST(request: NextRequest) {
 
     // Authentication check
     if (config.requiresAuth) {
-      if (!userSession?.user?.id) {
+      if (!userSession.id) {
         return NextResponse.json(
           { success: false, error: "Unauthorized", code: "UNAUTHORIZED" },
           { status: 401 }
@@ -149,7 +147,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Role check
-      if (config.allowedRoles && !config.allowedRoles.includes(userSession.user.role)) {
+      if (config.allowedRoles && !config.allowedRoles.includes(userSession.role)) {
         return NextResponse.json(
           { success: false, error: "You don't have permission to upload this file type", code: "FORBIDDEN" },
           { status: 403 }
@@ -192,7 +190,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Authenticated user (needed for path ownership check)
-    const userId = userSession.user.id;
+    const userId = userSession.id;
 
     if (!userId) {
       return NextResponse.json(
@@ -288,16 +286,13 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
 
-    const session = await auth();
-
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized", code: "UNAUTHORIZED" },
-        { status: 401 }
-      );
+    const authResult = await getAuthenticatedUser({ requireActive: true });
+    if (authResult instanceof NextResponse) {
+      return authResult;
     }
+    const { user: session } = authResult;
 
-    const rl = await checkRateLimitAsync(`upload-delete:${session.user.id}`, DELETE_LIMIT);
+    const rl = await checkRateLimitAsync(`upload-delete:${session.id}`, DELETE_LIMIT);
     if (!rl.allowed) {
       return NextResponse.json(
         { success: false, error: "Too many requests. Please try again later.", code: "RATE_LIMITED" },
@@ -320,9 +315,9 @@ export async function DELETE(request: NextRequest) {
     // Use path.normalize to prevent traversal attacks (e.g., "../../other-user/file.pdf")
     const normalizedPath = path.normalize(filePath);
     const pathSegments = normalizedPath.split(path.sep);
-    const isPathOwner = pathSegments.length > 0 && pathSegments[0] === session.user.id && !pathSegments.includes("..");
+    const isPathOwner = pathSegments.length > 0 && pathSegments[0] === session.id && !pathSegments.includes("..");
 
-    if (!isPathOwner && session.user.role !== "ADMIN") {
+    if (!isPathOwner && session.role !== "ADMIN") {
       return NextResponse.json(
         { success: false, error: "You don't have permission to delete this file", code: "FORBIDDEN" },
         { status: 403 }

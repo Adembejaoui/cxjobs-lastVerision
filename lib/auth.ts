@@ -25,9 +25,9 @@ if (!authSecret) {
   );
 }
 
-export const { handlers, signIn, signOut, auth } = NextAuth({
+export const { handlers, signIn, signOut, auth,unstable_update } = NextAuth({
   trustHost: true,
-   adapter: PrismaAdapter(prisma as unknown as Parameters<typeof PrismaAdapter>[0]),
+  adapter: PrismaAdapter(prisma as unknown as Parameters<typeof PrismaAdapter>[0]),
   secret: authSecret,
   session: {
     strategy: "jwt",
@@ -102,6 +102,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
           });
 
           if (dbUser) {
+            if (!dbUser.isActive || !dbUser.isOnboarded) {
+              return null;
+            }
             token.role = dbUser.role;
             token.isOnboarded = dbUser.isOnboarded;
             token.iat = Math.floor(Date.now() / 1000);

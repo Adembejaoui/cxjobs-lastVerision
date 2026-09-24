@@ -3,7 +3,6 @@ import { auth } from "@/lib/auth";
 import { DashboardSidebar } from "@/components/dashboard/sidebar";
 import { MobileSidebar } from "@/components/dashboard/sidebar";
 import { DashboardHeader } from "@/components/dashboard/header";
-import prisma from "@/lib/prisma";
 
 export default async function DashboardLayout({
   children,
@@ -17,17 +16,10 @@ export default async function DashboardLayout({
   }
 
   if (!session?.user?.isOnboarded) {
-    const freshUser = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { isOnboarded: true, role: true },
-    });
-
-    if (!freshUser?.isOnboarded) {
-      if (freshUser?.role === "CANDIDATE") {
-        redirect("/onboarding/candidate");
-      } else if (freshUser?.role === "COMPANY") {
-        redirect("/onboarding/company");
-      }
+    if (session.user.role === "CANDIDATE") {
+      redirect("/onboarding/candidate");
+    } else if (session.user.role === "COMPANY") {
+      redirect("/onboarding/company");
     }
   }
   const userRole = session?.user.role;

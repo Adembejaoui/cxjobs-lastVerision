@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { getAuthenticatedUser } from "@/lib/auth-helpers";
 import  prisma  from "@/lib/prisma";
 import { candidateProfileSchema, companyProfileSchema } from "@/lib/validations/profile";
 import { logger } from "@/lib/logger";
@@ -9,17 +9,14 @@ type InteractiveTx = Omit<typeof prisma, "$connect" | "$disconnect" | "$on" | "$
 // GET /api/profile - Get current user's profile
 export async function GET() {
   try {
-    const session = await auth();
-
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized", code: "UNAUTHORIZED" },
-        { status: 401 }
-      );
+    const authResult = await getAuthenticatedUser({ requireActive: true, requireOnboarded: true });
+    if (authResult instanceof NextResponse) {
+      return authResult;
     }
+    const { user: session } = authResult;
 
     const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
+      where: { id: session.id },
       select: {
         id: true,
         email: true,
@@ -63,18 +60,15 @@ export async function GET() {
 // POST /api/profile - Create or update profile
 export async function POST(request: NextRequest) {
   try {
-    const session = await auth();
-
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized", code: "UNAUTHORIZED" },
-        { status: 401 }
-      );
+    const authResult = await getAuthenticatedUser({ requireActive: true });
+    if (authResult instanceof NextResponse) {
+      return authResult;
     }
+    const { user: session } = authResult;
 
     const user = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { role: true },
+      where: { id: session.id },
+      select: { role: true, isOnboarded: true },
     });
 
     if (!user) {
@@ -87,9 +81,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
 
     if (user.role === "CANDIDATE") {
-      return await upsertCandidateProfile(session.user.id, body);
+      return await upsertCandidateProfile(session.id, body);
     } else if (user.role === "COMPANY") {
-      return await upsertCompanyProfile(session.user.id, body);
+      return await upsertCompanyProfile(session.id, body);
     } else {
       return NextResponse.json(
         { success: false, error: "Invalid role for profile", code: "INVALID_ROLE" },
