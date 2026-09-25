@@ -33,7 +33,7 @@ export async function GET() {
           headline: true,
           location: true,
           avatarUrl: true,
-          skills: { select: { name: true } },
+          skills: { select: { name: true }, take: 3 },
         },
       }),
       prisma.jobOffer.groupBy({

@@ -74,7 +74,7 @@ export default async function CandidateProfilePage() {
     redirect("/login");
   }
 
-  const candidate = await prisma.candidate.findFirst({
+  const candidate = await prisma.candidate.findUnique({
     where: {
       userId: session.user.id,
     },

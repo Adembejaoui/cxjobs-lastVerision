@@ -4,6 +4,7 @@ import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
 import prisma from "./prisma";
+import { getAuthUserRecord } from "./auth-user-record";
 import { logger } from "./logger";
 
 const DUMMY_PASSWORD_HASH =
@@ -96,10 +97,9 @@ export const { handlers, signIn, signOut, auth,unstable_update } = NextAuth({
         const tokenAge = now - (token.iat as number);
 
         if (tokenAge > 3600) {
-          const dbUser = await prisma.user.findUnique({
-            where: { id: token.id as string },
-            select: { role: true, isOnboarded: true, isActive: true },
-          });
+          // Request-scoped: shares one query with getAuthenticatedUser() when both
+          // run in the same React render. Never a cross-request/user cache.
+          const dbUser = await getAuthUserRecord(token.id as string);
 
           if (dbUser) {
             if (!dbUser.isActive) {

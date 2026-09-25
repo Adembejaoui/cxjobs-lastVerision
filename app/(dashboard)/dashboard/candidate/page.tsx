@@ -169,14 +169,13 @@ export default async function CandidateDashboardPage() {
     redirect("/onboarding/candidate");
   }
 
-  const [applicationStats, savedCount, recentApplicationsResult] = await Promise.all([
+  // Status counts and the saved-jobs count come from a single grouped scan of the
+  // same rows instead of a separate COUNT query.
+  const [applicationStats, recentApplicationsResult] = await Promise.all([
     prisma.application.groupBy({
-      by: ["status"],
+      by: ["status", "isSaved"],
       where: { candidateId: candidate.id },
       _count: { _all: true },
-    }),
-    prisma.application.count({
-      where: { candidateId: candidate.id, isSaved: true },
     }),
     prisma.application.findMany({
       where: { candidateId: candidate.id },
@@ -212,9 +211,15 @@ export default async function CandidateDashboardPage() {
   };
 
   let totalApplications = 0;
+  let savedCount = 0;
   for (const stat of applicationStats) {
-    statsMap[stat.status as keyof typeof statsMap] = stat._count._all;
-    totalApplications += stat._count._all;
+    const count = stat._count._all;
+    const statusKey = stat.status as keyof typeof statsMap;
+    statsMap[statusKey] += count;
+    totalApplications += count;
+    if (stat.isSaved) {
+      savedCount += count;
+    }
   }
 
   const recentApplications =

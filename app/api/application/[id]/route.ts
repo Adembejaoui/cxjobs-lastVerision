@@ -20,6 +20,66 @@ export async function GET(
 
     const { id } = await params;
 
+    if (session.user.role === "CANDIDATE") {
+      // Resolve candidate ID for ownership enforcement
+      const candidate = await prisma.candidate.findUnique({
+        where: { userId: session.user.id },
+        select: { id: true },
+      });
+
+      if (!candidate) {
+        return NextResponse.json(
+          { success: false, error: "Candidate profile not found", code: "PROFILE_NOT_FOUND" },
+          { status: 404 }
+        );
+      }
+
+      // Enforce ownership at query level + narrow candidate relations.
+      // Candidates viewing their own application do not need their full
+      // skills, experiences, languages, or education.
+      const application = await prisma.application.findFirst({
+        where: {
+          id,
+          candidateId: candidate.id,
+        },
+        include: {
+          candidate: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+          jobOffer: {
+            include: {
+              company: {
+                select: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                  logoUrl: true,
+                  location: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      if (!application) {
+        return NextResponse.json(
+          { success: false, error: "Application not found", code: "NOT_FOUND" },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: application,
+      });
+    }
+
+    // COMPANY and other roles: use the original full query with all candidate relations
     const application = await prisma.application.findUnique({
       where: { id },
       include: {
@@ -62,19 +122,8 @@ export async function GET(
       );
     }
 
-    // Check access rights
-    if (session.user.role === "CANDIDATE") {
-      const candidate = await prisma.candidate.findUnique({
-        where: { userId: session.user.id },
-      });
-
-      if (!candidate || candidate.id !== application.candidateId) {
-        return NextResponse.json(
-          { success: false, error: "Access denied", code: "FORBIDDEN" },
-          { status: 403 }
-        );
-      }
-    } else if (session.user.role === "COMPANY") {
+    // Check access rights for COMPANY role
+    if (session.user.role === "COMPANY") {
       const company = await prisma.companies.findUnique({
         where: { userId: session.user.id },
       });

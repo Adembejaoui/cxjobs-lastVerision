@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import prisma from "@/lib/prisma";
+import { getAuthUserRecord } from "@/lib/auth-user-record";
 
 export interface AuthenticatedUser {
   id: string;
@@ -33,18 +33,9 @@ export async function getAuthenticatedUser(options: AuthOptions = {}): Promise<A
     );
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: {
-      id: true,
-      email: true,
-      name: true,
-      image: true,
-      role: true,
-      isActive: true,
-      isOnboarded: true,
-    },
-  });
+  // Shares the request-scoped lookup with the Auth.js jwt callback, so a single
+  // render performs at most one read of the users table for this user.
+  const user = await getAuthUserRecord(session.user.id);
 
   if (!user) {
     return NextResponse.json(
