@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import { getAuthenticatedUser } from "@/lib/auth-helpers";
 import { DashboardSidebar } from "@/components/dashboard/sidebar";
 import { MobileSidebar } from "@/components/dashboard/sidebar";
 import { DashboardHeader } from "@/components/dashboard/header";
@@ -9,25 +10,27 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await auth();
+  const authResult = await getAuthenticatedUser();
 
-  if (!session?.user?.id) {
+  if (authResult instanceof NextResponse) {
     redirect("/login");
   }
 
-  if (!session?.user?.isOnboarded) {
-    if (session.user.role === "CANDIDATE") {
+  const user = authResult.user;
+
+  if (!user.isOnboarded) {
+    if (user.role === "CANDIDATE") {
       redirect("/onboarding/candidate");
-    } else if (session.user.role === "COMPANY") {
+    } else if (user.role === "COMPANY") {
       redirect("/onboarding/company");
     }
   }
-  const userRole = session?.user.role;
-  const user = {
-    id: session?.user.id as string,
-    name: session?.user.name,
-    email: session?.user.email,
-    image: session?.user.image,
+  const userRole = user.role;
+  const displayUser = {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    image: user.image,
     role: userRole,
   };
 
@@ -36,17 +39,17 @@ export default async function DashboardLayout({
       {/* Desktop Sidebar - Hidden on mobile and tablet */}
       <DashboardSidebar
         userRole={userRole}
-        user={user}
+        user={displayUser}
         className="hidden lg:flex"
       />
 
       {/* Mobile Sidebar */}
-      <MobileSidebar userRole={userRole} user={user} />
+      <MobileSidebar userRole={userRole} user={displayUser} />
 
       {/* Main Content Area */}
       <div className="flex flex-1 flex-col lg:pl-[275px]">
         {/* Header */}
-        <DashboardHeader user={user} />
+        <DashboardHeader user={displayUser} />
 
         {/* Page Content */}
         <main className="flex-1 p-4 lg:p-8">

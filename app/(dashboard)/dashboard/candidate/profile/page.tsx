@@ -10,7 +10,7 @@ import type { Prisma } from "@/app/generated/prisma/client";
 
 type CandidateWithRelations = Prisma.CandidateGetPayload<{
   include: {
-    user: true;
+    user: { select: { email: true } };
     experiences: { orderBy: { startDate: "desc" } };
     education: { orderBy: { startDate: "desc" } };
     languages: true;
@@ -79,7 +79,7 @@ export default async function CandidateProfilePage() {
       userId: session.user.id,
     },
     include: {
-      user: true,
+      user: { select: { email: true } },
       experiences: {
         orderBy: { startDate: 'desc' }
       },

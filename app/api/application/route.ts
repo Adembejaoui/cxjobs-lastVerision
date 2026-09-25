@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
       // Get candidate's applications
       const candidate = await prisma.candidate.findUnique({
         where: { userId: session.user.id },
+        select: { id: true },
       });
 
       if (!candidate) {

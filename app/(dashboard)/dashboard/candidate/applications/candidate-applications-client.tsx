@@ -20,7 +20,6 @@ interface JobOffer {
   title: string;
   slug: string;
   customLocation: string | null;
-  contractType: string;
   isRemote: boolean;
   isHybrid: boolean;
   company: Company;
@@ -29,8 +28,6 @@ interface JobOffer {
 interface Application {
   id: string;
   status: string;
-  coverLetter: string | null;
-  cvUrl: string | null;
   createdAt: Date;
   jobOffer?: JobOffer;
 }

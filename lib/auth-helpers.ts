@@ -6,6 +6,7 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   name: string | null;
+  image: string | null;
   role: string;
   isActive: boolean;
   isOnboarded: boolean;
@@ -38,6 +39,7 @@ export async function getAuthenticatedUser(options: AuthOptions = {}): Promise<A
       id: true,
       email: true,
       name: true,
+      image: true,
       role: true,
       isActive: true,
       isOnboarded: true,

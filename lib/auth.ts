@@ -102,7 +102,7 @@ export const { handlers, signIn, signOut, auth,unstable_update } = NextAuth({
           });
 
           if (dbUser) {
-            if (!dbUser.isActive || !dbUser.isOnboarded) {
+            if (!dbUser.isActive) {
               return null;
             }
             token.role = dbUser.role;
@@ -112,8 +112,8 @@ export const { handlers, signIn, signOut, auth,unstable_update } = NextAuth({
         }
       }
 
-      if (trigger === "update" && session) {
-        token = { ...token, ...session };
+      if (trigger === "update" && session?.user?.isOnboarded !== undefined) {
+        token.isOnboarded = session.user.isOnboarded;
       }
 
       return token;

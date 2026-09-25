@@ -12,6 +12,7 @@ export default async function CandidateApplicationsPage() {
 
   const candidate = await prisma.candidate.findUnique({
     where: { userId: session.user.id },
+    select: { id: true },
   });
 
   if (!candidate) {
@@ -22,22 +23,18 @@ export default async function CandidateApplicationsPage() {
   const [applications, total] = await Promise.all([
     prisma.application.findMany({
       where: { candidateId: candidate.id },
-      include: {
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
         jobOffer: {
           select: {
             id: true,
             title: true,
             slug: true,
             customLocation: true,
-            status: true,
-            contractType: true,
             isRemote: true,
             isHybrid: true,
-            salary: true,
-            salaryMin: true,
-            salaryMax: true,
-            salaryCurrency: true,
-            createdAt: true,
             company: {
               select: {
                 id: true,

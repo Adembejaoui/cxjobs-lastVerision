@@ -107,7 +107,6 @@ interface RecentApplication {
   jobOffer: {
     id: string;
     title: string;
-    customLocation: string | null;
     company: {
       id: string;
       name: string;
@@ -163,45 +162,46 @@ export default async function CandidateDashboardPage() {
 
   const candidate = await prisma.candidate.findUnique({
     where: { userId: session.user.id },
-    select: { id: true, firstName: true, lastName: true, headline: true },
+    select: { id: true },
   });
 
   if (!candidate) {
     redirect("/onboarding/candidate");
   }
 
-  const [applicationStats, totalApplications, savedCount, recentApplicationsResult] =
-    await Promise.all([
-      prisma.application.groupBy({
-        by: ["status"],
-        where: { candidateId: candidate.id },
-        _count: { _all: true },
-      }),
-      prisma.application.count({
-        where: { candidateId: candidate.id },
-      }),
-      prisma.application.count({
-        where: { candidateId: candidate.id, isSaved: true },
-      }),
-      prisma.application.findMany({
-        where: { candidateId: candidate.id },
-        take: 5,
-        orderBy: { createdAt: "desc" },
-        include: {
-          jobOffer: {
-            include: {
-              company: {
-                select: {
-                  id: true,
-                  name: true,
-                  logoUrl: true,
-                },
+  const [applicationStats, savedCount, recentApplicationsResult] = await Promise.all([
+    prisma.application.groupBy({
+      by: ["status"],
+      where: { candidateId: candidate.id },
+      _count: { _all: true },
+    }),
+    prisma.application.count({
+      where: { candidateId: candidate.id, isSaved: true },
+    }),
+    prisma.application.findMany({
+      where: { candidateId: candidate.id },
+      take: 5,
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
+        jobOffer: {
+          select: {
+            id: true,
+            title: true,
+            company: {
+              select: {
+                id: true,
+                name: true,
+                logoUrl: true,
               },
             },
           },
         },
-      }),
-    ]);
+      },
+    }),
+  ]);
 
   const statsMap: Record<string, number> = {
     NOUVEAU: 0,
@@ -211,8 +211,10 @@ export default async function CandidateDashboardPage() {
     REFUSE: 0,
   };
 
+  let totalApplications = 0;
   for (const stat of applicationStats) {
     statsMap[stat.status as keyof typeof statsMap] = stat._count._all;
+    totalApplications += stat._count._all;
   }
 
   const recentApplications =

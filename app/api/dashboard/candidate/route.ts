@@ -22,16 +22,30 @@ export async function GET() {
       );
     }
 
-    // Get candidate profile
-    const candidate = await prisma.candidate.findUnique({
-      where: { userId: session.user.id },
-      include: {
-        skills: true,
-        _count: {
-          select: { applications: true },
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const [candidate, jobTrends] = await Promise.all([
+      prisma.candidate.findUnique({
+        where: { userId: session.user.id },
+        select: {
+          id: true,
+          headline: true,
+          location: true,
+          avatarUrl: true,
+          skills: { select: { name: true } },
         },
-      },
-    });
+      }),
+      prisma.jobOffer.groupBy({
+        by: ["contractType"],
+        where: {
+          status: "PUBLISHED",
+          deletedAt: null,
+          createdAt: { gte: thirtyDaysAgo },
+        },
+        _count: true,
+      }),
+    ]);
 
     if (!candidate) {
       return NextResponse.json(
@@ -40,84 +54,66 @@ export async function GET() {
       );
     }
 
-    // Get application statistics
-    const applicationStats = await prisma.application.groupBy({
-      by: ["status"],
-      where: { candidateId: candidate.id },
-      _count: true,
-    });
+    const skillNames = candidate.skills.map((s: { name: string }) => s.name.toLowerCase());
+    const topSkills = skillNames.slice(0, 3);
 
-    // Get recent applications
-    const recentApplications = await prisma.application.findMany({
-      where: { candidateId: candidate.id },
-      take: 5,
-      orderBy: { createdAt: "desc" },
-      include: {
-        jobOffer: {
-          select: {
-            id: true,
-            title: true,
-            customLocation: true,
-            contractType: true,
-            employmentType: true,
-            company: {
-              select: {
-                id: true,
-                name: true,
-                logoUrl: true,
+    const [applicationStats, recentApplications, recommendedJobs] = await Promise.all([
+      prisma.application.groupBy({
+        by: ["status"],
+        where: { candidateId: candidate.id },
+        _count: true,
+      }),
+      prisma.application.findMany({
+        where: { candidateId: candidate.id },
+        take: 5,
+        orderBy: { createdAt: "desc" },
+        include: {
+          jobOffer: {
+            select: {
+              id: true,
+              title: true,
+              customLocation: true,
+              contractType: true,
+              employmentType: true,
+              company: {
+                select: {
+                  id: true,
+                  name: true,
+                  logoUrl: true,
+                },
               },
             },
           },
         },
-      },
-    });
-
-    // Get recommended jobs based on skills
-    const skillNames = candidate.skills.map((s: { name: string }) => s.name.toLowerCase());
-    const topSkills = skillNames.slice(0, 3);
-
-    const recommendedJobs = await prisma.jobOffer.findMany({
-      where: {
-        status: "PUBLISHED",
-        deletedAt: null,
-        ...(topSkills.length > 0 && {
-          OR: topSkills.map((skill: string) => ({
-            description: { contains: skill, mode: "insensitive" as const },
-          })),
-        }),
-      },
-      take: 6,
-      orderBy: { createdAt: "desc" },
-      include: {
-        company: {
-          select: {
-            id: true,
-            name: true,
-            logoUrl: true,
-            location: true,
+      }),
+      prisma.jobOffer.findMany({
+        where: {
+          status: "PUBLISHED",
+          deletedAt: null,
+          ...(topSkills.length > 0 && {
+            OR: topSkills.map((skill: string) => ({
+              description: { contains: skill, mode: "insensitive" as const },
+            })),
+          }),
+        },
+        take: 6,
+        orderBy: { createdAt: "desc" },
+        include: {
+          company: {
+            select: {
+              id: true,
+              name: true,
+              logoUrl: true,
+              location: true,
+            },
+          },
+          _count: {
+            select: { applications: true },
           },
         },
-        _count: {
-          select: { applications: true },
-        },
-      },
-    });
+      }),
+    ]);
 
-    // Get job market trends (jobs posted in last 30 days by contract type)
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-    const jobTrends = await prisma.jobOffer.groupBy({
-      by: ["contractType"],
-      where: {
-        status: "PUBLISHED",
-        deletedAt: null,
-        createdAt: { gte: thirtyDaysAgo },
-      },
-      _count: true,
-    });
-
-    // Format response
     const statsMap = {
       NOUVEAU: 0,
       EN_COURS_EXAMEN: 0,
@@ -126,8 +122,10 @@ export async function GET() {
       REFUSE: 0,
     };
 
+    let totalApplications = 0;
     applicationStats.forEach((stat: { status: string; _count: number }) => {
       statsMap[stat.status as keyof typeof statsMap] = stat._count;
+      totalApplications += stat._count;
     });
 
     return NextResponse.json({
@@ -141,7 +139,7 @@ export async function GET() {
           skillsCount: candidate.skills.length,
         },
         stats: {
-          totalApplications: candidate._count.applications,
+          totalApplications,
           byStatus: statsMap,
         },
         recentApplications,
