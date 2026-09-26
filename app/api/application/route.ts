@@ -55,15 +55,25 @@ export async function GET(request: NextRequest) {
       const [applications, total] = await Promise.all([
         prisma.application.findMany({
           where,
-          include: {
+          select: {
+            id: true,
+            status: true,
+            createdAt: true,
             jobOffer: {
-              include: {
-                company: {
               select: {
+                id: true,
+                title: true,
+                slug: true,
+                customLocation: true,
+                isRemote: true,
+                isHybrid: true,
+                company: {
+                  select: {
                     id: true,
                     name: true,
                     slug: true,
                     logoUrl: true,
+                    location: true,
                   },
                 },
               },
