@@ -23,7 +23,14 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
     const jobId = searchParams.get("jobId");
-    
+    // The total row count is opt-in. The candidate applications client and the
+    // job detail "already applied" check both read only `data`, and the client
+    // derives page counts from the server-rendered `initialTotal`. Running the
+    // COUNT unconditionally also held a second pooled connection open in
+    // parallel with the list query, doubling this route's concurrent demand
+    // against the shared pool.
+    const withCount = searchParams.get("withCount") === "1";
+
     // Use safe pagination with enforced limits
     const { page, limit, skip } = parsePaginationParams(
       searchParams.get("page"),
@@ -83,7 +90,7 @@ export async function GET(request: NextRequest) {
           take: limit,
           orderBy: { createdAt: "desc" },
         }),
-        prisma.application.count({ where }),
+        withCount ? prisma.application.count({ where }) : Promise.resolve(null),
       ]);
 
       return NextResponse.json({
@@ -93,7 +100,7 @@ export async function GET(request: NextRequest) {
           page,
           limit,
           total,
-          totalPages: Math.ceil(total / limit),
+          totalPages: total === null ? null : Math.ceil(total / limit),
         },
       });
     } else if (session.user.role === "COMPANY") {

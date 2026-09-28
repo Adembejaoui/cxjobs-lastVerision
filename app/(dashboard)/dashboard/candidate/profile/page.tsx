@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
+import { NextResponse } from "next/server";
+import { getAuthenticatedUser } from "@/lib/auth-helpers";
 import prisma from "@/lib/prisma";
 import { Card, CardContent} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,15 +9,67 @@ import Link from "next/link";
 import { CandidateProfileForm } from "@/components/dashboard/candidate-profile-form";
 import type { Prisma } from "@/app/generated/prisma/client";
 
-type CandidateWithRelations = Prisma.CandidateGetPayload<{
-  include: {
-    user: { select: { email: true } };
-    experiences: { orderBy: { startDate: "desc" } };
-    education: { orderBy: { startDate: "desc" } };
-    languages: true;
-    skills: true;
-  };
-}>;
+const candidateProfileSelect = {
+  id: true,
+  userId: true,
+  firstName: true,
+  lastName: true,
+  headline: true,
+  summary: true,
+  location: true,
+  phone: true,
+  linkedinUrl: true,
+  avatarUrl: true,
+  resumeUrl: true,
+  cvParsed: true,
+  targetJobRole: true,
+  preferredJobTypes: true,
+  workMode: true,
+  shiftType: true,
+  dateOfBirth: true,
+  gender: true,
+  user: { select: { email: true } },
+  experiences: {
+    orderBy: { startDate: "desc" },
+    select: {
+      id: true,
+      company: true,
+      title: true,
+      location: true,
+      startDate: true,
+      endDate: true,
+      isCurrent: true,
+      description: true,
+    },
+  },
+  education: {
+    orderBy: { startDate: "desc" },
+    select: {
+      id: true,
+      school: true,
+      degree: true,
+      fieldOfStudy: true,
+      startDate: true,
+      endDate: true,
+      isCurrent: true,
+      description: true,
+    },
+  },
+  languages: {
+    select: {
+      id: true,
+      name: true,
+      proficiency: true,
+    },
+  },
+  skills: {
+    select: {
+      id: true,
+      name: true,
+      level: true,
+    },
+  },
+} satisfies Prisma.CandidateSelect;
 
 function getMissingPreferences(candidate: {
   preferredJobTypes?: string[];
@@ -68,28 +121,24 @@ function calculateProfileCompletion(candidate: {
 }
 
 export default async function CandidateProfilePage() {
-  const session = await auth();
+  const authResult = await getAuthenticatedUser();
 
-  if (!session || session.user.role !== "CANDIDATE") {
+  if (authResult instanceof NextResponse) {
+    redirect("/login");
+  }
+
+  const user = authResult.user;
+
+  if (user.role !== "CANDIDATE") {
     redirect("/login");
   }
 
   const candidate = await prisma.candidate.findUnique({
     where: {
-      userId: session.user.id,
+      userId: user.id,
     },
-    include: {
-      user: { select: { email: true } },
-      experiences: {
-        orderBy: { startDate: 'desc' }
-      },
-      education: {
-        orderBy: { startDate: 'desc' }
-      },
-      languages: true,
-      skills: true,
-    },
-  }) as CandidateWithRelations | null;
+    select: candidateProfileSelect,
+  });
 
   if (!candidate) {
     // If no candidate profile exists, redirect to onboarding
