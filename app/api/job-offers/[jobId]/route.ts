@@ -4,6 +4,7 @@ import  prisma  from "@/lib/prisma";
 import { updateJobOfferSchema, isValidStatusTransition, getInvalidTransitionError } from "@/lib/validations/job";
 import { unstable_cache } from "next/cache";
 import { revalidateJobOffers } from "@/lib/cache";
+import { invalidateCompanyAnalytics } from "@/lib/local-cache";
 import { logger } from "@/lib/logger";
 import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
 import { getClientIp } from "@/lib/utils";
@@ -360,6 +361,12 @@ export async function PUT(
 
     revalidateJobOffers();
 
+    // One increment covers the whole mutation (fields + status + languages).
+    // existingJob.companyId comes from the database, so an admin editing
+    // another company's job invalidates that company's analytics, never the
+    // admin's own. Swallows Redis errors, so it cannot fail the update.
+    await invalidateCompanyAnalytics(existingJob.companyId);
+
     return NextResponse.json({
       success: true,
       message: "Job offer updated successfully",
@@ -435,6 +442,10 @@ export async function DELETE(
 
     // Revalidate job offers cache
     revalidateJobOffers();
+
+    // The soft delete is committed. existingJob.companyId is DB-resolved, so
+    // this targets the owning company even when an admin performs the delete.
+    await invalidateCompanyAnalytics(existingJob.companyId);
 
     return NextResponse.json({
       success: true,

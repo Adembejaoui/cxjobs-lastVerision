@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import  prisma  from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import { invalidateCompanyAnalytics } from "@/lib/local-cache";
 
 export async function POST() {
   try {
@@ -63,6 +64,14 @@ export async function POST() {
       closedCount: closedOffers.count,
       offerIds: expiredOffers.map((o) => o.id),
     });
+
+    // One increment per distinct company, not per job. The companyIds come from
+    // the already-resolved jobs, so this stays company-scoped and never
+    // touches a global key. Swallows Redis errors per company.
+    const affectedCompanyIds = new Set(expiredOffers.map((o) => o.companyId));
+    for (const companyId of affectedCompanyIds) {
+      await invalidateCompanyAnalytics(companyId);
+    }
 
     return NextResponse.json({
       success: true,

@@ -3,11 +3,12 @@ import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { isValidUuid } from "@/lib/utils";
 import { z } from "zod";
-import { getCachedDashboardStats } from "@/lib/local-cache";
+import { getCachedDashboardStats, setCachedDashboardStats, invalidateCache } from "@/lib/local-cache";
 import { logger } from "@/lib/logger";
 import { benefitCategorySchema, benefitScopeSchema } from "@/lib/validations/profile";
 
-const COMPANY_STATS_KEY = (companyId: string) => `dashboard:company:${companyId}`;
+const COMPANY_STATS_KEY = (userId: string) => `dashboard:company:${userId}`;
+const CACHE_TTL = 60;
 
 // Validation schema for company profile update
 const updateCompanySchema = z.object({
@@ -82,90 +83,92 @@ export async function GET() {
       );
     }
 
-    // Get job offer statistics
-    const jobStats = await prisma.jobOffer.groupBy({
-      by: ["status"],
-      where: {
-        companyId: company.id,
-        deletedAt: null,
-      },
-      _count: true,
-    });
-
-    // Get application statistics by status
-    const applicationStats = await prisma.application.groupBy({
-      by: ["status"],
-      where: {
-        jobOffer: { companyId: company.id },
-      },
-      _count: true,
-    });
-
-    // Total applications derived from grouped status counts (same where clause)
-    const totalApplications = applicationStats.reduce((sum, stat) => sum + stat._count, 0);
-
-    // Get recent applications
-    const recentApplications = await prisma.application.findMany({
-      where: {
-        jobOffer: { companyId: company.id },
-      },
-      take: 10,
-      orderBy: { createdAt: "desc" },
-      include: {
-        candidate: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                name: true,
-                email: true,
-                image: true,
-              },
-            },
-            skills: { take: 3 },
-          },
-        },
-        jobOffer: {
-          select: {
-            id: true,
-            title: true,
-            customLocation: true,
-          },
-        },
-      },
-    });
-
-    // Get active job offers
-    const activeJobs = await prisma.jobOffer.findMany({
-      where: {
-        companyId: company.id,
-        status: "PUBLISHED",
-        deletedAt: null,
-      },
-      take: 5,
-      orderBy: { createdAt: "desc" },
-      include: {
-        _count: {
-          select: { applications: true },
-        },
-      },
-    });
-
-    // Get applications per day for last 7 days
+    // Seven-day window for applications-per-day chart.
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-     const applicationsPerDay = await prisma.$queryRaw<
-      Array<{ date: Date; count: number }>
-    >`
-      SELECT DATE(created_at) as date, COUNT(*) as count
-      FROM applications a
-      JOIN job_offers j ON a.job_offer_id = j.id
-      WHERE j.company_id = ${company.id}
-        AND a.created_at >= ${sevenDaysAgo}
-      GROUP BY DATE(created_at)
-      ORDER BY date DESC
-    `;
+    // All five queries depend only on company.id (already resolved above), so
+    // they are safe to run concurrently rather than sequentially. With a pool
+    // max of 5 this keeps the connection pipeline saturated without over-subscribing.
+    const [
+      jobStats,
+      applicationStats,
+      recentApplications,
+      activeJobs,
+      applicationsPerDay,
+    ] = await Promise.all([
+      prisma.jobOffer.groupBy({
+        by: ["status"],
+        where: {
+          companyId: company.id,
+          deletedAt: null,
+        },
+        _count: true,
+      }),
+      prisma.application.groupBy({
+        by: ["status"],
+        where: {
+          jobOffer: { companyId: company.id },
+        },
+        _count: true,
+      }),
+      prisma.application.findMany({
+        where: {
+          jobOffer: { companyId: company.id },
+        },
+        take: 10,
+        orderBy: { createdAt: "desc" },
+        include: {
+          candidate: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true,
+                  image: true,
+                },
+              },
+            },
+          },
+          jobOffer: {
+            select: {
+              id: true,
+              title: true,
+              customLocation: true,
+            },
+          },
+        },
+      }),
+      prisma.jobOffer.findMany({
+        where: {
+          companyId: company.id,
+          status: "PUBLISHED",
+          deletedAt: null,
+        },
+        take: 5,
+        orderBy: { createdAt: "desc" },
+        include: {
+          _count: {
+            select: { applications: true },
+          },
+        },
+      }),
+      prisma.$queryRaw<
+        Array<{ date: Date; count: number }>
+      >`
+        SELECT DATE("createdAt") as date, COUNT(*) as count
+        FROM applications a
+        JOIN job_offers j ON a."jobOfferId" = j.id
+        WHERE j."companyId" = ${company.id}
+          AND a."createdAt" >= ${sevenDaysAgo}
+        GROUP BY DATE("createdAt")
+        ORDER BY date DESC
+      `,
+    ]);
+
+    // Total applications derived from grouped status counts (same where clause)
+    const totalApplications = applicationStats.reduce((sum, stat) => sum + stat._count, 0);
 
     // Format response
     const jobStatsMap: Record<string, number> = {
@@ -192,25 +195,23 @@ export async function GET() {
       applicationStatsMap[stat.status as keyof typeof applicationStatsMap] = stat._count;
     });
 
-    return NextResponse.json({
-      success: true,
-      data: {
-          company: {
-            id: company.id,
-            name: company.name,
-            slug: company.slug,
-            description: company.description,
-            logoUrl: company.logoUrl,
-            coverImage: company.coverImageUrl,
-            website: company.website,
-            linkedin: company.linkedinUrl,
-            companySize: company.companySize,
-            location: company.location,
-            foundedYear: company.foundedYear,
-            benefits: company.benefits,
-            culture: company.culture,
-            subscriptionPlan: company.subscriptionPlan,
-          },
+    const responseData = {
+        company: {
+          id: company.id,
+          name: company.name,
+          slug: company.slug,
+          description: company.description,
+          logoUrl: company.logoUrl,
+          coverImage: company.coverImageUrl,
+          website: company.website,
+          linkedin: company.linkedinUrl,
+          companySize: company.companySize,
+          location: company.location,
+          foundedYear: company.foundedYear,
+          benefits: company.benefits,
+          culture: company.culture,
+          subscriptionPlan: company.subscriptionPlan,
+        },
         stats: {
           totalJobs: company._count.jobs,
           jobsByStatus: jobStatsMap,
@@ -223,7 +224,13 @@ export async function GET() {
           date: item.date,
           count: item.count,
         })),
-      },
+      };
+
+    await setCachedDashboardStats(cacheKey, JSON.stringify(responseData), CACHE_TTL);
+
+    return NextResponse.json({
+      success: true,
+      data: responseData,
     });
   } catch (error) {
     logger.error("Get company dashboard error", { error });
@@ -339,6 +346,8 @@ export async function PUT(request: NextRequest) {
 
       return updated;
     });
+
+    await invalidateCache(COMPANY_STATS_KEY(session.user.id));
 
     return NextResponse.json({
       success: true,

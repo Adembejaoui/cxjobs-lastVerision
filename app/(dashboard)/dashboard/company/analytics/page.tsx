@@ -1,47 +1,7 @@
 import { redirect } from "next/navigation";
-import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
+import { getCompanyAnalytics } from "@/lib/company-analytics";
 import { CompanyAnalyticsClientV2 } from "./company-analytics-client-v2";
-import { CompanyAnalyticsData } from "@/types/company-analytics";
-
-async function fetchAnalytics(days: number, language: string, refresh: boolean) {
-  const headersList = await headers();
-  const host = headersList.get("host") || "";
-  const cookie = headersList.get("cookie") || "";
-  const protocol = process.env.NODE_ENV === "production" ? "https" : "http";
-  const baseUrl = host ? `${protocol}://${host}` : (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000");
-
-  const params = new URLSearchParams();
-  params.set("days", String(days));
-  params.set("language", language);
-  if (refresh) params.set("refresh", "true");
-
-  let res: Response;
-  try {
-    res = await fetch(`${baseUrl}/api/dashboard/company/analytics?${params.toString()}`, {
-      cache: "no-store",
-      headers: {
-        "Content-Type": "application/json",
-        ...(cookie ? { cookie } : {}),
-      },
-    });
-  } catch {
-    return { success: false as const, error: "Unable to load analytics data" };
-  }
-
-  if (res.status === 401) {
-    redirect("/login");
-  }
-  if (res.status === 403) {
-    redirect("/dashboard/candidate");
-  }
-
-  if (!res.ok) {
-    return { success: false as const, error: "Failed to load analytics" };
-  }
-
-  return (await res.json()) as { success: boolean; data?: CompanyAnalyticsData; error?: string };
-}
 
 export default async function CompanyAnalyticsPage({
   searchParams,
@@ -69,9 +29,15 @@ export default async function CompanyAnalyticsPage({
     : (languageParam ?? "all");
   const refresh = sp.refresh === "true";
 
-  const result = await fetchAnalytics(safeDays, language, refresh);
+  // Direct server-side call: no internal HTTP round-trip to our own route handler.
+  const result = await getCompanyAnalytics({
+    userId: session.user.id,
+    days: safeDays,
+    language,
+    refresh,
+  });
 
-  if (!result.success || !result.data) {
+  if (!result.success) {
     return (
       <div className="space-y-6">
         <div>

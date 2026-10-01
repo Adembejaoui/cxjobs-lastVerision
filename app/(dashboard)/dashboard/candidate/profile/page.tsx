@@ -8,6 +8,7 @@ import { AlertTriangle, User, Mail, MapPin, FileText,FileCheck } from "lucide-re
 import Link from "next/link";
 import { CandidateProfileForm } from "@/components/dashboard/candidate-profile-form";
 import type { Prisma } from "@/app/generated/prisma/client";
+import NextImage from "next/image";
 
 const candidateProfileSelect = {
   id: true,
@@ -206,11 +207,23 @@ export default async function CandidateProfilePage() {
         <CardContent className="p-6">
           <div className="flex flex-col gap-6 sm:flex-row sm:items-center">
             {/* Avatar */}
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[#47d79d] text-2xl font-bold text-[#071738]">
-              {candidate.firstName?.charAt(0).toUpperCase() || 
-               candidate.user?.email?.charAt(0).toUpperCase() || 
-               "U"}
-            </div>
+            <div className="relative flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-full border border-slate-200 bg-slate-100 text-2xl font-bold leading-none text-[#071738]">
+                {candidate.avatarUrl ? (
+                  <NextImage
+                    src={candidate.avatarUrl}
+                    alt={`${candidate.firstName || "Candidate"} profile`}
+                    width={80}
+                    height={80}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center">
+                    {candidate.firstName?.charAt(0).toUpperCase() ||
+                      candidate.user?.email?.charAt(0).toUpperCase() ||
+                      "U"}
+                  </span>
+                )}
+              </div>
             
             {/* Candidate Info */}
             <div className="flex-1">

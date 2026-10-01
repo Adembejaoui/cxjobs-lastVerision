@@ -5,10 +5,11 @@ import { createJobOfferSchema, contractTypeSchema, employmentTypeSchema, activit
 import { parsePaginationParams } from "@/lib/utils";
 import { unstable_cache } from "next/cache";
 import { revalidateJobOffers } from "@/lib/cache";
+import { invalidateCompanyAnalytics } from "@/lib/local-cache";
 import { logger } from "@/lib/logger";
 import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
 import { getClientIp } from "@/lib/utils";
-import { getSortOrder, applyJobOfferFilters } from "@/lib/job-offers-utils";
+import { getSortOrder, buildJobOfferWhereClause } from "@/lib/job-offers-utils";
 
 // Cached function for fetching public job offers
 async function getPublicJobOffers(filters: {
@@ -32,18 +33,16 @@ async function getPublicJobOffers(filters: {
     async () => {
       const now = new Date();
 
-      const where: Record<string, unknown> = {
+      const baseWhere: Record<string, unknown> = {
         deletedAt: null,
         status: "PUBLISHED",
       };
 
       if (filters.companyId) {
-        where.companyId = filters.companyId;
+        baseWhere.companyId = filters.companyId;
       }
 
-      const andConditions: object[] = [];
-
-      applyJobOfferFilters(where, andConditions, filters, now);
+      const { where } = buildJobOfferWhereClause(baseWhere, filters, now);
 
       const [jobOffers, total] = await Promise.all([
         prisma.jobOffer.findMany({
@@ -217,7 +216,7 @@ export async function GET(request: NextRequest) {
         },
       }, {
         headers: {
-          'Cache-Control': 'public, s-maxage=60, stale-while-revalidate=30',
+          'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60',
         },
       });
     }
@@ -225,7 +224,7 @@ export async function GET(request: NextRequest) {
     // For company owners and admins, fetch uncached results
     const now = new Date();
 
-    const where: Record<string, unknown> = {
+    const baseWhere: Record<string, unknown> = {
       deletedAt: null,
     };
 
@@ -235,21 +234,19 @@ export async function GET(request: NextRequest) {
         where: { userId: session!.user.id },
       });
       if (company) {
-        where.companyId = company.id;
+        baseWhere.companyId = company.id;
       }
     }
 
     if (filters.status) {
-      where.status = filters.status;
+      baseWhere.status = filters.status;
     }
 
     if (filters.companyId) {
-      where.companyId = filters.companyId;
+      baseWhere.companyId = filters.companyId;
     }
 
-    const andConditions: object[] = [];
-
-    applyJobOfferFilters(where, andConditions, filters, now);
+    const { where } = buildJobOfferWhereClause(baseWhere, filters, now);
 
     const [jobOffers, total] = await Promise.all([
       prisma.jobOffer.findMany({
@@ -451,6 +448,11 @@ export async function POST(request: NextRequest) {
 
     // Revalidate job offers cache
     revalidateJobOffers();
+
+    // The job is committed, so advance this company's analytics version.
+    // company.id is the DB-resolved owner, never request input. This call
+    // swallows Redis errors, so a cache outage cannot fail the creation.
+    await invalidateCompanyAnalytics(company.id);
 
     return NextResponse.json(
       {

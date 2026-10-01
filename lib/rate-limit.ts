@@ -14,6 +14,12 @@ export interface RateLimitResult {
   allowed: boolean;
   remaining: number;
   resetAt: number;
+  /**
+   * Maximum number of requests actually enforced for this check. Carried on the
+   * result so headers can report the limit that was really applied instead of
+   * the module default, which callers override per route.
+   */
+  limit: number;
 }
 
 export function assertRedisConfigured(): void {
@@ -45,10 +51,10 @@ async function checkRateLimitRedis(
   const remaining = Math.max(0, config.max - count);
 
   if (count > config.max) {
-    return { allowed: false, remaining: 0, resetAt };
+    return { allowed: false, remaining: 0, resetAt, limit: config.max };
   }
 
-  return { allowed: true, remaining, resetAt };
+  return { allowed: true, remaining, resetAt, limit: config.max };
 }
 
 export async function checkRateLimitAsync(
@@ -57,14 +63,19 @@ export async function checkRateLimitAsync(
 ): Promise<RateLimitResult> {
   if (!redis) {
     assertRedisConfigured();
-    return { allowed: true, remaining: config.max, resetAt: Date.now() + config.windowMs };
+    return {
+      allowed: true,
+      remaining: config.max,
+      resetAt: Date.now() + config.windowMs,
+      limit: config.max,
+    };
   }
   return checkRateLimitRedis(key, config);
 }
 
 export function getRateLimitHeaders(result: RateLimitResult): Record<string, string> {
   return {
-    "X-RateLimit-Limit": String(DEFAULT_CONFIG.max),
+    "X-RateLimit-Limit": String(result.limit),
     "X-RateLimit-Remaining": String(result.remaining),
     "X-RateLimit-Reset": String(Math.ceil(result.resetAt / 1000)),
   };

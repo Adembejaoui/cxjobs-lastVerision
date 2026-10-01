@@ -124,9 +124,7 @@ export function CVContent({ candidate }: CVContentProps) {
                   {candidate.firstName?.charAt(0).toUpperCase() || "U"}
                 </AvatarFallback>
               </Avatar>
-              <Badge className="absolute -bottom-2 left-1/2 -translate-x-1/2 bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1 text-xs font-semibold">
-                AVAILABLE
-              </Badge>
+            
             </div>
             
             <h1 className="mt-4 text-2xl font-bold text-slate-900">{fullName}</h1>

@@ -299,6 +299,7 @@ model JobLanguage {
 
   @@unique([jobOfferId, language])
   @@index([jobOfferId])
+  @@index([language, level, jobOfferId])
   @@map("job_languages")
 }
 
@@ -319,6 +320,7 @@ model Application {
   @@unique([candidateId, jobOfferId])
   @@index([candidateId, createdAt])
   @@index([candidateId, status])
+  @@index([candidateId, status, isSaved])
   @@index([jobOfferId, status])
   @@index([jobOfferId, createdAt])
   @@index([createdAt])

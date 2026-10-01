@@ -1,7 +1,7 @@
-/* eslint-disable @next/next/no-img-element */
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import Image from "next/image";
 import {
   Card,
   CardContent,
@@ -341,10 +341,13 @@ export default async function CandidateDashboardPage() {
                     >
                       <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-full">
                         {logoUrl ? (
-                          <img
+                          <Image
                             src={logoUrl}
                             alt={company.name}
                             className="h-full w-full object-cover"
+                            width={40}
+                            height={40}
+                            sizes="40px"
                           />
                         ) : (
                           <div

@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth, unstable_update } from "@/lib/auth";
 import  prisma  from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import {
+  getCandidateOnboardingErrors,
+  type PersistedCandidateOnboardingState,
+} from "@/lib/validations/profile";
 
 // POST /api/onboarding - Complete user onboarding
 export async function POST(_request: NextRequest) {
@@ -58,6 +62,46 @@ export async function POST(_request: NextRequest) {
         { success: false, error: "Please complete your candidate profile first", code: "PROFILE_INCOMPLETE" },
         { status: 400 }
       );
+    }
+
+    // For candidates the mere existence of the record is not enough: the same
+    // completion requirements enforced by `POST /api/profile` are applied to the
+    // persisted candidate, so this route cannot bypass them.
+    if (user.role === "CANDIDATE") {
+      const persistedCandidate = await prisma.candidate.findUnique({
+        where: { userId: user.id },
+        select: {
+          firstName: true,
+          lastName: true,
+          phone: true,
+          location: true,
+          targetJobRole: true,
+          gender: true,
+          dateOfBirth: true,
+          skills: { select: { name: true } },
+          languages: { select: { name: true } },
+          experiences: { select: { title: true, company: true } },
+          education: { select: { school: true, degree: true } },
+        },
+      });
+
+      const onboardingErrors = getCandidateOnboardingErrors(
+        persistedCandidate as PersistedCandidateOnboardingState | null
+      );
+
+      if (Object.keys(onboardingErrors).length > 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              onboardingErrors[Object.keys(onboardingErrors)[0]] ??
+              "Please complete your candidate profile first",
+            code: "VALIDATION_ERROR",
+            details: onboardingErrors,
+          },
+          { status: 400 }
+        );
+      }
     }
 
     if (user.role === "COMPANY" && !user.companies) {

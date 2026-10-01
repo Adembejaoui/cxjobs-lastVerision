@@ -116,6 +116,15 @@ const LOCATIONS = [
   "Tozeur",
 ];
 
+// Ids the benefits editor mints for rows that have never been saved. They are
+// UI keys only (see CompanyBenefitsEditor.addBenefit) and must never reach the
+// server as row ids.
+const TEMPORARY_BENEFIT_ID_PREFIX = "benefit-";
+
+function isPersistedBenefitId(id: string): boolean {
+  return !id.startsWith(TEMPORARY_BENEFIT_ID_PREFIX);
+}
+
 // Small reusable section marker used to give each block of the form a
 // consistent, quiet identity without wrapping everything in a card.
 function SectionIcon({ icon: Icon }: { icon: React.ElementType }) {
@@ -232,9 +241,15 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
           imageUrl: item.imageUrl,
         }));
 
+      // Persisted benefits keep their real CompanyBenefit UUID so the server can
+      // update that exact row instead of deleting and recreating it. Rows added
+      // in the editor have no UUID yet, so they are sent without an id and the
+      // server treats them as creates. Every id that IS sent must be one the
+      // server can verify belongs to the authenticated company.
       const benefitsData = benefitItems
         .filter((b) => b.name.trim().length >= 3)
         .map((b) => ({
+          ...(isPersistedBenefitId(b.id) ? { id: b.id } : {}),
           name: b.name,
           description: b.description || null,
           icon: b.icon || null,
@@ -594,7 +609,7 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
                 type="cover-image"
                 label="Cover Image"
                 maxSize="5MB"
-                previewClassName="h-32"
+                previewClassName="w-full aspect-[16/5] object-cover object-center"
               />
             </CardContent>
           </Card>

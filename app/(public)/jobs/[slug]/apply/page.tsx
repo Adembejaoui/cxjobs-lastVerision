@@ -1,7 +1,6 @@
 'use client';
 
-/* eslint-disable @next/next/no-img-element */
-
+import Image from "next/image";
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -347,7 +346,14 @@ const formatSalary = (job: JobOffer): string => {
             <div className="flex gap-4">
               <div className="h-14 w-14 rounded-xl bg-gradient-to-br from-[#162f67] to-[#1e4d9c] flex items-center justify-center overflow-hidden flex-shrink-0">
                 {job.company.logoUrl ? (
-                  <img src={job.company.logoUrl} alt={job.company.name} className="w-full h-full object-contain p-2" />
+                  <Image
+                    src={job.company.logoUrl}
+                    alt={job.company.name}
+                    className="w-full h-full object-contain p-2"
+                    width={56}
+                    height={56}
+                    sizes="56px"
+                  />
                 ) : (
                   <span className="text-lg font-bold text-white">{job.company.name.charAt(0)}</span>
                 )}

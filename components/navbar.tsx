@@ -1,7 +1,6 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element */
-
+import Image from "next/image";
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -80,16 +79,23 @@ export function Navbar({ user }: NavbarProps) {
             {user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="flex items-center gap-2">
-                    <div className="h-8 w-8 rounded-full bg-slate-200 flex items-center justify-center">
-                      {user.image ? (
-                        <img src={user.image} alt={user.name || "User"} className="h-8 w-8 rounded-full" />
-                      ) : (
-                        <User className="h-4 w-4 text-slate-600" />
-                      )}
-                    </div>
-                    <span className="font-medium text-slate-900">{user.name || user.email}</span>
-                  </Button>
+<Button variant="ghost" className="flex items-center gap-2">
+                      <div className="h-8 w-8 rounded-full bg-slate-200 flex items-center justify-center overflow-hidden">
+                        {user.image ? (
+                          <Image
+                            src={user.image}
+                            alt={user.name || "User"}
+                            className="h-8 w-8 rounded-full"
+                            width={32}
+                            height={32}
+                            sizes="32px"
+                          />
+                        ) : (
+                          <User className="h-4 w-4 text-slate-600" />
+                        )}
+                      </div>
+                      <span className="font-medium text-slate-900">{user.name || user.email}</span>
+                    </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuLabel>
@@ -124,11 +130,9 @@ export function Navbar({ user }: NavbarProps) {
               </DropdownMenu>
             ) : (
               <>
-                <Link href="/login" className="text-sm font-medium text-slate-900">
-                  Log In
-                </Link>
-                <Link href="/register">
-                  <Button className="bg-blue-900 hover:bg-blue-800">Post a Job</Button>
+             
+                <Link href="/login">
+                  <Button className="bg-blue-900 hover:bg-blue-800">Log In</Button>
                 </Link>
               </>
             )}

@@ -88,10 +88,13 @@ export function CompanyBenefitsEditor({ benefits, onChange }: CompanyBenefitsEdi
     setExpandedId(newBenefit.id);
   };
 
+  // Every field, including a partially typed name, is committed to state.
+  // Rejecting short names here made the controlled Name input impossible to
+  // fill: a new row starts as "" and React restores the DOM to the committed
+  // value after every keystroke, so it could never reach the minimum length.
+  // Minimum length is surfaced by the inline hint below and enforced when the
+  // form builds its payload.
   const updateBenefit = (id: string, field: keyof BenefitItem, value: string) => {
-    if (field === "name" && value.trim().length > 0 && value.trim().length < 3) {
-      return;
-    }
     onChange(benefits.map((b) => (b.id === id ? { ...b, [field]: value } : b)));
   };
 

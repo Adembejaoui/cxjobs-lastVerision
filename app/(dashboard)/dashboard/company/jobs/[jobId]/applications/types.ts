@@ -1,8 +1,8 @@
 export interface Skill {
   id: string;
   name: string;
-  level: string | null;
-  yearsOfExperience: number | null;
+  level?: string | null;
+  yearsOfExperience?: number | null;
 }
 
 export interface Language {
@@ -67,12 +67,19 @@ export type LeanCandidate = Partial<Candidate> & {
   };
 };
 
+/**
+ * A row as it appears in the applications list.
+ *
+ * The list payload (SSR page and list API alike) is deliberately lean, so the
+ * lazy-detail fields are optional. They are filled in on demand from
+ * GET /api/application/[id] and merged onto the row for the review modal.
+ */
 export interface Application {
   id: string;
   status: string;
-  coverLetter: string | null;
-  cvUrl: string | null;
-  notes: string | null;
+  coverLetter?: string | null;
+  cvUrl?: string | null;
+  notes?: string | null;
   isSaved: boolean;
   createdAt: Date;
   candidate?: LeanCandidate | Candidate;

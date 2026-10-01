@@ -54,8 +54,9 @@ export async function GET() {
       );
     }
 
-    const skillNames = candidate.skills.map((s: { name: string }) => s.name.toLowerCase());
-    const topSkills = skillNames.slice(0, 3);
+    const topSkills = candidate.skills
+      .slice(0, 3)
+      .map((s: { name: string }) => s.name.toLowerCase());
 
     const [applicationStats, recentApplications, recommendedJobs] = await Promise.all([
       prisma.application.groupBy({
@@ -104,11 +105,7 @@ export async function GET() {
               id: true,
               name: true,
               logoUrl: true,
-              location: true,
             },
-          },
-          _count: {
-            select: { applications: true },
           },
         },
       }),

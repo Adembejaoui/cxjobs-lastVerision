@@ -42,8 +42,7 @@ const getPublicJobOfferBySlug = unstable_cache(
       },
     });
   },
-  // Cache key per slug - Next.js includes the function args (slug) in the invocation key
-  ["public-job-offer-by-slug"] as unknown as string[],
+  ["public-job-offer-by-slug"],
   { revalidate: 60, tags: ["job-offer"] }
 );
 

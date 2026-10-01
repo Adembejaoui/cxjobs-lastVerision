@@ -9,7 +9,12 @@ if (!SESSION_COOKIE) {
   throw new Error('K6_SESSION_COOKIE environment variable is required. Provide an existing NextAuth session cookie.');
 }
 
-const sessionCookieHeader = ` __Secure-authjs.session-token=${SESSION_COOKIE}`;
+// Cookie name: __Secure-authjs.session-token (HTTPS/production) or authjs.session-token (HTTP/localhost)
+// Can be overridden via K6_SESSION_COOKIE_NAME
+const COOKIE_NAME = __ENV.K6_SESSION_COOKIE_NAME || 
+  (BASE_URL.startsWith('https://') ? '__Secure-authjs.session-token' : 'authjs.session-token');
+
+const sessionCookieHeader = `${COOKIE_NAME}=${SESSION_COOKIE}`;
 
 const defaultHeaders = {
   'Accept': 'application/json, text/html, */*',
@@ -32,11 +37,21 @@ const DEFAULT_STAGES = [
   { duration: '5m', target: 100 },
 ];
 
+// Configurable VU target (default 100) via K6_TARGET_VUS. The base ramp
+// pattern is scaled proportionally so the ramp shape is preserved while the
+// final peak VUs match the operator's choice.
+const TARGET_VUS = __ENV.K6_TARGET_VUS ? parseInt(__ENV.K6_TARGET_VUS, 10) : 100;
+const _rampScale = TARGET_VUS / DEFAULT_STAGES[DEFAULT_STAGES.length - 1].target;
+const RAMP_STAGES = DEFAULT_STAGES.map((stage) => ({
+  duration: stage.duration,
+  target: Math.max(1, Math.round(stage.target * _rampScale)),
+}));
+
 export const options = {
   scenarios: {
     candidate_browsing: {
       executor: 'ramping-vus',
-      stages: DEFAULT_STAGES,
+      stages: RAMP_STAGES,
       gracefulRampDown: '30s',
     },
   },
@@ -103,12 +118,43 @@ function validateSession() {
 
   if (!authenticated) {
     authFailures.add(1);
-    console.error('Authentication validation failed. Stopping test.');
-    console.error(`Status: ${res.status}, Body: ${res.body.substring(0, 500)}`);
+    console.error('Authentication validation failed for this session.');
+    console.error(`Status: ${res.status}. Response body is intentionally not logged to avoid leaking session data.`);
     return false;
   }
 
   return true;
+}
+
+// Pre-validate the single shared session cookie before ramping VUs.
+// If it is invalid, abort immediately so the test cannot produce an empty
+// near-zero-load run that looks "successful" with no authenticated traffic.
+export function setup() {
+  const res = http.get(`${BASE_URL}/api/auth/session`, {
+    headers: buildHeaders(),
+    tags: { endpoint: 'auth_session_setup' },
+  });
+
+  let valid = false;
+  if (res.status === 200) {
+    try {
+      const body = JSON.parse(res.body);
+      if (body && body.user !== undefined) {
+        valid = true;
+      }
+    } catch (e) {
+      // parse error -> not authenticated
+    }
+  }
+
+  if (!valid) {
+    throw new Error(
+      'K6 setup: the session cookie provided via K6_SESSION_COOKIE did not authenticate ' +
+        'against /api/auth/session. Aborting the test to avoid an unauthenticated/empty run. '
+    );
+  }
+
+  return { authenticated: true, targetVus: TARGET_VUS };
 }
 
 function getDashboard() {
@@ -311,38 +357,52 @@ export default function () {
 
 export function handleSummary(data) {
   const metrics = data.metrics;
+  const rateLimit429 = metrics.rate_limit_429?.values?.count ?? 0;
+
   const summary = {
     test: 'CXJobs Production Authenticated Candidate Load Test',
     timestamp: new Date().toISOString(),
     baseUrl: BASE_URL,
-    stages: DEFAULT_STAGES,
+    targetVus: TARGET_VUS,
+    stages: RAMP_STAGES,
     metrics: {
-  totalRequests: metrics.total_requests?.values?.count ?? 0,
-  successfulRequests: metrics.successful_requests?.values?.count ?? 0,
-  httpFailures: metrics.http_failures?.values?.count ?? 0,
-  rateLimit429: metrics.rate_limit_429?.values?.count ?? 0,
-  clientErrors4xx: metrics.client_errors_4xx?.values?.count ?? 0,
-  serverErrors5xx: metrics.server_errors_5xx?.values?.count ?? 0,
+      totalRequests: metrics.total_requests?.values?.count ?? 0,
+      successfulRequests: metrics.successful_requests?.values?.count ?? 0,
+      httpFailures: metrics.http_failures?.values?.count ?? 0,
+      rateLimit429,
+      clientErrors4xx: metrics.client_errors_4xx?.values?.count ?? 0,
+      serverErrors5xx: metrics.server_errors_5xx?.values?.count ?? 0,
 
-  avgLatencyMs: metrics.request_latency?.values?.avg ?? 0,
-  medianLatencyMs: metrics.request_latency?.values?.med ?? 0,
-  p90LatencyMs: metrics.request_latency?.values?.['p(90)'] ?? 0,
-  p95LatencyMs: metrics.request_latency?.values?.['p(95)'] ?? 0,
-  p99LatencyMs: metrics.http_req_duration?.values?.['p(99)'] ?? null,
-  maxLatencyMs: metrics.request_latency?.values?.max ?? 0,
+      avgLatencyMs: metrics.request_latency?.values?.avg ?? 0,
+      medianLatencyMs: metrics.request_latency?.values?.med ?? 0,
+      p90LatencyMs: metrics.request_latency?.values?.['p(90)'] ?? 0,
+      p95LatencyMs: metrics.request_latency?.values?.['p(95)'] ?? 0,
+      p99LatencyMs: metrics.http_req_duration?.values?.['p(99)'] ?? null,
+      maxLatencyMs: metrics.request_latency?.values?.max ?? 0,
 
-  requestsPerSecond: metrics.http_reqs?.values?.rate ?? 0,
+      requestsPerSecond: metrics.http_reqs?.values?.rate ?? 0,
 
-  checksPassed: metrics.checks?.values?.passes ?? 0,
-  checksFailed: metrics.checks?.values?.fails ?? 0,
-  authFailureRate: metrics.auth_failures?.values?.rate ?? 0,
-},
+      checksPassed: metrics.checks?.values?.passes ?? 0,
+      checksFailed: metrics.checks?.values?.fails ?? 0,
+      authFailureRate: metrics.auth_failures?.values?.rate ?? 0,
+    },
+    errorBreakdown: {
+      rateLimit429,
+      clientErrors4xx: metrics.client_errors_4xx?.values?.count ?? 0,
+      serverErrors5xx: metrics.server_errors_5xx?.values?.count ?? 0,
+      authFailureRate: metrics.auth_failures?.values?.rate ?? 0,
+      interpretation:
+        'rateLimit429 = IP-based throttling (NOT a success). clientErrors4xx = other 4xx (auth 401/403, 404, ...). ' +
+        'serverErrors5xx = application/database 5xx. 429s are counted only under rateLimit429 and never as successful.',
+    },
     notes: [
-      'Test uses a single shared session cookie across all VUs',
-      'This tests infrastructure/application under load, not unique user simulation',
-      '429 responses are tracked separately from server errors',
-      'All operations are read-only; no POST/PUT/PATCH/DELETE',
-      'Job view counter endpoint (/api/job-offers/[slug]/views) is intentionally excluded',
+      'Single-account stress test: one shared session cookie across all VUs (set via K6_SESSION_COOKIE).',
+      'K6_TARGET_VUS overrides the peak VU target (default 100); the ramp-up shape is preserved and scaled proportionally.',
+      '429 responses are tracked SEPARATELY from application and server errors and are never treated as successful.',
+      'Rate-limit note: /api/job-offers is IP-limited (~60 req/min) and /api/job-offers/by-slug (~120 req/min). All VUs share one public IP, so 429s are EXPECTED at high VU counts. For high-VU runs use a distributed K6 runner (distinct IPs) or a dedicated test environment with rate limits that mirror your load profile.',
+      'All operations are read-only; no POST/PUT/PATCH/DELETE.',
+      'Job view counter endpoint (/api/job-offers/[slug]/views) is intentionally excluded.',
+      'Session cookie values are never included in the summary or logged; the response body of sensitive endpoints is never logged.',
     ],
   };
   return {

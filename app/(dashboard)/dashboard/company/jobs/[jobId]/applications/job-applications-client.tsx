@@ -2,8 +2,9 @@
 
 /* eslint-disable @next/next/no-img-element */
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -36,136 +37,418 @@ interface JobOffer {
   customLocation: string | null;
 }
 
+/**
+ * Prisma ApplicationStatus values, restated as a type union so the dropdown
+ * value type is defined in one place. `ALL` and `SAVED` are UI sentinels —
+ * `SAVED` is not an ApplicationStatus and maps to `isSaved = true` with no
+ * status constraint.
+ */
+export type ApplicationStatusValue =
+  | "NOUVEAU"
+  | "EN_COURS_EXAMEN"
+  | "ENTRETIEN"
+  | "EMBAUCHES"
+  | "REFUSE";
+
+export type ApplicationFilter = "ALL" | "SAVED" | ApplicationStatusValue;
+
+export interface ApplicationsSearchParams {
+  page?: string | string[] | undefined;
+  status?: string | string[] | undefined;
+  isSaved?: string | string[] | undefined;
+  search?: string | string[] | undefined;
+}
+
+/** Current filter state, always mirrored in the URL. */
+export interface ApplicationsFilters {
+  filter: ApplicationFilter;
+  search: string;
+}
+
+/** Pagination for the filtered dataset only. */
+export interface ApplicationsPagination {
+  page: number;
+  total: number;
+  totalPages: number;
+  pageSize: number;
+}
+
 interface JobApplicationsClientProps {
   jobOffer: JobOffer;
   applications: Application[];
   stats: Stats;
-  initialTotal: number;
-  initialPage: number;
-  pageSize: number;
+  filters: ApplicationsFilters;
+  pagination: ApplicationsPagination;
+}
+
+const SEARCH_DEBOUNCE_MS = 300;
+
+interface FullApplicationDetail {
+  coverLetter: string | null;
+  cvUrl: string | null;
+  notes: string | null;
+  candidate: Candidate;
+}
+
+/**
+ * Single source of truth for every filter and page URL change.
+ *
+ * Any change to the dropdown or the search resets the page to 1 so the
+ * recruiter never lands on an out-of-range page. Only a page change preserves
+ * the current filters.
+ */
+function buildApplicationsUrl(
+  next: Partial<ApplicationsFilters> & { page?: number },
+  current: ApplicationsFilters,
+  pathname: string,
+): string {
+  const merged = { ...current, ...next };
+  const params = new URLSearchParams();
+
+  // The dropdown is mutually exclusive: SAVED writes isSaved and no status,
+  // a status writes status and no isSaved, ALL writes neither.
+  if (merged.filter === "SAVED") {
+    params.set("isSaved", "true");
+  } else if (merged.filter !== "ALL") {
+    params.set("status", merged.filter);
+  }
+
+  if (merged.search) {
+    params.set("search", merged.search);
+  }
+
+  const page = next.page ?? 1;
+  if (page > 1) {
+    params.set("page", String(page));
+  }
+
+  const query = params.toString();
+  return query ? `${pathname}?${query}` : pathname;
 }
 
 export function JobApplicationsClient({
   jobOffer,
   applications: initialApplications,
   stats,
-  initialTotal,
-  initialPage,
-  pageSize,
+  filters,
+  pagination: initialPagination,
 }: JobApplicationsClientProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+
+  // Rows always come from the server, already filtered and already paginated.
+  // The client never filters or slices the dataset itself.
   const [applications, setApplications] = useState(initialApplications);
-  const [page, setPage] = useState(initialPage);
+  const [page, setPage] = useState(initialPagination.page);
+  const [total, setTotal] = useState(initialPagination.total);
+  const [totalPages, setTotalPages] = useState(initialPagination.totalPages);
   const [loading, setLoading] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("ALL");
+
+  // Local input state only, for typing responsiveness. The URL is the source
+  // of truth and is updated on a debounce.
+  const [searchInput, setSearchInput] = useState(filters.search);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [currentAppIndex, setCurrentAppIndex] = useState(0);
+  // The candidate under review is identified by application id, never by list position.
+  const [activeApplicationId, setActiveApplicationId] = useState<string | null>(null);
 
-  // Full candidate details keyed by application id — populated on-demand when the modal opens
-  const [fullCandidates, setFullCandidates] = useState<Record<string, Candidate>>({});
+  // Full application detail keyed by application id — populated on-demand when the modal opens
+  const [fullCandidates, setFullCandidates] = useState<Record<string, FullApplicationDetail>>({});
 
-  const totalPages = Math.ceil(initialTotal / pageSize);
+  // Only one export may be in flight at a time. The ref is the authoritative
+  // guard: a rapid second click is dispatched before React has re-rendered with
+  // the new state, so state alone would still let a duplicate request start.
+  // The state exists only to drive the button's disabled appearance.
+  const [isExporting, setIsExporting] = useState(false);
+  const exportInFlight = useRef(false);
 
-  const filteredWithIndices = useMemo(() => {
-    return applications
-      .map((app, index) => ({ app, originalIndex: index }))
-      .filter(({ app }) => {
-        const matchesSearch =
-          !searchQuery ||
-          (app.candidate?.user?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            app.candidate?.user?.email?.toLowerCase().includes(searchQuery.toLowerCase()));
+  // Refs used to avoid duplicate in-flight requests / stale rollbacks
+  const detailRequestsInFlight = useRef<Set<string>>(new Set());
+  const statusUpdateSeq = useRef<Record<string, number>>({});
+  // Monotonic id + abort handle so a slow page response can never overwrite a
+  // newer one.
+  const listRequestSeq = useRef(0);
+  const listRequestAbort = useRef<AbortController | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-        let matchesFilter = true;
-        if (statusFilter === "ALL") {
-          matchesFilter = true;
-        } else if (statusFilter === "SAVED") {
-          matchesFilter = app.isSaved === true;
-        } else {
-          matchesFilter = app.status === statusFilter;
-        }
+  // Latest committed filters, readable from timers and callbacks that would
+  // otherwise close over a stale render.
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
 
-        return matchesSearch && matchesFilter;
-      });
-  }, [applications, searchQuery, statusFilter]);
+  const pageSize = initialPagination.pageSize;
+  const hasActiveFilters = filters.filter !== "ALL" || filters.search !== "";
+
+  // Adopt server-rendered data whenever the server re-renders for a new URL.
+  // This is also what completes a filter or page navigation started below.
+  useEffect(() => {
+    setApplications(initialApplications);
+    setPage(initialPagination.page);
+    setTotal(initialPagination.total);
+    setTotalPages(initialPagination.totalPages);
+    setLoading(false);
+    // Keep the input in sync with the server (Clear Filters, back/forward), but
+    // never overwrite text the recruiter is still typing: a response for the
+    // previously committed search must not eat the keystrokes typed after it.
+    if (searchTimer.current === null) {
+      setSearchInput(filters.search);
+    }
+  }, [initialApplications, initialPagination, filters.search]);
+
+  const clearSearchTimer = useCallback(() => {
+    if (searchTimer.current !== null) {
+      clearTimeout(searchTimer.current);
+      searchTimer.current = null;
+    }
+  }, []);
+
+  // A filter or page change replaces the dataset, so the open candidate may no
+  // longer exist in the navigable rows. Closing the modal is the only safe
+  // outcome: pinning or falling back would silently review a different person.
+  const closeReviewModal = useCallback(() => {
+    setIsModalOpen(false);
+    setActiveApplicationId(null);
+  }, []);
+
+  // Commit a filter/search change. The Server Component re-renders page 1 of
+  // the new dataset; the pending search debounce is dropped so the same input
+  // is never committed twice.
+  const applyFilters = useCallback(
+    (next: ApplicationsFilters) => {
+      clearSearchTimer();
+      closeReviewModal();
+      setLoading(true);
+      router.replace(buildApplicationsUrl({ ...next, page: 1 }, filtersRef.current, pathname));
+    },
+    [clearSearchTimer, closeReviewModal, router, pathname],
+  );
+
+  // Search is server-side now, so typing must not issue a request per keystroke.
+  useEffect(() => {
+    const currentSearch = filtersRef.current.search;
+    if (searchInput === currentSearch) return;
+
+    searchTimer.current = setTimeout(() => {
+      searchTimer.current = null;
+      applyFilters({ filter: filtersRef.current.filter, search: searchInput });
+    }, SEARCH_DEBOUNCE_MS);
+
+    return clearSearchTimer;
+  }, [searchInput, applyFilters, clearSearchTimer]);
+
+  // Derived navigation position of the active candidate inside the current rows
+  const activeIndex = useMemo(() => {
+    if (!activeApplicationId) return -1;
+    return applications.findIndex((app) => app.id === activeApplicationId);
+  }, [applications, activeApplicationId]);
+
+  // The active candidate can leave the rows when its status/isSaved changes.
+  // It is then pinned from the page-level rows so the modal never switches candidate.
+  const pinnedApplication = useMemo(() => {
+    if (!activeApplicationId || activeIndex !== -1) return undefined;
+    return applications.find((app) => app.id === activeApplicationId);
+  }, [applications, activeApplicationId, activeIndex]);
 
   const loadPage = useCallback(
     async (pageNum: number) => {
-      if (pageNum < 1 || pageNum > totalPages || loading) return;
+      if (pageNum < 1 || pageNum > totalPages) return;
+      closeReviewModal();
       setLoading(true);
+
+      // Keep the URL authoritative so the page survives a refresh or a deep link.
+      router.replace(buildApplicationsUrl({ page: pageNum }, filtersRef.current, pathname));
+
+      const params = new URLSearchParams();
+      params.set("page", String(pageNum));
+      params.set("limit", String(pageSize));
+      const current = filtersRef.current;
+      if (current.filter === "SAVED") {
+        params.set("isSaved", "true");
+      } else if (current.filter !== "ALL") {
+        params.set("status", current.filter);
+      }
+      if (current.search) {
+        params.set("search", current.search);
+      }
+
+      // Latest-wins: abort the previous page request and tag this one, so a
+      // slower earlier response can never overwrite a newer result.
+      const seq = listRequestSeq.current + 1;
+      listRequestSeq.current = seq;
+      listRequestAbort.current?.abort();
+      const controller = new AbortController();
+      listRequestAbort.current = controller;
+
       try {
         const res = await fetch(
-          `/api/job-offers/${jobOffer.id}/applications?page=${pageNum}&limit=${pageSize}`,
-          { cache: "no-store" }
+          `/api/job-offers/${jobOffer.id}/applications?${params.toString()}`,
+          { cache: "no-store", signal: controller.signal },
         );
+        if (seq !== listRequestSeq.current) return;
         const json = await res.json();
+        if (seq !== listRequestSeq.current) return;
+
         if (json.success) {
+          // Ignore a response the server has since clamped away; the URL
+          // navigation above re-renders the correct page in that case.
+          if (json.pagination.totalPages >= 1 && json.pagination.page > json.pagination.totalPages) {
+            return;
+          }
           setApplications(json.data);
-          setPage(pageNum);
+          setPage(json.pagination.page);
+          setTotal(json.pagination.total);
+          setTotalPages(json.pagination.totalPages);
           setFullCandidates({});
           window.scrollTo({ top: 0, behavior: "smooth" });
         }
+      } catch {
+        // Aborted or offline — the router navigation still renders the page.
       } finally {
-        setLoading(false);
+        if (seq === listRequestSeq.current) {
+          setLoading(false);
+        }
       }
     },
-    [jobOffer.id, pageSize, totalPages, loading]
+    [jobOffer.id, pageSize, totalPages, closeReviewModal, router, pathname],
   );
 
-  // Lazy-load full candidate data when the review modal is opened
-  const handleOpenModal = useCallback(
-    async (filteredIndex: number) => {
-      setCurrentAppIndex(filteredIndex);
-      setIsModalOpen(true);
+  const handleStatusUpdate = useCallback(
+    async (applicationId: string, status: string, notes?: string | null) => {
+      const previousApp = applications.find((app) => app.id === applicationId);
+      const seq = (statusUpdateSeq.current[applicationId] ?? 0) + 1;
+      statusUpdateSeq.current[applicationId] = seq;
 
-      const app = filteredWithIndices[filteredIndex]?.app;
-      if (!app) return;
+      // Capture the persisted note before mutating, so a failed save can restore it.
+      // `detailWasCached` keeps rollback from creating a cache entry that never existed.
+      const detailWasCached = fullCandidates[applicationId] !== undefined;
+      const previousDetailNotes = fullCandidates[applicationId]?.notes ?? null;
 
-      // If we already fetched full details for this candidate, no need to refetch
-      if (fullCandidates[app.id]) return;
+      setApplications((prev) =>
+        prev.map((app) =>
+          app.id === applicationId ? { ...app, status, notes: notes ?? null } : app
+        )
+      );
+
+      // Keep the lazily cached detail note in sync so returning to this candidate
+      // shows the saved note instead of the value fetched before the save.
+      if (notes !== undefined) {
+        setFullCandidates((prev) => {
+          const existing = prev[applicationId];
+          if (!existing || existing.notes === notes) return prev;
+          return { ...prev, [applicationId]: { ...existing, notes } };
+        });
+      }
 
       try {
-        const res = await fetch(`/api/application/${app.id}`);
+        const response = await fetch(`/api/application/${applicationId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          // Omitting notes leaves the stored recruiter notes untouched
+          body: JSON.stringify({ status, notes: notes ?? undefined }),
+        });
+
+        if (!response.ok) throw new Error("Failed to update status");
+      } catch {
+        logger.error("Failed to update application status");
+        // Only roll back if no newer update for this application has started
+        if (statusUpdateSeq.current[applicationId] === seq) {
+          if (previousApp) {
+            setApplications((prev) =>
+              prev.map((app) => (app.id === applicationId ? previousApp : app))
+            );
+          }
+          // Restore the cached detail note so both local stores agree again
+          if (detailWasCached && notes !== undefined) {
+            setFullCandidates((prev) => {
+              const existing = prev[applicationId];
+              if (!existing || existing.notes === previousDetailNotes) return prev;
+              return { ...prev, [applicationId]: { ...existing, notes: previousDetailNotes } };
+            });
+          }
+        }
+      }
+    },
+    [applications, fullCandidates]
+  );
+
+  // Loads (at most once) the full application + candidate detail used by the review modal
+  const ensureApplicationDetail = useCallback(
+    async (applicationId: string) => {
+      // Already cached
+      if (fullCandidates[applicationId]) return;
+
+      // Already being fetched — do not duplicate the request
+      if (detailRequestsInFlight.current.has(applicationId)) return;
+      detailRequestsInFlight.current.add(applicationId);
+
+      try {
+        const res = await fetch(`/api/application/${applicationId}`, { cache: "no-store" });
         const json = await res.json();
         if (json.success && json.data?.candidate) {
           setFullCandidates((prev) => ({
             ...prev,
-            [app.id]: json.data.candidate,
+            [applicationId]: {
+              coverLetter: json.data.coverLetter ?? null,
+              cvUrl: json.data.cvUrl ?? null,
+              notes: json.data.notes ?? null,
+              candidate: json.data.candidate,
+            },
           }));
         }
       } catch {
         // Silently fail — modal will show whatever we have
+      } finally {
+        // Always release so a later attempt can retry
+        detailRequestsInFlight.current.delete(applicationId);
       }
     },
-    [filteredWithIndices, fullCandidates]
+    [fullCandidates]
   );
 
-  const handleNavigate = useCallback((newIndex: number) => {
-    setCurrentAppIndex(newIndex);
-  }, []);
+  // NEW -> IN_REVIEW whenever an application becomes the active candidate under review.
+  // Any other status is left untouched, and existing notes are preserved.
+  const markActiveAsInReview = useCallback(
+    (app: Application | undefined) => {
+      if (!app || app.status !== "NOUVEAU") return;
 
-  const handleStatusUpdate = async (applicationId: string, status: string, notes: string) => {
-    const previousApp = applications.find((app) => app.id === applicationId);
-    setApplications((prev) =>
-      prev.map((app) => (app.id === applicationId ? { ...app, status, notes } : app))
-    );
+      const existingNotes =
+        fullCandidates[app.id]?.notes ??
+        applications.find((candidate) => candidate.id === app.id)?.notes ??
+        undefined;
 
-    try {
-      const response = await fetch(`/api/application/${applicationId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, notes }),
-      });
+      void handleStatusUpdate(app.id, "EN_COURS_EXAMEN", existingNotes);
+    },
+    [fullCandidates, applications, handleStatusUpdate]
+  );
 
-      if (!response.ok) throw new Error("Failed to update status");
-    } catch {
-      logger.error("Failed to update application status");
-      if (previousApp) {
-        setApplications((prev) =>
-          prev.map((app) => (app.id === applicationId ? previousApp : app))
-        );
-      }
-    }
-  };
+  // Open the review modal for an application id: load its detail, then auto-advance NEW -> IN_REVIEW
+  const handleOpenModal = useCallback(
+    (applicationId: string) => {
+      setActiveApplicationId(applicationId);
+      setIsModalOpen(true);
+
+      const app = applications.find((candidate) => candidate.id === applicationId);
+      if (!app) return;
+
+      void ensureApplicationDetail(applicationId);
+      markActiveAsInReview(app);
+    },
+    [applications, ensureApplicationDetail, markActiveAsInReview]
+  );
+
+  // Next/Previous activates an application id — always resolved from that id, never a
+  // raw index, so a mutation that reorders the rows cannot retarget navigation.
+  const handleNavigate = useCallback(
+    (applicationId: string) => {
+      setActiveApplicationId(applicationId);
+
+      const nextApp = applications.find((candidate) => candidate.id === applicationId);
+      if (!nextApp) return;
+
+      void ensureApplicationDetail(applicationId);
+      markActiveAsInReview(nextApp);
+    },
+    [applications, ensureApplicationDetail, markActiveAsInReview]
+  );
 
   const handleToggleSaved = async (applicationId: string, isSaved: boolean) => {
     setApplications((prev) =>
@@ -188,28 +471,42 @@ export function JobApplicationsClient({
     }
   };
 
-  // Merge full candidate details onto the lean list row for the modal
-  const getEnrichedApplication = useCallback(
-    (filteredIndex: number) => {
-      const entry = filteredWithIndices[filteredIndex];
-      if (!entry) return null;
-      const { app } = entry;
-      if (!app) return null;
-      const full = fullCandidates[app.id];
+  // Single source of truth for the modal: merges lazy detail onto the lean list rows.
+  // Rows whose detail has not loaded yet fall back to the list values plus empty collections.
+  // The active candidate is always present — pinned at the front when it no longer
+  // matches the active filter — so the modal can never lose the candidate it is reviewing.
+  const modalApplications = useMemo(() => {
+    const navigable =
+      pinnedApplication && !applications.some((app) => app.id === pinnedApplication.id)
+        ? [pinnedApplication, ...applications]
+        : applications;
+
+    return navigable.map((app) => {
+      const detail = fullCandidates[app.id];
+      if (detail) {
+        return {
+          ...app,
+          coverLetter: detail.coverLetter,
+          cvUrl: detail.cvUrl,
+          notes: detail.notes,
+          candidate: detail.candidate,
+        };
+      }
+
+      const leanCandidate = app.candidate;
       return {
         ...app,
-        candidate: full
-          ? {
-              ...app.candidate,
-              ...full,
-            }
-          : app.candidate,
+        // Lazy-detail fields are not part of the lean list payload; they stay
+        // null until GET /api/application/[id] fills them in.
+        coverLetter: null,
+        cvUrl: null,
+        notes: null,
+        candidate: leanCandidate
+          ? { ...leanCandidate, languages: [], experiences: [], education: [], preferredJobTypes: [] }
+          : undefined,
       };
-    },
-    [filteredWithIndices, fullCandidates]
-  );
-
-  const filteredApplications = filteredWithIndices.map(({ app }) => app);
+    });
+  }, [applications, pinnedApplication, fullCandidates]);
 
   const getStatusStyle = (status: string) => {
     switch (status) {
@@ -254,11 +551,31 @@ export function JobApplicationsClient({
   };
 
   const exportCandidates = useCallback(async () => {
+    // Synchronous guard, checked before any await: blocks a second click that
+    // lands while the first export is still running.
+    if (exportInFlight.current) return;
+    exportInFlight.current = true;
+    setIsExporting(true);
     try {
-      const res = await fetch(
-        `/api/job-offers/${jobOffer.id}/applications/export`,
-        { cache: "no-store" }
-      );
+      // Export the rows the recruiter is actually looking at, across every page.
+    // The active filters are forwarded with the same mapping the list URL and
+    // the paged list request already use; pagination is deliberately omitted so
+    // the workbook covers every matching application, not just the visible page.
+    const params = new URLSearchParams();
+    const current = filtersRef.current;
+    if (current.filter === "SAVED") {
+      params.set("isSaved", "true");
+    } else if (current.filter !== "ALL") {
+      params.set("status", current.filter);
+    }
+    if (current.search) {
+      params.set("search", current.search);
+    }
+    const query = params.toString();
+    const res = await fetch(
+      `/api/job-offers/${jobOffer.id}/applications/export${query ? `?${query}` : ""}`,
+      { cache: "no-store" }
+    );
       if (!res.ok) throw new Error("Failed to export");
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
@@ -273,6 +590,11 @@ export function JobApplicationsClient({
       window.URL.revokeObjectURL(url);
     } catch (error) {
       logger.error("Failed to export candidates", { error });
+    } finally {
+      // Always released, so a failed or slow export cannot leave the button
+      // permanently disabled.
+      exportInFlight.current = false;
+      setIsExporting(false);
     }
   }, [jobOffer.id]);
 
@@ -307,6 +629,8 @@ export function JobApplicationsClient({
             </div>
             <Button
               onClick={exportCandidates}
+              disabled={isExporting}
+              aria-busy={isExporting}
               className="inline-flex items-center gap-2 rounded-xl bg-[#162f67] px-5 py-2.5 text-sm font-medium text-white hover:bg-[#162f67]/90 transition-colors shrink-0"
             >
               <Download className="h-4 w-4" />
@@ -341,17 +665,17 @@ export function JobApplicationsClient({
             <Input
               type="text"
               placeholder="Search candidates by name or email..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 rounded-xl border border-slate-200 bg-white"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="pl-10 rounded-xl border-slate-200 bg-white"
             />
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <div className="relative">
               <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                value={filters.filter}
+                onChange={(e) => applyFilters({ filter: e.target.value as ApplicationFilter, search: searchInput })}
                 className="appearance-none rounded-lg border border-slate-200 bg-white px-4 py-2 pr-8 text-sm text-slate-700 shadow-sm cursor-pointer"
               >
                 <option value="ALL">All Status</option>
@@ -367,7 +691,7 @@ export function JobApplicationsClient({
           </div>
         </section>
 
-        {filteredApplications.length > 0 ? (
+        {applications.length > 0 ? (
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <div className="grid grid-cols-[2fr_1.5fr_1fr_0.6fr_0.5fr_0.5fr_0.5fr] gap-3 border-b border-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
               <div>Candidate</div>
@@ -379,9 +703,8 @@ export function JobApplicationsClient({
               <div>Action</div>
             </div>
 
-            {filteredWithIndices.map(({ app }, filteredIndex) => {
-              const enriched = getEnrichedApplication(filteredIndex);
-              const candidate = enriched?.candidate;
+            {applications.map((app) => {
+              const candidate = app.candidate;
 
               return (
                 <div
@@ -461,7 +784,7 @@ export function JobApplicationsClient({
 
                   <div>
                     <button
-                      onClick={() => handleOpenModal(filteredIndex)}
+                      onClick={() => handleOpenModal(app.id)}
                       className="inline-flex items-center gap-1.5 rounded-lg bg-[#162f67] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#162f67]/90 transition-colors"
                     >
                       <Eye className="h-3.5 w-3.5" />
@@ -474,7 +797,7 @@ export function JobApplicationsClient({
 
             <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3">
               <p className="text-xs text-slate-500">
-                Showing {filteredApplications.length} of {initialTotal} applicants
+                Showing {applications.length} of {total} applicants
                 {totalPages > 1 && ` · Page ${page} of ${totalPages}`}
               </p>
               {totalPages > 1 && (
@@ -503,22 +826,19 @@ export function JobApplicationsClient({
               <User className="h-8 w-8 text-slate-400" />
             </div>
             <h3 className="mt-4 text-lg font-semibold text-slate-900">
-              {searchQuery || statusFilter !== "ALL"
+              {hasActiveFilters
                 ? "No applicants match your filters"
                 : "No applicants yet"}
             </h3>
             <p className="mt-2 text-sm text-slate-500">
-              {searchQuery || statusFilter !== "ALL"
+              {hasActiveFilters
                 ? "Try adjusting your search or filters"
                 : "Applicants for this job will appear here"}
             </p>
-            {(searchQuery || statusFilter !== "ALL") && (
+            {hasActiveFilters && (
               <Button
                 variant="outline"
-                onClick={() => {
-                  setSearchQuery("");
-                  setStatusFilter("ALL");
-                }}
+                onClick={() => applyFilters({ filter: "ALL", search: "" })}
                 className="mt-4"
               >
                 Clear Filters
@@ -531,24 +851,9 @@ export function JobApplicationsClient({
       {/* Candidate Review Modal — receives the enriched application (full details fetched on demand) */}
       <CandidateReviewModal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        applications={filteredWithIndices.map(({ app }) => {
-          const full = fullCandidates[app.id];
-          if (!full) {
-            const leanCandidate = app.candidate;
-            return {
-              ...app,
-              candidate: leanCandidate
-                ? { ...leanCandidate, languages: [], experiences: [], education: [], preferredJobTypes: [] }
-                : undefined,
-            };
-          }
-          return {
-            ...app,
-            candidate: full,
-          };
-        })}
-        currentIndex={currentAppIndex}
+        onClose={closeReviewModal}
+        applications={modalApplications}
+        activeApplicationId={activeApplicationId}
         onNavigate={handleNavigate}
         onStatusUpdate={handleStatusUpdate}
         onToggleSaved={handleToggleSaved}

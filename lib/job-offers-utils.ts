@@ -12,6 +12,26 @@ export function getSortOrder(sort?: string) {
   }
 }
 
+export function buildJobOfferWhereClause(baseWhere: Record<string, unknown>, filters: {
+  contractType?: string | undefined;
+  employmentType?: string | undefined;
+  isRemote?: boolean | undefined;
+  isHybrid?: boolean | undefined;
+  salaryMin?: number | undefined;
+  salaryMax?: number | undefined;
+  location?: string | undefined;
+  search?: string | undefined;
+  language?: string | undefined;
+  activityType?: string | undefined;
+}, now: Date) {
+  const where = { ...baseWhere };
+  const andConditions: object[] = [];
+
+  applyJobOfferFilters(where, andConditions, filters, now);
+
+  return { where, andConditions };
+}
+
 export function applyJobOfferFilters(
   where: Record<string, unknown>,
   andConditions: object[],

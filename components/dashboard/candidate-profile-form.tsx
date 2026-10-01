@@ -23,6 +23,7 @@ import {
   Settings, Upload, Eye
 } from "lucide-react";
 import { CroppableImageUpload } from "@/components/dashboard/croppable-image-upload";
+import { normalizeLinkedInUrl } from "@/lib/validations/linkedin";
 
 interface Experience {
   id?: string;
@@ -119,9 +120,8 @@ const SHIFT_TYPES = [
 ];
 
 const GENDER_OPTIONS = [
-  { value: "male", label: "male" },
-  { value: "female", label: "female" },
-  { value: "Prefer not to say", label: "Prefer not to say" },
+  { value: "Male", label: "Male" },
+  { value: "Female", label: "Female" },
 ];
 
 const TUNISIA_GOVERNORATES = [
@@ -143,6 +143,38 @@ const validatePhone = (phone: string): string | null => {
     if (!/^\d{8}$/.test(cleaned)) {
       return "Phone must be 8 digits (e.g., 11 222 333)";
     }
+  }
+  return null;
+};
+
+// Uses the shared candidate LinkedIn rule so this form, the onboarding page and
+// the API all agree. Empty/whitespace is valid (the field is optional) and a bare
+// "linkedin.com/in/x" is accepted; only a real, non-LinkedIn value is rejected.
+// The returned message is the helper's, so this adds no second rule set.
+const validateLinkedInUrl = (value: string): string | null => {
+  const result = normalizeLinkedInUrl(value);
+  return result.ok ? null : result.error;
+};
+
+// Gender accepts exactly "Male"/"Female" with no case folding, so lowercase
+// "male"/"female", "" and whitespace are all invalid and are rejected the same
+// way the server enum rejects them. Mirrors the server contract so the client
+// never offers or accepts a value the API would reject.
+const validateGender = (gender: string | null): string | null => {
+  const value = (gender ?? "").trim();
+  return value === "Male" || value === "Female" ? null : "Please select Male or Female.";
+};
+
+// Date of birth is required and must be a real calendar date. The value is sent
+// to the API as the <input type="date"> "YYYY-MM-DD" string and stored as a
+// Date, so no format conversion happens here.
+const validateDateOfBirth = (dateOfBirth: string): string | null => {
+  if (!dateOfBirth || dateOfBirth.trim().length === 0) {
+    return "Date of birth is required.";
+  }
+  const parsed = new Date(dateOfBirth);
+  if (Number.isNaN(parsed.getTime())) {
+    return "Please enter a valid date of birth.";
   }
   return null;
 };
@@ -194,7 +226,7 @@ export function CandidateProfileForm({ candidate }: CandidateProfileFormProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<{ phone?: string; summary?: string }>({});
+  const [fieldErrors, setFieldErrors] = useState<{ phone?: string; summary?: string; linkedinUrl?: string; gender?: string; dateOfBirth?: string }>({});
   const [locationQuery, setLocationQuery] = useState("");
   const [showLocationDropdown, setShowLocationDropdown] = useState(false);
   const filteredGovernorates = TUNISIA_GOVERNORATES.filter(g => 
@@ -460,11 +492,23 @@ export function CandidateProfileForm({ candidate }: CandidateProfileFormProps) {
 
     const phoneError = validatePhone(personalData.phone);
     const summaryError = validateSummary(personalData.summary);
+    const linkedinError = validateLinkedInUrl(personalData.linkedinUrl);
+    const genderError = validateGender(personalData.gender);
+    const dateOfBirthError = validateDateOfBirth(personalData.dateOfBirth);
 
-    if (phoneError || summaryError) {
-      setFieldErrors({ phone: phoneError || undefined, summary: summaryError || undefined });
+    if (phoneError || summaryError || linkedinError || genderError || dateOfBirthError) {
+      setFieldErrors({
+        phone: phoneError || undefined,
+        summary: summaryError || undefined,
+        linkedinUrl: linkedinError || undefined,
+        gender: genderError || undefined,
+        dateOfBirth: dateOfBirthError || undefined,
+      });
       if (phoneError) setError(phoneError);
-      if (summaryError) setError(summaryError);
+      else if (summaryError) setError(summaryError);
+      else if (linkedinError) setError(linkedinError);
+      else if (genderError) setError(genderError);
+      else if (dateOfBirthError) setError(dateOfBirthError);
       return;
     }
 
@@ -555,14 +599,19 @@ export function CandidateProfileForm({ candidate }: CandidateProfileFormProps) {
             </CardHeader>
             <CardContent className="space-y-6">
               {/* Avatar Upload */}
-              <CroppableImageUpload
-                value={personalData.avatarUrl}
-                onChange={(url) => setPersonalData((prev) => ({ ...prev, avatarUrl: url || "" }))}
-                type="avatar"
-                label="Profile Photo"
-                maxSize="2MB"
-                previewClassName="w-24 h-24 rounded-full"
-              />
+              <div>
+                <Label className="mb-2 block text-sm font-medium text-slate-700">
+                  Profile Photo
+                </Label>
+                <CroppableImageUpload
+                  value={personalData.avatarUrl}
+                  onChange={(url) => setPersonalData((prev) => ({ ...prev, avatarUrl: url || "" }))}
+                  type="avatar"
+                  maxSize="2MB"
+                  className="w-24 pl-20 shrink-0"
+                  previewClassName="w-24 h-24 rounded-full border-0"
+                />
+              </div>
 
               <div className="grid gap-6 sm:grid-cols-2">
                 <div className="space-y-2">
@@ -636,7 +685,10 @@ export function CandidateProfileForm({ candidate }: CandidateProfileFormProps) {
                   <Linkedin className="w-4 h-4 inline mr-1" />
                   LinkedIn URL
                 </Label>
-                <Input id="linkedinUrl" name="linkedinUrl" type="url" value={personalData.linkedinUrl} onChange={handlePersonalChange} placeholder="https://linkedin.com/in/yourprofile" />
+                <Input id="linkedinUrl" name="linkedinUrl" type="text" value={personalData.linkedinUrl} onChange={handlePersonalChange} placeholder="linkedin.com/in/yourprofile" />
+                {fieldErrors.linkedinUrl && (
+                  <p className="text-sm text-red-500">{fieldErrors.linkedinUrl}</p>
+                )}
               </div>
 
               <div className="grid gap-6 sm:grid-cols-2">
@@ -646,6 +698,9 @@ export function CandidateProfileForm({ candidate }: CandidateProfileFormProps) {
                     Date of Birth
                   </Label>
                   <Input id="dateOfBirth" name="dateOfBirth" type="date" value={personalData.dateOfBirth} onChange={handlePersonalChange} />
+                  {fieldErrors.dateOfBirth && (
+                    <p className="text-sm text-red-500">{fieldErrors.dateOfBirth}</p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="gender">Gender</Label>
@@ -659,6 +714,9 @@ export function CandidateProfileForm({ candidate }: CandidateProfileFormProps) {
                       ))}
                     </SelectContent>
                   </Select>
+                  {fieldErrors.gender && (
+                    <p className="text-sm text-red-500">{fieldErrors.gender}</p>
+                  )}
                 </div>
               </div>
 

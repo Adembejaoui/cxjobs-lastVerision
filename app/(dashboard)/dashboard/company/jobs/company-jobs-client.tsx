@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,41 @@ import { PlusCircle, Eye, Edit, Trash2, MapPin, Search, ChevronDown, Users, Chec
 import { JobPostFlow } from "@/components/dashboard/job-post-flow";
 import { JobFormDialog } from "@/components/dashboard/job-form-dialog";
 import { showSuccess, showError, showWarning } from "@/lib/toast";
+
+export const DEFAULT_PAGE_SIZE = 20;
+
+export const JOB_STATUS_OPTIONS = [
+  "ALL",
+  "PUBLISHED",
+  "DRAFT",
+  "ARCHIVED",
+  "CLOSED",
+  "EXPIRED",
+] as const;
+
+export const JOB_SORT_VALUES = [
+  "createdAt_desc",
+  "createdAt_asc",
+  "title_asc",
+  "title_desc",
+] as const;
+
+export const JOB_SORT_OPTIONS = [
+  { value: "createdAt_desc", label: "Newest First" },
+  { value: "createdAt_asc", label: "Oldest First" },
+  { value: "title_asc", label: "Title A-Z" },
+] as const satisfies readonly { value: JobsSort; label: string }[];
+
+export type JobsStatusFilter = (typeof JOB_STATUS_OPTIONS)[number];
+export type JobsSort = (typeof JOB_SORT_VALUES)[number];
+
+export interface CompanyJobsSearchParams {
+  page?: string | string[] | undefined;
+  pageSize?: string | string[] | undefined;
+  search?: string | string[] | undefined;
+  status?: string | string[] | undefined;
+  sort?: string | string[] | undefined;
+}
 
 interface JobOffer {
   id: string;
@@ -38,57 +73,101 @@ interface Stats {
   recentApplicants: number;
 }
 
+interface JobsFilters {
+  search: string;
+  status: JobsStatusFilter;
+  sort: JobsSort;
+  pageSize: number;
+}
+
+interface JobsPagination {
+  currentPage: number;
+  totalPages: number;
+  totalFiltered: number;
+  pageSize: number;
+}
+
 interface CompanyJobsClientProps {
   jobs: JobOffer[];
   stats: Stats;
+  filters: JobsFilters;
+  pagination: JobsPagination;
 }
 
-export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClientProps) {
+/**
+ * Single source of truth for every filter/sort/page URL change.
+ *
+ * Any change to search, status, sort, or pageSize resets the page to 1 so the
+ * user never lands on an out-of-range page. Only page changes preserve the
+ * current filters.
+ */
+function buildJobsUrl(
+  next: Partial<JobsFilters> & { page?: number },
+  current: JobsFilters,
+): string {
+  const merged = { ...current, ...next };
+  const params = new URLSearchParams();
+
+  if (merged.search) {
+    params.set("search", merged.search);
+  }
+  if (merged.status !== "ALL") {
+    params.set("status", merged.status);
+  }
+  if (merged.sort !== "createdAt_desc") {
+    params.set("sort", merged.sort);
+  }
+  if (merged.pageSize !== DEFAULT_PAGE_SIZE) {
+    params.set("pageSize", String(merged.pageSize));
+  }
+
+  const page = next.page ?? 1;
+  if (page > 1) {
+    params.set("page", String(page));
+  }
+
+  const query = params.toString();
+  return query ? `/dashboard/company/jobs?${query}` : "/dashboard/company/jobs";
+}
+
+export function CompanyJobsClient({
+  jobs,
+  stats,
+  filters,
+  pagination,
+}: CompanyJobsClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const createParam = searchParams.get("create");
   const autoOpenPhase = createParam === "true" ? "choice" : undefined;
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("ALL");
-  const [sortBy, setSortBy] = useState<"newest" | "oldest" | "title">("newest");
+
+  // Local input state only, for typing responsiveness. The URL remains the
+  // source of truth and is updated on a debounce.
+  const [searchInput, setSearchInput] = useState(filters.search);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<JobOffer | null>(null);
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
 
-  // ─── Filter & sort ────────────────────────────────────────────────────────
+  // Keep the input in sync when the server changes filters (reset, back/forward).
+  useEffect(() => {
+    setSearchInput(filters.search);
+  }, [filters.search]);
 
-  const filteredJobs = useMemo(() => {
-    let result = [...initialJobs];
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
 
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(
-        (job) =>
-          job.title.toLowerCase().includes(q) ||
-          (job.customLocation?.toLowerCase().includes(q) ?? false) ||
-          (job.company?.location?.toLowerCase().includes(q) ?? false)
+  useEffect(() => {
+    const currentSearch = filtersRef.current.search;
+    if (searchInput === currentSearch) return;
+
+    const timer = setTimeout(() => {
+      router.replace(
+        buildJobsUrl({ search: searchInput || undefined, page: 1 }, filtersRef.current),
       );
-    }
+    }, 300);
 
-    if (statusFilter !== "ALL") {
-      result = result.filter((job) => job.status === statusFilter);
-    }
-
-    result.sort((a, b) => {
-      switch (sortBy) {
-        case "newest":
-          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-        case "oldest":
-          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-        case "title":
-          return a.title.localeCompare(b.title);
-        default:
-          return 0;
-      }
-    });
-
-    return result;
-  }, [initialJobs, searchQuery, statusFilter, sortBy]);
+    return () => clearTimeout(timer);
+  }, [searchInput, router]);
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
 
@@ -120,11 +199,15 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
   const formatDate = (date: Date) =>
     new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
-  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) =>
-    setStatusFilter(e.target.value);
+  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value as JobsStatusFilter;
+    router.replace(buildJobsUrl({ status: value, page: 1 }, filters));
+  };
 
-  const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) =>
-    setSortBy(e.target.value as "newest" | "oldest" | "title");
+  const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value as JobsSort;
+    router.replace(buildJobsUrl({ sort: value, page: 1 }, filters));
+  };
 
   const handleDeleteJob = async (jobId: string, jobTitle: string) => {
     showWarning(`Are you sure you want to delete "${jobTitle}"?`, {
@@ -142,7 +225,7 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
             showSuccess("Job deleted successfully", { description: `"${jobTitle}" has been removed.` });
             router.refresh();
            } catch (error) {
-            showError("Failed to delete job", { description: error instanceof Error ? error.message : "Please try again later." });
+             showError("Failed to delete job", { description: error instanceof Error ? error.message : "Please try again later." });
           } finally {
             setDeletingJobId(null);
           }
@@ -151,7 +234,7 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
     });
   };
 
-  // ─── Stats cards ───────────────────────────────────────────────────────────
+  // ─── Stats cards ────────────────────────────────────────────────────────────
 
   const handleJobStatusChange = async (jobId: string, newStatus: string) => {
     try {
@@ -188,6 +271,20 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
     { title: "Total Applicants", value: stats.totalApplicants.toString(), change: `${stats.recentApplicants} this week`, icon: "👥" },
     { title: "Total Jobs", value: stats.totalJobs.toString(), change: "All listings", icon: "◉" },
   ];
+
+  const { currentPage, totalPages, totalFiltered } = pagination;
+  const hasNoJobsAtAll = stats.totalJobs === 0;
+  const hasNoFilterMatches = !hasNoJobsAtAll && totalFiltered === 0;
+  const showList = !hasNoJobsAtAll && !hasNoFilterMatches;
+
+  const prevHref =
+    currentPage > 1
+      ? buildJobsUrl({ page: currentPage - 1 }, filters)
+      : null;
+  const nextHref =
+    currentPage < totalPages
+      ? buildJobsUrl({ page: currentPage + 1 }, filters)
+      : null;
 
   // ─── Render ────────────────────────────────────────────────────────────────
 
@@ -229,8 +326,8 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
             <Input
               type="text"
               placeholder="Search job titles, locations..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               className="pl-10 rounded-xl border border-slate-200 bg-white"
             />
           </div>
@@ -239,16 +336,15 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
             {/* Status dropdown */}
             <div className="relative">
               <select
-                value={statusFilter}
+                value={filters.status}
                 onChange={handleStatusChange}
                 className="appearance-none rounded-lg border border-slate-200 bg-white px-4 py-2 pr-8 text-sm text-slate-700 shadow-sm cursor-pointer w-full"
               >
-                <option value="ALL">All Status</option>
-                <option value="PUBLISHED">Published</option>
-                <option value="DRAFT">Draft</option>
-                <option value="ARCHIVED">Archived</option>
-                <option value="CLOSED">Closed</option>
-                <option value="EXPIRED">Expired</option>
+                {JOB_STATUS_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option === "ALL" ? "All Status" : option.charAt(0) + option.slice(1).toLowerCase()}
+                  </option>
+                ))}
               </select>
               <ChevronDown className="absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </div>
@@ -256,13 +352,15 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
             {/* Sort dropdown */}
             <div className="relative">
               <select
-                value={sortBy}
+                value={filters.sort}
                 onChange={handleSortChange}
                 className="appearance-none rounded-lg border border-slate-200 bg-white px-4 py-2 pr-8 text-sm text-slate-700 shadow-sm cursor-pointer w-full"
               >
-                <option value="newest">Newest First</option>
-                <option value="oldest">Oldest First</option>
-                <option value="title">Title A-Z</option>
+                {JOB_SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
               <ChevronDown className="absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
             </div>
@@ -270,10 +368,10 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
         </section>
 
         {/* Jobs List */}
-        {filteredJobs.length > 0 ? (
+        {showList ? (
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             {/* Table header */}
-<div className="grid grid-cols-[2fr_1fr_0.8fr_1fr_0.8fr_0.6fr] gap-3 border-b border-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+            <div className="grid grid-cols-[2fr_1fr_0.8fr_1fr_0.8fr_0.6fr] gap-3 border-b border-slate-100 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
                <div>Job Title</div>
                <div>Activity Type</div>
                <div>Status</div>
@@ -282,7 +380,7 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
                <div className="text-right">Actions</div>
              </div>
 
-             {filteredJobs.map((job) => (
+             {jobs.map((job) => (
                <div
                  key={job.id}
                  className="grid grid-cols-[2fr_1fr_0.8fr_1fr_0.8fr_0.6fr] items-center gap-3 border-b border-slate-100 px-4 py-4 last:border-b-0 hover:bg-slate-50"
@@ -404,15 +502,41 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
               </div>
             ))}
 
-            {/* Pagination placeholder */}
+            {/* Pagination */}
             <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3">
               <p className="text-xs text-slate-500">
-                Showing {filteredJobs.length} of {initialJobs.length} jobs
+                Showing {jobs.length} of {totalFiltered} jobs
               </p>
               <div className="flex items-center gap-1 text-xs">
-                <button className="rounded border border-slate-200 px-2 py-1 text-slate-300" disabled>Prev</button>
-                <button className="rounded bg-[#162f67] px-2 py-1 font-semibold text-white">1</button>
-                <button className="rounded border border-slate-200 px-2 py-1 text-slate-600">Next</button>
+                {prevHref ? (
+                  <Link
+                    href={prevHref}
+                    scroll={false}
+                    className="rounded border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-100"
+                  >
+                    Prev
+                  </Link>
+                ) : (
+                  <button className="rounded border border-slate-200 px-2 py-1 text-slate-300" disabled>
+                    Prev
+                  </button>
+                )}
+                <span className="px-2 text-slate-600">
+                  Page {currentPage} of {totalPages}
+                </span>
+                {nextHref ? (
+                  <Link
+                    href={nextHref}
+                    scroll={false}
+                    className="rounded border border-slate-200 px-2 py-1 text-slate-600 hover:bg-slate-100"
+                  >
+                    Next
+                  </Link>
+                ) : (
+                  <button className="rounded border border-slate-200 px-2 py-1 text-slate-300" disabled>
+                    Next
+                  </button>
+                )}
               </div>
             </div>
           </section>
@@ -423,18 +547,25 @@ export function CompanyJobsClient({ jobs: initialJobs, stats }: CompanyJobsClien
               <PlusCircle className="h-8 w-8 text-slate-400" />
             </div>
             <h3 className="mt-4 text-lg font-semibold text-slate-900">
-              {searchQuery || statusFilter !== "ALL" ? "No jobs match your filters" : "No jobs posted yet"}
+              {hasNoJobsAtAll
+                ? "No jobs posted yet"
+                : "No jobs match your filters"}
             </h3>
             <p className="mt-2 text-sm text-slate-500">
-              {searchQuery || statusFilter !== "ALL"
-                ? "Try adjusting your search or filters"
-                : "Create your first job listing to start receiving applications"}
+              {hasNoJobsAtAll
+                ? "Create your first job listing to start receiving applications"
+                : "Try adjusting your search or filters"}
             </p>
-          
-            {(searchQuery || statusFilter !== "ALL") && (
+
+            {!hasNoJobsAtAll && (
               <Button
                 variant="outline"
-                onClick={() => { setSearchQuery(""); setStatusFilter("ALL"); }}
+                onClick={() => {
+                  setSearchInput("");
+                  router.replace(
+                    buildJobsUrl({ search: undefined, status: "ALL", sort: "createdAt_desc", page: 1 }, filters),
+                  );
+                }}
                 className="mt-4"
               >
                 Clear Filters

@@ -21,6 +21,8 @@ interface FormData {
   workMode: string;
   shiftType: string;
   preferredJobTypes: string[];
+  gender: string;
+  dateOfBirth: string;
   skills: { name: string; level?: string }[];
   experiences: { title: string; company: string; location: string; startDate: string; endDate: string; current: boolean; description: string }[];
   languages: { name: string; level: string }[];
@@ -42,11 +44,18 @@ const initialFormData: FormData = {
   workMode: "",
   shiftType: "",
   preferredJobTypes: [],
+  gender: "",
+  dateOfBirth: "",
   skills: [],
   experiences: [],
   languages: [],
   education: [],
 };
+
+const GENDER_OPTIONS = [
+  { id: "Male", label: "Male" },
+  { id: "Female", label: "Female" },
+];
 
 const ROLE_ICONS: Record<string, string> = {
   CALL_CENTER: "🎧",
@@ -181,6 +190,8 @@ export default function CVOnboardingPage() {
           shiftType: "",
           preferredJobTypes: [] as string[],
           targetJobRole: "",
+          gender: formData.gender,
+          dateOfBirth: formData.dateOfBirth,
           skills: parsed.skills?.map((s: string) => ({ name: s })) || [],
           experiences: parsed.experiences?.map((e: { title: string; company: string; startDate: string; endDate?: string; description?: string }) => ({
             title: e.title || "",
@@ -223,6 +234,22 @@ export default function CVOnboardingPage() {
       setError("Please select a target role");
       return;
     }
+    // Gender and date of birth are required for every candidate profile save.
+    // The CV parser does not reliably extract them, so they are collected here
+    // and validated before submitting rather than being guessed.
+    const gender = formData.gender.trim();
+    if (gender !== "Male" && gender !== "Female") {
+      setError("Please select Male or Female.");
+      return;
+    }
+    if (!formData.dateOfBirth) {
+      setError("Date of birth is required.");
+      return;
+    }
+    if (Number.isNaN(new Date(formData.dateOfBirth).getTime())) {
+      setError("Please enter a valid date of birth.");
+      return;
+    }
 
     setSaving(true);
     setError(null);
@@ -230,6 +257,8 @@ export default function CVOnboardingPage() {
     try {
       const sanitizedData = {
         ...formData,
+        gender,
+        dateOfBirth: formData.dateOfBirth,
         targetJobRole: formData.targetJobRole,
         workMode: null,
         shiftType: null,
@@ -380,6 +409,37 @@ export default function CVOnboardingPage() {
                     <div className="text-xs text-gray-600 mt-1 line-clamp-2">{role.description}</div>
                   </button>
                 ))}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="cvOnboardingGender" className="block text-sm font-medium text-gray-700 mb-1">
+                    Gender *
+                  </label>
+                  <select
+                    id="cvOnboardingGender"
+                    value={formData.gender}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, gender: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                  >
+                    <option value="" disabled>Select gender</option>
+                    {GENDER_OPTIONS.map((g) => (
+                      <option key={g.id} value={g.id}>{g.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="cvOnboardingDateOfBirth" className="block text-sm font-medium text-gray-700 mb-1">
+                    Date of Birth *
+                  </label>
+                  <input
+                    id="cvOnboardingDateOfBirth"
+                    type="date"
+                    value={formData.dateOfBirth}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, dateOfBirth: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
               </div>
 
               {error && (

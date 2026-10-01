@@ -5,6 +5,7 @@ import { createApplicationSchema } from "@/lib/validations/job";
 import { parsePaginationParams } from "@/lib/utils";
 import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
+import { invalidateCompanyAnalytics } from "@/lib/local-cache";
 
 const APPLICATION_LIMIT = { windowMs: 60_000, max: 10 };
 
@@ -333,6 +334,11 @@ export async function POST(request: NextRequest) {
       // Log but don't fail the request
       logger.warn("Failed to send notification", { error: notificationError });
     }
+
+    // The application is committed. jobOffer.companyId is the owning company
+    // resolved from the database above, never taken from request data, and no
+    // cross-company lookup is performed. Swallows Redis errors.
+    await invalidateCompanyAnalytics(jobOffer.companyId);
 
     return NextResponse.json(
       {

@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Globe } from "lucide-react";
+import { ChevronDown, Briefcase, Globe } from "lucide-react";
 
 const languages = [
   "English",
@@ -13,6 +13,15 @@ const languages = [
   "Portuguese",
   "Italian",
   "Mandarin",
+];
+
+const activityTypes = [
+  { label: "Customer Service", value: "CUSTOMER_SERVICE" },
+  { label: "Sales & Lead Generation", value: "SALES_LEAD_GENERATION" },
+  { label: "Technical & IT Support", value: "TECHNICAL_IT_SUPPORT" },
+  { label: "Debt Collection & Litigation", value: "DEBT_COLLECTION_LITIGATION" },
+  { label: "Back-office & Digital Services", value: "BACK_OFFICE_DIGITAL_SERVICES" },
+  { label: "Surveys & Market Research", value: "SURVEYS_MARKET_RESEARCH" },
 ];
 
 const locations = [
@@ -45,8 +54,8 @@ const locations = [
 
 export default function CXHeroSearch() {
   const router = useRouter();
-  const [searchQuery, setSearchQuery] = useState("");
   const [location, setLocation] = useState("");
+  const [selectedActivityType, setSelectedActivityType] = useState("");
   const [selectedLanguage, setSelectedLanguage] = useState("");
   const popularTags = [
     { label: "Work from Home", active: true },
@@ -59,14 +68,13 @@ export default function CXHeroSearch() {
     event.preventDefault();
 
     const params = new URLSearchParams();
-    const trimmedSearch = searchQuery.trim();
     const trimmedLocation = location.trim();
 
-    if (trimmedSearch) {
-      params.set("search", trimmedSearch);
-    }
     if (trimmedLocation) {
       params.set("location", trimmedLocation);
+    }
+    if (selectedActivityType) {
+      params.set("activityType", selectedActivityType);
     }
     if (selectedLanguage) {
       params.set("language", selectedLanguage);
@@ -94,15 +102,20 @@ export default function CXHeroSearch() {
 
         <form className="mt-8 w-full rounded-2xl border border-[#e6ebef] bg-white p-3 shadow-[0_12px_40px_rgba(20,34,62,0.1)] md:p-4" onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(220px,auto)]">
-            <SearchField icon={<SearchIcon />}>
-              <input
-                aria-label="Job title or skill"
-                className="w-full bg-transparent text-sm font-medium tracking-[-0.02em] text-[#6c7890] outline-none placeholder:text-[#98a6bf] md:text-base"
-                onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Job title or skill"
-                type="text"
-                value={searchQuery}
-              />
+            <SearchField icon={<Briefcase className="h-[22px] w-[22px]" />}>
+              <select
+                aria-label="Activity type"
+                className="w-full cursor-pointer bg-transparent text-sm font-medium tracking-[-0.02em] text-[#6c7890] outline-none md:text-base"
+                onChange={(event) => setSelectedActivityType(event.target.value)}
+                value={selectedActivityType}
+              >
+                <option value="">Any Activity Type</option>
+                {activityTypes.map((activityType) => (
+                  <option key={activityType.value} value={activityType.value}>
+                    {activityType.label}
+                  </option>
+                ))}
+              </select>
             </SearchField>
             <SearchField icon={<MapPinIcon />} >
               <select
@@ -119,7 +132,7 @@ export default function CXHeroSearch() {
                 ))}
               </select>
             </SearchField>
-            <SearchField icon={<Globe />} >
+            <SearchField icon={<Globe className="h-[22px] w-[22px]" />}>
               <select
                 aria-label="Language"
                 className="w-full cursor-pointer bg-transparent text-sm font-medium tracking-[-0.02em] text-[#6c7890] outline-none md:text-base"
@@ -187,27 +200,6 @@ function SearchField({
 
       {withChevron ? <ChevronDown className="h-5 w-5 shrink-0 text-[#7f8ea8]" /> : null}
     </div>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-      <path
-        d="M11 19a8 8 0 1 1 0-16 8 8 0 0 1 0 16Z"
-        stroke="currentColor"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="m21 21-4.35-4.35"
-        stroke="currentColor"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }
 

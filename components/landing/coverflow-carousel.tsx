@@ -266,12 +266,7 @@ export function CoverflowCarousel({
     },
     [],
   );
-
-  const active = slides[selected];
-
   // Calculate years since founded
-  const yearsSinceFounded = active ? new Date().getFullYear() - active.foundedYear : 0;
-
   return (
     <div
       className={cn("w-full", className)}
@@ -359,45 +354,6 @@ export function CoverflowCarousel({
           </>
         )}
       </div>
-
-      {showCaption && active && (
-        <div
-          key={selected}
-          className="mt-6 flex flex-col items-center px-4 duration-300 animate-in fade-in"
-        >
-          <div className="w-full max-w-2xl">
-            {/* Company Name */}
-            <p className="text-center text-2xl font-bold text-[#1f3d73] md:text-3xl lg:text-4xl tracking-tight">
-              {active.companyName}
-            </p>
-            
-            {/* Founded & Location */}
-            <div className="mt-4 flex flex-col items-center gap-3 md:flex-row md:justify-center md:gap-6">
-              <div className="flex items-center gap-2 text-[#42ba80]">
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                <span className="text-lg font-semibold md:text-xl lg:text-2xl">
-                  {yearsSinceFounded}+ years of experience
-                </span>
-              </div>
-              
-              <div className="flex items-center gap-2 text-[#1f3d73]">
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-                <span className="text-lg font-medium md:text-xl lg:text-2xl">
-                  {active.location}
-                </span>
-              </div>
-            </div>
-            
-           
-          </div>
-        </div>
-      )}
-
       {showPagination && (
         <div className="mt-8 flex items-center justify-center gap-2">
           {slides.map((_, index) => (

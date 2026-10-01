@@ -21,8 +21,8 @@ interface CandidateReviewModalProps {
     createdAt: Date;
     candidate?: Candidate | LeanCandidate;
   }>;
-  currentIndex: number;
-  onNavigate: (index: number) => void;
+  activeApplicationId: string | null;
+  onNavigate: (applicationId: string) => void;
   onStatusUpdate: (applicationId: string, status: string, notes: string) => void;
   onToggleSaved: (applicationId: string, isSaved: boolean) => void;
 }
@@ -31,44 +31,109 @@ export function CandidateReviewModal({
   isOpen,
   onClose,
   applications,
-  currentIndex,
+  activeApplicationId,
   onNavigate,
   onStatusUpdate,
   onToggleSaved,
 }: CandidateReviewModalProps) {
+  // Identity is the application id; the index is only a derived navigation position.
+  const currentIndex = useMemo(
+    () => applications.findIndex((application) => application.id === activeApplicationId),
+    [applications, activeApplicationId]
+  );
+
   const application = useMemo(() => {
-    return applications[currentIndex];
-  }, [applications, currentIndex]);
+    if (currentIndex >= 0) return applications[currentIndex];
+    // Defensive fallback: never leave the modal without a candidate to render
+    return activeApplicationId ? applications[0] : undefined;
+  }, [applications, currentIndex, activeApplicationId]);
 
   const candidate = application?.candidate as Candidate | undefined;
 
-  // Use lazy initialization for state to avoid syncing in effects
-  const [notes, setNotes] = useState(() => application?.notes || "");
-  const [selectedStatus, setSelectedStatus] = useState<string>(() => application?.status || "");
+  const applicationId = application?.id ?? "";
+  const applicationNotes = application?.notes ?? "";
+  const applicationStatus = application?.status ?? "";
+
+  // Internal notes belong to the application they were typed for. The draft is keyed by
+  // application id, so switching candidates can never show another candidate's note.
+  // While the recruiter has not edited the field, the value shown is the application's
+  // own note — which lets a late detail response populate the textarea for THIS candidate.
+  const [notesDraft, setNotesDraft] = useState<{
+    applicationId: string;
+    value: string;
+    dirty: boolean;
+  }>({ applicationId: "", value: "", dirty: false });
+
+  const notes =
+    notesDraft.applicationId === applicationId && notesDraft.dirty
+      ? notesDraft.value
+      : applicationNotes;
+
+  // Status is owned by the current application. The recruiter's pick only wins while it
+  // is still based on that application's current status, so navigation and optimistic
+  // mutations (including NEW -> IN_REVIEW) are reflected immediately.
+  const [statusOverride, setStatusOverride] = useState<{
+    applicationId: string;
+    baseStatus: string;
+    status: string;
+  } | null>(null);
+
+  const currentStatus =
+    statusOverride &&
+    statusOverride.applicationId === applicationId &&
+    statusOverride.baseStatus === applicationStatus
+      ? statusOverride.status
+      : applicationStatus;
+
+  const handleNotesChange = (value: string) => {
+    setNotesDraft({ applicationId, value, dirty: true });
+  };
+
+  // Leaving an application discards its unsaved draft, so the textarea is always
+  // re-derived from the newly active application's persisted note.
+  const discardNotesDraft = () => {
+    setNotesDraft({ applicationId: "", value: "", dirty: false });
+  };
+
+  const handleStatusChange = (value: string) => {
+    setStatusOverride({ applicationId, baseStatus: applicationStatus, status: value });
+  };
 
   const handleOpenChange = (open: boolean) => {
     if (!open) {
+      discardNotesDraft();
+      setStatusOverride(null);
       onClose();
     }
   };
 
   const handlePrevious = () => {
-    if (currentIndex > 0) {
-      onNavigate(currentIndex - 1);
+    const previous = applications[currentIndex - 1];
+    if (previous) {
+      discardNotesDraft();
+      onNavigate(previous.id);
     }
   };
 
   const handleNext = () => {
-    if (currentIndex < applications.length - 1) {
-      onNavigate(currentIndex + 1);
+    const next = applications[currentIndex + 1];
+    if (next) {
+      discardNotesDraft();
+      onNavigate(next.id);
     }
   };
 
   const handleSave = () => {
     if (application) {
-      onStatusUpdate(application.id, selectedStatus || application.status, notes);
-      if (currentIndex < applications.length - 1) {
-        onNavigate(currentIndex + 1);
+      // Resolve the next candidate from the CURRENT navigable list, before the status
+      // mutation can remove this application from the filtered list.
+      const next = applications[currentIndex + 1];
+
+      onStatusUpdate(application.id, currentStatus, notes);
+      discardNotesDraft();
+
+      if (next) {
+        onNavigate(next.id);
       }
     }
   };
@@ -406,7 +471,7 @@ export function CandidateReviewModal({
                     </label>
                     <textarea
                       value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
+                      onChange={(e) => handleNotesChange(e.target.value)}
                       placeholder="Add observations about language fluency, personality, or technical fit..."
                       className="w-full h-[102px] rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-[15px] text-slate-700 placeholder:text-slate-400 outline-none resize-none focus:border-[#162f67] focus:ring-1 focus:ring-[#162f67]"
                     />
@@ -419,8 +484,8 @@ export function CandidateReviewModal({
                     <div className="flex gap-4 items-center">
                       <div className="flex-1 space-y-4">
                         <select
-                          value={selectedStatus || application.status}
-                          onChange={(e) => setSelectedStatus(e.target.value)}
+                          value={currentStatus}
+                          onChange={(e) => handleStatusChange(e.target.value)}
                           className="w-full h-[48px] rounded-xl border border-slate-200 bg-slate-50 px-4 text-[15px] text-slate-800 outline-none focus:border-[#162f67] focus:ring-1 focus:ring-[#162f67] appearance-none cursor-pointer"
                         >
                           <option value="NOUVEAU">New</option>

@@ -1,7 +1,7 @@
-/* eslint-disable @next/next/no-img-element */
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
+import Image from "next/image";
 import {
   Card,
   CardContent,
@@ -132,12 +132,12 @@ interface RecentApplication {
   status: string;
   createdAt: Date;
   candidate: {
+    id: string;
     firstName: string | null;
     lastName: string | null;
     avatarUrl: string | null;
     user: {
       name: string | null;
-      email: string;
       image: string | null;
     };
   };
@@ -151,11 +151,11 @@ interface RecentApplication {
 const PAGE_SIZE = 10;
 
 function getCandidateName(application: RecentApplication): string {
-  const { user, firstName, lastName } = application.candidate;
+  const { user, firstName, lastName, id } = application.candidate;
   if (user?.name) return user.name;
   const parts = [firstName, lastName].filter(Boolean);
   if (parts.length > 0) return parts.join(" ");
-  return user.email;
+  return `Candidate #${id}`;
 }
 
 function getCandidateAvatar(application: RecentApplication): string | null {
@@ -233,7 +233,6 @@ export default async function CompanyDashboardPage({
   const [
     jobStats,
     totalApplications,
-    totalJobs,
     newApplicationsCount,
     recentApplicationsResult,
     totalNewApplications,
@@ -251,12 +250,6 @@ export default async function CompanyDashboardPage({
         jobOffer: { companyId: company.id },
       },
     }),
-    prisma.jobOffer.count({
-      where: {
-        companyId: company.id,
-        deletedAt: null,
-      },
-    }),
     prisma.application.count({
       where: {
         jobOffer: { companyId: company.id },
@@ -271,14 +264,19 @@ export default async function CompanyDashboardPage({
       take: PAGE_SIZE,
       skip,
       orderBy: { createdAt: "desc" },
-      include: {
+      select: {
+        id: true,
+        status: true,
+        createdAt: true,
         candidate: {
-          include: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            avatarUrl: true,
             user: {
               select: {
-                id: true,
                 name: true,
-                email: true,
                 image: true,
               },
             },
@@ -286,9 +284,7 @@ export default async function CompanyDashboardPage({
         },
         jobOffer: {
           select: {
-            id: true,
             title: true,
-            customLocation: true,
           },
         },
       },
@@ -312,6 +308,11 @@ export default async function CompanyDashboardPage({
   for (const stat of jobStats) {
     jobStatsMap[stat.status as keyof typeof jobStatsMap] = stat._count._all;
   }
+
+  const totalJobs = Object.values(jobStatsMap).reduce(
+    (sum, count) => sum + count,
+    0,
+  );
 
   const recentApplicationsTyped =
     recentApplicationsResult as unknown as RecentApplication[];
@@ -480,10 +481,13 @@ export default async function CompanyDashboardPage({
                   >
                     <Avatar className="h-10 w-10">
                       {avatarUrl ? (
-                        <img
+                        <Image
                           src={avatarUrl}
                           alt={candidateName}
                           className="h-full w-full object-cover"
+                          width={40}
+                          height={40}
+                          sizes="40px"
                         />
                       ) : (
                         <AvatarFallback>

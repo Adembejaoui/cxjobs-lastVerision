@@ -14,7 +14,6 @@ import {
   RefreshCw,
   ChevronDown,
   ArrowUpRight,
-  Download,
 } from "lucide-react";
 
 const PERIOD_OPTIONS = [
@@ -131,13 +130,6 @@ export function CompanyAnalyticsClientV2({
     }
   }, [days, language]);
 
-  const handleExport = useCallback(() => {
-    const params = new URLSearchParams();
-    params.set("days", String(days));
-    params.set("language", language);
-    window.location.href = `/api/dashboard/company/analytics/export?${params.toString()}`;
-  }, [days, language]);
-
   const { mainKpis, gender, age, jobPerformance, filters, period } = currentData;
 
   const genderSlices: DoughnutSlice[] = [
@@ -222,15 +214,6 @@ export function CompanyAnalyticsClientV2({
             title="Refresh analytics"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          </button>
-
-          <button
-            onClick={handleExport}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-[#42B883] shadow-sm transition-colors hover:bg-[#42B883]/5 focus:outline-none focus:ring-1 focus:ring-[#42B883]"
-            title="Export as Excel"
-          >
-            <Download className="h-4 w-4" />
-            Export Excel
           </button>
         </div>
       </div>

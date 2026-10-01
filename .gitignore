@@ -37,3 +37,7 @@ nul
 
 # generated
 /app/generated/prisma
+
+# K6 local test artifacts
+.k6-cookies.txt
+.env.k6.local

@@ -17,43 +17,43 @@ export default async function CompanyProfilePage() {
     redirect("/login");
   }
 
-  // Fetch company data with all fields
+  // Fetch company data needed by the page and the profile editor.
+  // `users` is intentionally not loaded: it is never consumed here, and a broad
+  // relation read would pull the full User scalars (including passwordHash) into
+  // an object that is serialized to a client component.
+  // `_count.jobs` is intentionally not loaded: it is never consumed, and the
+  // active-jobs figure below is a separate, differently scoped query.
   const company = await prisma.companies.findFirst({
     where: {
       userId: session.user.id,
     },
     include: {
-      users: true,
       benefits: true,
-      _count: {
-        select: { jobs: true },
-      },
     },
   });
 
   if (!company) {
+    redirect("/dashboard/company");
+  }
 
-      redirect("/dashboard/company");
-    }
-
-
-  // Get active jobs count
-  const activeJobsCount = await prisma.jobOffer.count({
-    where: {
-      companyId: company?.id,
-      status: "PUBLISHED",
-      deletedAt: null,
-    },
-  });
-
-  // Get total applicants count
-  const totalApplicantsCount = await prisma.application.count({
-    where: {
-      jobOffer: {
-        companyId: company?.id,
+  // Both counts depend only on the already-resolved company.id, so they are run
+  // concurrently. The pool allows this (see lib/prisma.ts).
+  const [activeJobsCount, totalApplicantsCount] = await Promise.all([
+    prisma.jobOffer.count({
+      where: {
+        companyId: company.id,
+        status: "PUBLISHED",
+        deletedAt: null,
       },
-    },
-  });
+    }),
+    prisma.application.count({
+      where: {
+        jobOffer: {
+          companyId: company.id,
+        },
+      },
+    }),
+  ]);
 
   return (
     <div className="space-y-8">
