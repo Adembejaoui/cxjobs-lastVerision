@@ -157,12 +157,12 @@ export async function GET() {
       prisma.$queryRaw<
         Array<{ date: Date; count: number }>
       >`
-        SELECT DATE("createdAt") as date, COUNT(*) as count
+        SELECT DATE(a."createdAt") as date, COUNT(*) as count
         FROM applications a
         JOIN job_offers j ON a."jobOfferId" = j.id
         WHERE j."companyId" = ${company.id}
           AND a."createdAt" >= ${sevenDaysAgo}
-        GROUP BY DATE("createdAt")
+        GROUP BY DATE(a."createdAt")
         ORDER BY date DESC
       `,
     ]);
