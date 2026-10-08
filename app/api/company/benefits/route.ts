@@ -17,16 +17,23 @@ export async function GET() {
 
     const company = await prisma.companies.findUnique({
       where: { userId: session.user.id },
-      include: {
+      select: {
+        id: true,
         benefits: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            icon: true,
+            category: true,
+            scope: true,
+            createdAt: true,
+            updatedAt: true,
+          },
           orderBy: { name: "asc" },
         },
       },
-    }) as Prisma.companiesGetPayload<{
-      include: {
-        benefits: { orderBy: { name: "asc" } };
-      };
-    }> | null;
+    });
 
     if (!company) {
       return NextResponse.json(

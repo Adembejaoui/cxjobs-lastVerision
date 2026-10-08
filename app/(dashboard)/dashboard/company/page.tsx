@@ -217,7 +217,7 @@ export default async function CompanyDashboardPage({
   });
 
   if (!company) {
-    redirect("/onboarding/company");
+    redirect("/dashboard/company/profile");
   }
 
   const sp = await searchParams;

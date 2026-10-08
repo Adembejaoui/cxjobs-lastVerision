@@ -10,7 +10,7 @@ interface OnboardingClientProviderProps {
     image: string | null;
     role: string;
     isOnboarded: boolean;
-  };
+  } | null;
   children: React.ReactNode;
 }
 

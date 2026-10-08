@@ -61,11 +61,34 @@ export async function GET() {
 
     const company = await prisma.companies.findUnique({
       where: { userId: session.user.id },
-      include: {
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        description: true,
+        logoUrl: true,
+        coverImageUrl: true,
+        website: true,
+        linkedinUrl: true,
+        companySize: true,
+        location: true,
+        foundedYear: true,
+        benefits: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            icon: true,
+            category: true,
+            scope: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        },
+        culture: true,
         _count: {
           select: { jobs: true },
         },
-        benefits: true,
       },
     });
 
@@ -210,7 +233,6 @@ export async function GET() {
           foundedYear: company.foundedYear,
           benefits: company.benefits,
           culture: company.culture,
-          subscriptionPlan: company.subscriptionPlan,
         },
         stats: {
           totalJobs: company._count.jobs,
@@ -264,6 +286,7 @@ export async function PUT(request: NextRequest) {
     // Get company profile
     const company = await prisma.companies.findUnique({
       where: { userId: session.user.id },
+      select: { id: true },
     });
 
     if (!company) {

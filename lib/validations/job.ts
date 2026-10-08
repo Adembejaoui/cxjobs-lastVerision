@@ -119,8 +119,11 @@ const updateJobOfferBaseSchema = z.object({
        (val) => (val && typeof val === "string" && val.trim() ? new Date(val) : null),
        z.date().nullable().optional()
      ),
-   closedAt: z.coerce.date().optional().nullable(),
-}).refine((data) => {
+closedAt: z.coerce.date().optional().nullable(),
+   featured: z.boolean().optional(),
+   highlight: z.boolean().optional(),
+   publishedAt: z.coerce.date().optional().nullable(),
+ }).refine((data) => {
   if (data.activityType === "OTHER" && (!data.activityCustom || data.activityCustom.trim().length === 0)) {
     return false;
   }

@@ -15,7 +15,7 @@ export default async function DashboardPage() {
     case "CANDIDATE":
       redirect("/dashboard/candidate");
     case "ADMIN":
-      redirect("/admin");
+      redirect("/dashboard/admin");
     default:
       redirect("/");
   }

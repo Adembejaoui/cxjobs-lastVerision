@@ -92,6 +92,7 @@ interface JobFormDialogProps {
   onOpenChange: (open: boolean) => void;
   job?: Partial<JobOffer> | null;
   onSuccess?: () => void;
+  admin?: boolean;
 }
 
 interface FieldErrors {
@@ -268,7 +269,7 @@ level: languageLevelSchema,
   path: ["customLocation"],
 });
 
-export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDialogProps) {
+export function JobFormDialog({ open, onOpenChange, job, onSuccess, admin = false }: JobFormDialogProps) {
   const router = useRouter();
   const isEditMode = !!job?.id;
   const mode = isEditMode ? "edit" : "create";
@@ -309,8 +310,8 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
   const [coreBenefits, setCoreBenefits] = useState<CompanyBenefit[]>([]);
   const [additionalBenefits, setAdditionalBenefits] = useState<CompanyBenefit[]>([]);
 
-  useEffect(() => {
-    if (open && isEditMode && job?.id) {
+useEffect(() => {
+    if (open && isEditMode && job?.id && !admin) {
       setIsLoadingJob(true);
       fetch(`/api/job-offers/${job.id}`)
         .then(res => res.json())
@@ -352,7 +353,7 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
         .finally(() => {
           setIsLoadingJob(false);
         });
-} else if (!isEditMode && open) {
+    } else if (!isEditMode && open) {
       setFormData({
         title: job?.title || "",
         description: job?.description || "",
@@ -387,7 +388,7 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
   }, [open, isEditMode, job?.id]);
 
   useEffect(() => {
-    if (open) {
+    if (open && !admin) {
       fetch("/api/company/benefits")
         .then(res => res.json())
         .then(data => {
@@ -400,7 +401,7 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
           logger.error("Error fetching company benefits");
         });
     }
-  }, [open]);
+  }, [open, admin]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -538,18 +539,36 @@ export function JobFormDialog({ open, onOpenChange, job, onSuccess }: JobFormDia
     }
 
     try {
-      const slug = job?.slug || generateSlug(formData.title || "");
-      const status = publishNow ? "PUBLISHED" : "DRAFT";
+      let endpoint: string;
+      let method: string;
+      let payload: Record<string, unknown>;
 
-      const payload = {
-        ...formData,
-        slug,
-        status,
-        publishedAt: publishNow ? new Date().toISOString() : null,
-      };
+      if (admin && isEditMode && job?.id) {
+        // Admin PATCH: only the explicit allow-list fields are accepted.
+        // slug/status/publishedAt are managed by the server, never by the client.
+        endpoint = `/api/admin/job-offers/${job.id}`;
+        method = "PATCH";
+        payload = { ...formData };
+        if (publishNow) {
+          payload.status = "PUBLISHED";
+        }
+        delete payload.slug;
+        delete payload.benefitIds;
+        delete payload.languages;
+      } else {
+        const slug = job?.slug || generateSlug(formData.title || "");
+        const status = publishNow ? "PUBLISHED" : "DRAFT";
 
-      const endpoint = isEditMode ? `/api/job-offers/${job.id}` : "/api/job-offers";
-      const method = isEditMode ? "PUT" : "POST";
+        endpoint = isEditMode ? `/api/job-offers/${job.id}` : "/api/job-offers";
+        method = isEditMode ? "PUT" : "POST";
+
+        payload = {
+          ...formData,
+          slug,
+          status,
+          publishedAt: publishNow ? new Date().toISOString() : null,
+        };
+      }
 
       const response = await fetch(endpoint, {
         method,

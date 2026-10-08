@@ -232,6 +232,7 @@ export async function GET(request: NextRequest) {
     if (!isAdmin) {
       const company = await prisma.companies.findUnique({
         where: { userId: session!.user.id },
+        select: { id: true },
       });
       if (company) {
         baseWhere.companyId = company.id;
@@ -324,6 +325,7 @@ export async function POST(request: NextRequest) {
     // Get company profile
     const company = await prisma.companies.findUnique({
       where: { userId: session.user.id },
+      select: { id: true },
     });
 
     if (!company) {

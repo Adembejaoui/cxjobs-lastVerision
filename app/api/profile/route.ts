@@ -749,6 +749,7 @@ async function upsertCompanyProfile(userId: string, data: unknown) {
       slug,
       NOT: { userId },
     },
+    select: { id: true },
   });
 
   if (existingSlug) {
@@ -756,6 +757,28 @@ async function upsertCompanyProfile(userId: string, data: unknown) {
       { success: false, error: "This slug is already taken", code: "SLUG_TAKEN" },
       { status: 400 }
     );
+  }
+
+  // Validate emailCompany uniqueness against User.email if provided
+  if (profileData.emailCompany !== undefined && profileData.emailCompany !== null) {
+    const normalizedEmailCompany = profileData.emailCompany.trim().toLowerCase();
+    const existingUser = await prisma.user.findUnique({
+      where: { email: normalizedEmailCompany },
+      select: { id: true },
+    });
+
+    if (existingUser) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "This company email is already associated with a user account.",
+          code: "COMPANY_EMAIL_IN_USE",
+        },
+        { status: 409 }
+      );
+    }
+    // Normalize emailCompany for storage
+    profileData.emailCompany = normalizedEmailCompany;
   }
 
   // Transform culture array to JSON string for storage
@@ -777,6 +800,7 @@ async function upsertCompanyProfile(userId: string, data: unknown) {
       isRemoteFriendly: profileData.isRemoteFriendly ?? false,
       isHybridFriendly: profileData.isHybridFriendly ?? false,
       culture: cultureJson,
+      emailCompany: profileData.emailCompany || null,
     };
 
   const company = await prisma.$transaction(async (tx: InteractiveTx) => {

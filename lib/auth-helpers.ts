@@ -60,3 +60,30 @@ export async function getAuthenticatedUser(options: AuthOptions = {}): Promise<A
 
   return { user };
 }
+
+/**
+ * Server-side admin authorization.
+ *
+ * - authenticated user required
+ * - isActive=true required
+ * - role === "ADMIN" required
+ * - isOnboarded MUST NOT be required
+ *
+ * Returns AuthResult on success, NextResponse error on failure.
+ */
+export async function requireAdmin(): Promise<AuthResult | NextResponse> {
+  const authResult = await getAuthenticatedUser({ requireActive: true });
+
+  if (authResult instanceof NextResponse) {
+    return authResult;
+  }
+
+  if (authResult.user.role !== "ADMIN") {
+    return NextResponse.json(
+      { success: false, error: "Admin access required", code: "FORBIDDEN" },
+      { status: 403 }
+    );
+  }
+
+  return authResult;
+}

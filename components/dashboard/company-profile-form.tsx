@@ -4,6 +4,14 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -32,6 +40,7 @@ import {
   Calendar,
   FileText,
   Sparkles,
+  Mail,
 } from "lucide-react";
 import { CroppableImageUpload } from "@/components/dashboard/croppable-image-upload";
 import { CultureEditor } from "@/components/dashboard/culture-editor";
@@ -75,10 +84,12 @@ interface Company {
   userId: string;
   isRemoteFriendly: boolean;
   isHybridFriendly: boolean;
+  emailCompany: string | null;
 }
 
 interface CompanyProfileFormProps {
   company: Company;
+  showWelcome?: boolean;
 }
 
 const COMPANY_SIZES = [
@@ -138,11 +149,25 @@ function SectionIcon({ icon: Icon }: { icon: React.ElementType }) {
 const pillTriggerClass =
   "rounded-full border border-slate-200 px-4 py-1.5 text-sm font-medium text-slate-600 transition-colors data-[state=active]:border-[#071738] data-[state=active]:bg-[#071738] data-[state=active]:text-white data-[state=active]:shadow-none";
 
-export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
+export function CompanyProfileForm({ company, showWelcome = false }: CompanyProfileFormProps) {
   const router = useRouter();
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+
+  // Auto-open the welcome modal on first mount when the welcome query param
+  // was set, then strip it from the URL so the modal does not reappear on
+  // refresh or browser navigation.
+  useEffect(() => {
+    if (showWelcome) {
+      setShowWelcomeModal(true);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("welcome");
+      router.replace(url.pathname + url.search);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showWelcome]);
 
   const parseCulture = (): CultureItem[] => {
     if (!company.culture) return [];
@@ -188,6 +213,7 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
     coverImageUrl: company.coverImageUrl || "",
     isRemoteFriendly: company.isRemoteFriendly ?? false,
     isHybridFriendly: company.isHybridFriendly ?? false,
+    emailCompany: company.emailCompany || "",
   });
 
   const [cultureItems, setCultureItems] = useState<CultureItem[]>(parseCulture());
@@ -281,11 +307,15 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
           logoUrl: formData.logoUrl || null,
           coverImageUrl: formData.coverImageUrl || null,
           culture: cultureArray.length > 0 ? cultureArray : null,
+          emailCompany: formData.emailCompany || null,
         }),
       });
 
       if (!response.ok) {
         const data = await response.json();
+        if (data.code === "COMPANY_EMAIL_IN_USE") {
+          throw new Error("This email is already associated with a user account. Please use a different company email.");
+        }
         throw new Error(data.error || "Failed to update profile");
       }
 
@@ -310,7 +340,8 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
   const activeCultureCount = cultureItems.filter((c) => c.title.trim() !== "").length;
 
   return (
-    <form onSubmit={handleSubmit}>
+    <>
+      <form onSubmit={handleSubmit}>
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-slate-900">Company Profile</h1>
         <p className="mt-1 text-sm text-slate-500">This is how candidates will see your company.</p>
@@ -352,6 +383,21 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
                   placeholder="Enter company name"
                   required
                 />
+              </div>
+              <div className="space-y-2">
+               <Label htmlFor="emailCompany">Company Contact Email</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                      <Input
+                        id="emailCompany"
+                        name="emailCompany"
+                        type="email"
+                        value={formData.emailCompany}
+                        onChange={handleChange}
+                        placeholder="contact@company.com"
+                        className="pl-10"
+                      />
+                    </div>
               </div>
 
               <div className="space-y-2">
@@ -637,6 +683,31 @@ export function CompanyProfileForm({ company }: CompanyProfileFormProps) {
           )}
         </Button>
       </div>
-    </form>
+      </form>
+
+      <Dialog open={showWelcomeModal} onOpenChange={setShowWelcomeModal}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-[#2563EB]" />
+            Welcome to CX Jobs!
+          </DialogTitle>
+          <DialogDescription>
+            Your company account has been created successfully. You can now
+            complete your company profile to start posting job offers and
+            attracting top talent.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button
+            onClick={() => setShowWelcomeModal(false)}
+            className="w-full bg-[#071738] hover:bg-[#0d224d]"
+          >
+            Get Started
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

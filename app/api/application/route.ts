@@ -108,6 +108,7 @@ export async function GET(request: NextRequest) {
       // Get company's job applications
       const company = await prisma.companies.findUnique({
         where: { userId: session.user.id },
+        select: { id: true },
       });
 
       if (!company) {

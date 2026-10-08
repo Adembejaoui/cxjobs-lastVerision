@@ -151,6 +151,7 @@ export async function GET(
     // If not owned by them, treat as public - can only see PUBLISHED jobs
     const userCompany = await prisma.companies.findFirst({
       where: { userId: session.user.id, id: jobOffer.companyId },
+      select: { id: true },
     });
 
     // If company owns this job, show it (regardless of status)
@@ -425,6 +426,7 @@ export async function DELETE(
     
     const userCompany = isAdmin ? null : await prisma.companies.findFirst({
       where: { userId: session!.user.id, id: existingJob.companyId },
+      select: { id: true },
     });
 
     if (!isAdmin && !userCompany) {

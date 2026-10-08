@@ -130,6 +130,7 @@ export async function GET(
     if (!isAdmin && session?.user?.role === "COMPANY") {
       const userCompany = await prisma.companies.findFirst({
         where: { userId: session.user.id, id: jobOffer.companyId },
+        select: { id: true },
       });
       if (!userCompany) {
         return NextResponse.json(

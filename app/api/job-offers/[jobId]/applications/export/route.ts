@@ -176,6 +176,7 @@ export async function GET(
     const [company, jobOffer] = await Promise.all([
       prisma.companies.findUnique({
         where: { userId: session.user.id },
+        select: { id: true },
       }),
       prisma.jobOffer.findUnique({
         where: { id: jobId },

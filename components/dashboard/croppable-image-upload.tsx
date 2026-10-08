@@ -33,6 +33,12 @@ interface CroppableImageUploadProps {
   maxSize?: string;
   label?: string;
   currentImageUrl?: string;
+  /**
+   * When set, the upload is performed on behalf of the given user ID.
+   * Only meaningful for ADMIN users; the server verifies the target is a
+   * COMPANY user with a company record. Normal user uploads omit this.
+   */
+  targetUserId?: string;
 }
 
 // ── Adjustment state applied to the source image before crop ───
@@ -142,6 +148,7 @@ export function CroppableImageUpload({
   maxSize = "5MB",
   label,
   currentImageUrl,
+  targetUserId,
 }: CroppableImageUploadProps) {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -278,7 +285,11 @@ export function CroppableImageUpload({
     const ext = isLogo ? "png" : "jpg";
     const formData = new FormData();
     formData.append("file", blob, `edit-${Date.now()}.${ext}`);
-    const res = await fetch(`/api/upload?type=${type}`, {
+    const params = new URLSearchParams({ type });
+    if (targetUserId) {
+      params.set("targetUserId", targetUserId);
+    }
+    const res = await fetch(`/api/upload?${params.toString()}`, {
       method: "POST",
       body: formData,
     });

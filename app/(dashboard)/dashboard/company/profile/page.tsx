@@ -1,39 +1,157 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import crypto from "crypto";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { MapPin, Users, Calendar, Eye, Sparkles } from "lucide-react";
+import { MapPin, Users, Calendar, Eye } from "lucide-react";
 import Link from "next/link";
 import { CompanyProfileForm } from "@/components/dashboard/company-profile-form";
-import { DynamicIcon } from "@/lib/icon-map";
+import { CompanyBenefit } from "@/app/generated/prisma/client";
+import { Prisma } from "@/app/generated/prisma/client";
 
 /* eslint-disable @next/next/no-img-element */
 
-export default async function CompanyProfilePage() {
+interface SearchParams {
+  welcome?: string;
+}
+
+interface Company {
+  id: string;
+  userId: string;
+  name: string;
+  slug: string;
+  logoUrl: string | null;
+  coverImageUrl: string | null;
+  companySize: string | null;
+  location: string | null;
+  website: string | null;
+  foundedYear: number | null;
+  description: string | null;
+  culture: string | null;
+  isRemoteFriendly: boolean;
+  isHybridFriendly: boolean;
+  linkedinUrl: string | null;
+  twitterUrl: string | null;
+  facebookUrl: string | null;
+  emailCompany: string | null;
+  isVerified: boolean;
+  verifiedAt: Date | null;
+  deletedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  benefits: Omit<CompanyBenefit, 'companyId'>[];
+}
+
+const COMPANY_SELECT = {
+  id: true,
+  userId: true,
+  name: true,
+  slug: true,
+  logoUrl: true,
+  coverImageUrl: true,
+  companySize: true,
+  location: true,
+  website: true,
+  foundedYear: true,
+  description: true,
+  culture: true,
+  isRemoteFriendly: true,
+  isHybridFriendly: true,
+  linkedinUrl: true,
+  twitterUrl: true,
+  facebookUrl: true,
+  emailCompany: true,
+  isVerified: true,
+  verifiedAt: true,
+  deletedAt: true,
+  createdAt: true,
+  updatedAt: true,
+  benefits: {
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      icon: true,
+      category: true,
+      scope: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  },
+};
+
+export default async function CompanyProfilePage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
   const session = await auth();
 
   if (!session || session.user.role !== "COMPANY") {
     redirect("/login");
   }
 
-  // Fetch company data needed by the page and the profile editor.
-  // `users` is intentionally not loaded: it is never consumed here, and a broad
-  // relation read would pull the full User scalars (including passwordHash) into
-  // an object that is serialized to a client component.
-  // `_count.jobs` is intentionally not loaded: it is never consumed, and the
-  // active-jobs figure below is a separate, differently scoped query.
-  const company = await prisma.companies.findFirst({
-    where: {
-      userId: session.user.id,
-    },
-    include: {
-      benefits: true,
-    },
-  });
+  const sp = await searchParams;
+  const showWelcome = sp.welcome === "1";
 
-  if (!company) {
-    redirect("/dashboard/company");
+  const userId = session.user.id;
+  const baseName = session.user.name || "My Company";
+  const slugBase = baseName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
+  // Generate a sufficiently unique slug upfront to minimize collisions.
+  // 4 random bytes (8 hex chars) provides 2^32 possibilities.
+  const generateSlug = (attempt: number): string => {
+    const suffix = crypto.randomBytes(4).toString("hex");
+    return attempt === 0 ? slugBase : `${slugBase}-${suffix}`;
+  };
+
+  // Atomic upsert: single round-trip, uses PostgreSQL INSERT ... ON CONFLICT (userId).
+  // If another request created the company concurrently, the ON CONFLICT DO UPDATE
+  // with empty update{} returns the existing row without modifying it.
+  let company: Company | null = null;
+  let slug = generateSlug(0);
+  let slugAttempts = 0;
+  const maxSlugAttempts = 3;
+
+  while (true) {
+    try {
+      company = await prisma.companies.upsert({
+        where: { userId },
+        create: { userId, name: baseName, slug },
+        update: {},
+        select: COMPANY_SELECT,
+      });
+      break;
+    } catch (error) {
+      // Handle unique constraint violations
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        const target = (error.meta?.target as string[]) || [];
+        
+        if (target.includes("userId")) {
+          // Another request created the company for this userId.
+          // Fetch and return the existing company without overwriting it.
+          const existing = await prisma.companies.findUnique({
+            where: { userId },
+            select: COMPANY_SELECT,
+          });
+          if (existing) {
+            company = existing;
+            break;
+          }
+          // Fall through to re-throw if not found (should not happen)
+        } else if (target.includes("slug") && slugAttempts < maxSlugAttempts) {
+          // Slug collision - generate new slug and retry
+          slugAttempts++;
+          slug = generateSlug(slugAttempts);
+          continue;
+        }
+      }
+      throw error;
+    }
   }
 
   // Both counts depend only on the already-resolved company.id, so they are run
@@ -88,10 +206,10 @@ export default async function CompanyProfilePage() {
               )}
             </div>
             
-             {/* Company Info */}
-             <div className="flex-1">
-               <h2 className="text-xl font-semibold text-slate-900">{company.name}</h2>
-               <div className="mt-2 flex flex-wrap gap-4 text-sm text-slate-600">
+            {/* Company Info */}
+            <div className="flex-1">
+              <h2 className="text-xl font-semibold text-slate-900">{company.name}</h2>
+              <div className="mt-2 flex flex-wrap gap-4 text-sm text-slate-600">
                 {company.location && (
                   <span className="flex items-center gap-1">
                     <MapPin className="h-4 w-4" />
@@ -130,13 +248,11 @@ export default async function CompanyProfilePage() {
 
       {/* Benefits Preview */}
       
-
       {/* Edit Form */}
-      <CompanyProfileForm company={company} />
+      <CompanyProfileForm company={company} showWelcome={showWelcome} />
     </div>
   );
 }
-
 function getCompanySizeDisplay(size: string | null): string {
   return size || 'Size not set';
 }

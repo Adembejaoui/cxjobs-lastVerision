@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth-helpers";
+import prisma from "@/lib/prisma";
 import {
   supabase,
   STORAGE_BUCKETS,
@@ -109,17 +110,21 @@ export async function POST(request: NextRequest) {
     }
     const { user: userSession } = authResult;
 
-    const rl = await checkRateLimitAsync(`upload:${userSession.id}`, UPLOAD_LIMIT);
+    // Get upload type from query
+    const { searchParams } = new URL(request.url);
+    const uploadType = searchParams.get("type");
+    const targetUserIdParam = searchParams.get("targetUserId");
+
+    const rl = await checkRateLimitAsync(
+      `upload:${userSession.role === "ADMIN" && targetUserIdParam ? targetUserIdParam : userSession.id}`,
+      UPLOAD_LIMIT
+    );
     if (!rl.allowed) {
       return NextResponse.json(
         { success: false, error: "Too many uploads. Please try again later.", code: "RATE_LIMITED" },
         { status: 429, headers: getRateLimitHeaders(rl) }
       );
     }
-
-    // Get upload type from query
-    const { searchParams } = new URL(request.url);
-    const uploadType = searchParams.get("type");
 
     if (!uploadType || !UPLOAD_CONFIG[uploadType]) {
       return NextResponse.json(
@@ -145,9 +150,67 @@ export async function POST(request: NextRequest) {
           { status: 401 }
         );
       }
+    }
 
-      // Role check
-      if (config.allowedRoles && !config.allowedRoles.includes(userSession.role)) {
+    // ── Admin target verification ───────────────────────────────────
+    // An authenticated ADMIN may upload on behalf of a target COMPANY user.
+    // The target user is resolved server-side from the `targetUserId` query
+    // parameter; the browser can never supply the storage path or ownership
+    // ID directly. When an admin target is verified, the per-upload-type
+    // role check below is satisfied by the target user's role instead of the
+    // admin's own role.
+    let targetUserId = userSession.id;
+    let adminTargetRole: string | null = null;
+
+    if (targetUserIdParam && userSession.role === "ADMIN") {
+      const targetUser = await prisma.user.findUnique({
+        where: { id: targetUserIdParam },
+        select: { id: true, role: true },
+      });
+
+      if (!targetUser) {
+        return NextResponse.json(
+          { success: false, error: "Target user not found", code: "NOT_FOUND" },
+          { status: 404 }
+        );
+      }
+
+      if (targetUser.role !== "COMPANY") {
+        return NextResponse.json(
+          { success: false, error: "Admin uploads are only allowed for COMPANY users", code: "FORBIDDEN" },
+          { status: 403 }
+        );
+      }
+
+      // Verify the target user actually has a company record.
+      const targetCompany = await prisma.companies.findUnique({
+        where: { userId: targetUser.id },
+        select: { id: true },
+      });
+
+      if (!targetCompany) {
+        return NextResponse.json(
+          { success: false, error: "Target user has no company profile", code: "NOT_FOUND" },
+          { status: 404 }
+        );
+      }
+
+      targetUserId = targetUser.id;
+      adminTargetRole = targetUser.role;
+    } else if (targetUserIdParam && userSession.role !== "ADMIN") {
+      // Non-admin users cannot claim to upload on behalf of another user.
+      return NextResponse.json(
+        { success: false, error: "You don't have permission to upload on behalf of another user", code: "FORBIDDEN" },
+        { status: 403 }
+      );
+    }
+
+    // Role check — for admin target uploads, the target user's role satisfies
+    // the allowedRoles constraint; otherwise the authenticated user's role is
+    // checked as before.
+    if (config.allowedRoles) {
+      const effectiveRole = adminTargetRole ?? userSession.role;
+      if (!config.allowedRoles.includes(effectiveRole)) {
         return NextResponse.json(
           { success: false, error: "You don't have permission to upload this file type", code: "FORBIDDEN" },
           { status: 403 }
@@ -190,7 +253,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Authenticated user (needed for path ownership check)
-    const userId = userSession.id;
+    // For admin uploads, targetUserId is the verified COMPANY user ID.
+    const userId = targetUserId;
 
     if (!userId) {
       return NextResponse.json(

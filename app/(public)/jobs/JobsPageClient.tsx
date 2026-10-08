@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { useUser } from "@/components/auth/user-provider"
 import {
   PagerButton,
@@ -159,39 +159,70 @@ const topBanner = sortedBanners.filter((b) => b.priority === 1);
 
 export default function JobsPageClient({ initialJobs = [], totalJobs = 0 }: JobsPageClientProps) {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const user = useUser()
   const isCompany = user?.role === 'COMPANY'
 
+  const LIMIT = 20
+
+  // Parse the URL once on mount to seed both the pending and applied filter
+  // states. This keeps the URL as the single source of truth for what is
+  // currently rendered, while the pending state lets the user stage changes
+  // before clicking "Apply Filters".
   const initialActivityValues = new Set(
     (searchParams.get("activityType") ?? "")
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean)
   )
-  const [jobs, setJobs] = useState<JobOffer[]>(initialJobs)
-  const [total, setTotal] = useState(totalJobs)
 
-  const [selectedActivity, setSelectedActivity] = useState<FilterOption[]>(
-    activityTypes.map((item) => ({
+  const initialFilters = {
+    selectedActivity: activityTypes.map((item) => ({
       ...item,
       checked: initialActivityValues.has(item.value),
-    }))
+    })),
+    selectedLanguage: searchParams.get("language") ?? "",
+    location: searchParams.get("location") ?? "",
+    searchQuery: searchParams.get("search") ?? "",
+  }
+
+  // Pending filter state: what the user is currently staging in the UI.
+  // Changing these does NOT trigger a fetch until Apply is clicked.
+  const [pendingActivity, setPendingActivity] = useState<FilterOption[]>(
+    initialFilters.selectedActivity
   )
-  const [selectedLanguage, setSelectedLanguage] = useState<string>(
-    () => searchParams.get("language") ?? ""
+  const [pendingLanguage, setPendingLanguage] = useState<string>(
+    initialFilters.selectedLanguage
   )
-  const [location, setLocation] = useState<string>(
-    () => searchParams.get("location") ?? ""
+  const [pendingLocation, setPendingLocation] = useState<string>(
+    initialFilters.location
   )
+  const [pendingSearch, setPendingSearch] = useState<string>(
+    initialFilters.searchQuery
+  )
+
+  // Applied filter state: what the last fetch used. This is what drives the
+  // rendered job list and the URL.
+  const [appliedActivity, setAppliedActivity] = useState<FilterOption[]>(
+    initialFilters.selectedActivity
+  )
+  const [appliedLanguage, setAppliedLanguage] = useState<string>(
+    initialFilters.selectedLanguage
+  )
+  const [appliedLocation, setAppliedLocation] = useState<string>(
+    initialFilters.location
+  )
+  const [appliedSearch, setAppliedSearch] = useState<string>(
+    initialFilters.searchQuery
+  )
+
+  const [jobs, setJobs] = useState<JobOffer[]>(initialJobs)
+  const [total, setTotal] = useState(totalJobs)
   const [currentPage, setCurrentPage] = useState(() => {
     const page = Number.parseInt(searchParams.get("page") ?? "1", 10)
     return Number.isNaN(page) || page < 1 ? 1 : page
   })
-  const [searchQuery, setSearchQuery] = useState<string>(
-    () => searchParams.get("search") ?? ""
-  )
   const [isLoading, setIsLoading] = useState(false)
-  const LIMIT = 20
 
   const buildQueryParams = useCallback((page: number) => {
     const params = new URLSearchParams()
@@ -199,31 +230,29 @@ export default function JobsPageClient({ initialJobs = [], totalJobs = 0 }: Jobs
     params.set('limit', LIMIT.toString())
     params.set('status', 'PUBLISHED')
 
-    if (searchQuery) {
-      params.set('search', searchQuery)
+    if (appliedSearch) {
+      params.set('search', appliedSearch)
     }
 
- 
-
-    const activeActivity = selectedActivity.filter(e => e.checked).map(e => e.value)
+    const activeActivity = appliedActivity.filter(e => e.checked).map(e => e.value)
     if (activeActivity.length > 0) {
       params.set('activityType', activeActivity.join(','))
     }
 
-    if (selectedLanguage) {
-      params.set('language', selectedLanguage)
+    if (appliedLanguage) {
+      params.set('language', appliedLanguage)
     }
 
-    if (location) {
-      if (location === "Remote") {
+    if (appliedLocation) {
+      if (appliedLocation === "Remote") {
         params.set('isRemote', 'true')
       } else {
-        params.set('location', location)
+        params.set('location', appliedLocation)
       }
     }
 
     return params.toString()
-   }, [searchQuery, selectedActivity, selectedLanguage, location])
+  }, [appliedSearch, appliedActivity, appliedLanguage, appliedLocation])
 
   const fetchJobs = useCallback(async (page: number) => {
     setIsLoading(true)
@@ -245,37 +274,81 @@ export default function JobsPageClient({ initialJobs = [], totalJobs = 0 }: Jobs
     }
   }, [buildQueryParams])
 
+  // Fetch when the current page changes OR when the APPLIED filters change.
+  // Pending filter edits are deliberately excluded from buildQueryParams, so
+  // they never enter this dependency list and therefore produce zero requests.
+  // When the user clicks "Apply Filters", the applied states change, which
+  // recreates buildQueryParams and fetchJobs, which re-runs this effect.
   useEffect(() => {
     fetchJobs(currentPage)
   }, [currentPage, fetchJobs])
 
 
 
-  const toggleActivity = (label: string) => {
-    setSelectedActivity(prev =>
-      prev.map(item =>
-        item.label === label ? { ...item, checked: !item.checked } : item
-      )
-    )
-    setCurrentPage(1)
+  // Stage a filter change into the pending state. This does NOT fetch
+  // jobs and does NOT touch the URL — the user must click "Apply Filters".
+  // (Activity toggling is handled inline by the single-select dropdown.)
+
+  // Clear the pending filter state. Does NOT trigger a request — the user
+  // must click "Apply Filters" for the cleared state to take effect.
+  const clearPendingFilters = () => {
+    setPendingActivity(activityTypes.map(item => ({ ...item, checked: false })))
+    setPendingLanguage("")
+    setPendingLocation("")
+    setPendingSearch("")
   }
 
-  const clearAllFilters = () => {
-    setSelectedActivity(activityTypes.map(item => ({ ...item, checked: false })))
-    setSelectedLanguage("")
-    setLocation("")
-    setSearchQuery("")
+  // Apply the pending filters: copy them into the applied state, reset to
+  // page 1, sync the URL, and trigger exactly one fetch.
+  const applyFilters = useCallback(() => {
+    setAppliedActivity(pendingActivity)
+    setAppliedLanguage(pendingLanguage)
+    setAppliedLocation(pendingLocation)
+    setAppliedSearch(pendingSearch)
     setCurrentPage(1)
 
-  }
+    const params = new URLSearchParams(window.location.search)
+    const activeActivity = pendingActivity.filter(e => e.checked).map(e => e.value)
+    if (activeActivity.length > 0) {
+      params.set("activityType", activeActivity.join(","))
+    } else {
+      params.delete("activityType")
+    }
+    if (pendingSearch) {
+      params.set("search", pendingSearch)
+    } else {
+      params.delete("search")
+    }
+    if (pendingLanguage) {
+      params.set("language", pendingLanguage)
+    } else {
+      params.delete("language")
+    }
+    if (pendingLocation) {
+      if (pendingLocation === "Remote") {
+        params.set("isRemote", "true")
+        params.delete("location")
+      } else {
+        params.set("location", pendingLocation)
+        params.delete("isRemote")
+      }
+    } else {
+      params.delete("location")
+      params.delete("isRemote")
+    }
+    params.set("page", "1")
+    router.replace(`/jobs?${params.toString()}`, { scroll: false })
+  }, [pendingActivity, pendingLanguage, pendingLocation, pendingSearch, router])
 
+  // Derived from the APPLIED filters — these drive the rendered UI and the
+  // "filters active" count. Pending changes do not affect these until Apply.
   const hasActiveFilters =
-    selectedActivity.some(item => item.checked) ||
-    selectedLanguage.length > 0 ||
-    location.length > 0 ||
-    searchQuery.length > 0
+    appliedActivity.some(item => item.checked) ||
+    appliedLanguage.length > 0 ||
+    appliedLocation.length > 0 ||
+    appliedSearch.length > 0
 
-  const checkedActivityCount = selectedActivity.filter(item => item.checked).length
+  const checkedActivityCount = appliedActivity.filter(item => item.checked).length
 
   const CURRENCY_SYMBOLS: Record<string, string> = {
   USD: "$",
@@ -323,7 +396,7 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
 
   return (
     <main className="min-h-screen px-4 py-5 text-slate-900 md:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1600px] gap-5 lg:grid lg:grid-cols-[320px_1fr]">
+      <div className="mx-auto max-w-400 gap-5 lg:grid lg:grid-cols-[320px_1fr]">
         {/* Sidebar - desktop only, priority > 1 banners stacked vertically */}
         <aside className="hidden lg:block space-y-5">
           {sidebarBanners.map((banner) => (
@@ -358,16 +431,15 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
                 <input
                   type="text"
                   placeholder="Search jobs, companies..."
-                  value={searchQuery}
+                  value={pendingSearch}
                   onChange={(e) => {
-                    setSearchQuery(e.target.value)
-                    setCurrentPage(1)
+                    setPendingSearch(e.target.value)
                   }}
-                  className="w-full rounded-[16px] border border-[#d7e0ea] bg-white px-4 py-3 text-[16px] font-semibold text-[#344865] placeholder:text-[#95a5be] focus:border-[#45c68d] focus:outline-none focus:ring-2 focus:ring-[#45c68d]/20"
+                  className="w-full rounded-2xl border border-[#d7e0ea] bg-white px-4 py-3 text-[16px] font-semibold text-[#344865] placeholder:text-[#95a5be] focus:border-[#45c68d] focus:outline-none focus:ring-2 focus:ring-[#45c68d]/20"
                 />
-                {searchQuery && (
+                {pendingSearch && (
                   <button
-                    onClick={() => setSearchQuery("")}
+                    onClick={() => setPendingSearch("")}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-[#95a5be] hover:text-[#344865] transition-colors"
                   >
                     ×
@@ -378,12 +450,11 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
               {/* Location */}
               <select
                 aria-label="Location"
-                value={location}
+                value={pendingLocation}
                 onChange={(e) => {
-                  setLocation(e.target.value)
-                  setCurrentPage(1)
+                  setPendingLocation(e.target.value)
                 }}
-                className="flex-1 rounded-[16px] border border-[#d7e0ea] bg-white px-4 py-3 text-[16px] font-semibold text-[#344865] shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#45c68d]"
+                className="flex-1 rounded-2xl border border-[#d7e0ea] bg-white px-4 py-3 text-[16px] font-semibold text-[#344865] shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#45c68d]"
               >
                 <option value="">All Cities</option>
                 <option value="Remote">Remote</option>
@@ -396,18 +467,17 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
 
                 {/* Activity Type */}
                 <select
-                  value={selectedActivity.find(e => e.checked)?.value || ""}
+                  value={pendingActivity.find(e => e.checked)?.value || ""}
                   onChange={(e) => {
                     const val = e.target.value
-                    setSelectedActivity(prev =>
+                    setPendingActivity(prev =>
                       prev.map(item => ({
                         ...item,
                         checked: item.value === val
                       }))
                     )
-                    setCurrentPage(1)
                   }}
-                  className="rounded-[16px] border border-[#d7e0ea] bg-white px-4 py-3 text-[16px] font-bold text-[#29476f] shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#45c68d]"
+                  className="rounded-2xl border border-[#d7e0ea] bg-white px-4 py-3 text-[16px] font-bold text-[#29476f] shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#45c68d]"
                 >
                   <option value="">All Activity Types</option>
                   {activityTypes.map(item => (
@@ -417,12 +487,11 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
 
                {/* Language */}
                <select
-                 value={selectedLanguage}
+                 value={pendingLanguage}
                  onChange={(e) => {
-                   setSelectedLanguage(e.target.value)
-                   setCurrentPage(1)
+                   setPendingLanguage(e.target.value)
                  }}
-                 className="rounded-[16px] border border-[#d7e0ea] bg-white px-4 py-3 text-[16px] font-bold text-[#29476f] shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#45c68d]"
+                 className="rounded-2xl border border-[#d7e0ea] bg-white px-4 py-3 text-[16px] font-bold text-[#29476f] shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#45c68d]"
                >
                  <option value="">All Languages</option>
                  {languages.map(item => (
@@ -430,50 +499,57 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
                  ))}
                </select>
 
-             {/* Clear / Toggle */}
-             <div className="flex items-center gap-2">
-               {hasActiveFilters && (
-                 <button
-                   onClick={clearAllFilters}
-                   className="rounded-[16px] border border-[#d7e0ea] bg-white px-4 py-3 text-[14px] font-bold text-red-600 hover:bg-red-50 transition-colors"
-                 >
-                   Clear
-                 </button>
-               )}
-             </div>
-           </div>
-
-           {/* Active Filters */}
-           {hasActiveFilters && (
-             <div className="mt-3 flex flex-wrap gap-2">
-                {searchQuery && (
-                  <span className="inline-flex items-center gap-2 rounded-full bg-teal-100 px-3 py-1.5 text-xs font-semibold text-teal-700">
-                    &quot;{searchQuery}&quot;
-                    <button onClick={() => setSearchQuery("")} className="hover:text-teal-900 transition-colors">×</button>
-                  </span>
-                )}
-                {location && (
-                  <span className="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1.5 text-xs font-semibold text-blue-700">
-                    {location}
-                    <button onClick={() => setLocation("")} className="hover:text-blue-900 transition-colors">×</button>
-                  </span>
-                )}
-
-                {selectedActivity.filter(item => item.checked).map(item => (
-                 <span key={item.value} className="inline-flex items-center gap-2 rounded-full bg-green-100 px-3 py-1.5 text-xs font-semibold text-green-700">
-                   {item.label}
-                   <button onClick={() => toggleActivity(item.label)} className="hover:text-green-900 transition-colors">×</button>
-                 </span>
-                ))}
-                {selectedLanguage && (
-                  <span className="inline-flex items-center gap-2 rounded-full bg-purple-100 px-3 py-1.5 text-xs font-semibold text-purple-700">
-                    {selectedLanguage}
-                    <button onClick={() => setSelectedLanguage("")} className="hover:text-purple-900 transition-colors">×</button>
-                  </span>
-                )}
+{/* Reset / Apply */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={clearPendingFilters}
+                  className="rounded-2xl border border-[#d7e0ea] bg-white px-4 py-3 text-[14px] font-bold text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  Reset
+                </button>
+                <button
+                  onClick={applyFilters}
+                  className="rounded-2xl border border-[#45c68d] bg-[#45c68d] px-4 py-3 text-[14px] font-bold text-white hover:bg-[#38b073] transition-colors"
+                >
+                  Apply Filters
+                </button>
               </div>
-            )}
-          </div>
+            </div>
+
+            {/* Active Filters (derived from applied state) */}
+            {hasActiveFilters && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                 {appliedSearch && (
+                   <span className="inline-flex items-center gap-2 rounded-full bg-teal-100 px-3 py-1.5 text-xs font-semibold text-teal-700">
+                     &quot;{appliedSearch}&quot;
+                     <button onClick={() => { setPendingSearch(""); setAppliedSearch(""); }} className="hover:text-teal-900 transition-colors">×</button>
+                   </span>
+                 )}
+                 {appliedLocation && (
+                   <span className="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1.5 text-xs font-semibold text-blue-700">
+                     {appliedLocation}
+                     <button onClick={() => { setPendingLocation(""); setAppliedLocation(""); }} className="hover:text-blue-900 transition-colors">×</button>
+                   </span>
+                 )}
+
+                 {appliedActivity.filter(item => item.checked).map(item => (
+                  <span key={item.value} className="inline-flex items-center gap-2 rounded-full bg-green-100 px-3 py-1.5 text-xs font-semibold text-green-700">
+                    {item.label}
+                    <button onClick={() => {
+                      setPendingActivity(prev => prev.map(i => i.label === item.label ? { ...i, checked: false } : i))
+                      setAppliedActivity(prev => prev.map(i => i.label === item.label ? { ...i, checked: false } : i))
+                    }} className="hover:text-green-900 transition-colors">×</button>
+                  </span>
+                 ))}
+                 {appliedLanguage && (
+                   <span className="inline-flex items-center gap-2 rounded-full bg-purple-100 px-3 py-1.5 text-xs font-semibold text-purple-700">
+                     {appliedLanguage}
+                     <button onClick={() => { setPendingLanguage(""); setAppliedLanguage(""); }} className="hover:text-purple-900 transition-colors">×</button>
+                   </span>
+                 )}
+               </div>
+             )}
+           </div>
 
           {/* Results Header */}
           <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -483,7 +559,7 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
                 Showing {transformedJobs.length} of {total} opportunities
                 {hasActiveFilters && (
                    <span className="ml-1 text-[#45c68d]">
-                     ({checkedActivityCount + (searchQuery ? 1 : 0) + (selectedLanguage ? 1 : 0) + (location ? 1 : 0)} filters active)
+                     ({checkedActivityCount + (appliedSearch ? 1 : 0) + (appliedLanguage ? 1 : 0) + (appliedLocation ? 1 : 0)} filters active)
                    </span>
                 )}
               </p>
@@ -498,7 +574,7 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
                  <div key={i} className="rounded-[30px] bg-[#f7f9fb] px-5 py-5 shadow-[0_10px_24px_rgba(0,0,0,0.12)] ring-1 ring-[#e8edf4] md:px-6 animate-pulse">
                    <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
                      <div className="flex min-w-0 items-start gap-5">
-                       <div className="h-[76px] w-[76px] shrink-0 rounded-[18px] bg-[#e8edf4]" />
+                       <div className="h-19 w-19 shrink-0 rounded-[18px] bg-[#e8edf4]" />
                        <div className="space-y-3">
                          <div className="h-6 w-64 rounded bg-[#e8edf4]" />
                          <div className="h-5 w-40 rounded bg-[#e8edf4]" />
@@ -527,12 +603,15 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
                <p className="mt-2 text-[16px] text-[#95a5be]">
                  Try adjusting your filter criteria or clear all filters
                </p>
-               <button
-                 onClick={clearAllFilters}
-                 className="mt-4 rounded-[18px] bg-[#45c68d] px-6 py-3 text-[16px] font-extrabold text-white shadow-lg transition hover:translate-y-[-1px]"
-               >
-                 Clear Filters
-               </button>
+<button
+                  onClick={() => {
+                    clearPendingFilters()
+                    applyFilters()
+                  }}
+                  className="mt-4 rounded-[18px] bg-[#45c68d] px-6 py-3 text-[16px] font-extrabold text-white shadow-lg transition hover:translate-y-[-1px]"
+                >
+                  Clear Filters
+                </button>
              </div>
            )}
          </div>

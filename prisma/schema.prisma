@@ -346,10 +346,9 @@ model companies {
   linkedinUrl           String?
   twitterUrl            String?
   facebookUrl           String?
+  emailCompany          String?
   isVerified            Boolean          @default(false)
   verifiedAt            DateTime?
-  subscriptionPlan      String?          @default("FREE")
-  subscriptionExpiresAt DateTime?
   deletedAt             DateTime?
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
@@ -364,10 +363,38 @@ model companies {
   @@map("companies")
 }
 
+model CompanyInvitation {
+  id             String                  @id @default(uuid())
+  tokenHash      String                  @unique
+  tokenEncrypted String?
+  companyName    String
+  companyEmail   String
+  managerName    String?
+  managerEmail   String?
+  createdAt      DateTime                @default(now())
+  expiresAt      DateTime
+  usedAt         DateTime?
+  revokedAt      DateTime?
+  status         CompanyInvitationStatus @default(PENDING)
+
+  @@index([companyEmail])
+  @@index([expiresAt])
+  @@index([createdAt])
+  @@index([status])
+  @@map("company_invitations")
+}
+
 enum UserRole {
   CANDIDATE
   COMPANY
   ADMIN
+}
+
+enum CompanyInvitationStatus {
+  PENDING
+  IN_PROGRESS
+  CREATED
+  CLOSED
 }
 
 enum JobRoleTarget {

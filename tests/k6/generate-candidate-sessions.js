@@ -23,7 +23,9 @@ const COOKIE_NAME = IS_HTTPS
   ? '__Secure-authjs.session-token'
   : 'authjs.session-token';
 
-const OUTPUT_FILE = '.k6-cookies.txt';
+const OUTPUT_FILE =
+  process.env.K6_CANDIDATE_COOKIES_FILE ||
+  '.k6-candidate-cookies.txt';
 
 /**
  * Check whether the supplied URL should be considered production.
@@ -245,23 +247,9 @@ async function loginCandidate(
     redirectCount++;
   }
 
-  const sessionCookies = allSetCookies
-    .filter((cookie) =>
-      cookie.startsWith(`${COOKIE_NAME}=`)
-    )
-    .map((cookie) => {
-      const firstPart = cookie.split(';')[0];
-
-      return firstPart.substring(
-        COOKIE_NAME.length + 1
-      );
-    });
-
   return {
     statusCode: res.statusCode,
-    sessionCookies,
     allCookies: allSetCookies,
-    body: res.body,
   };
 }
 
@@ -335,22 +323,90 @@ async function validateSession(
 }
 
 /**
- * Extract the session cookie from Set-Cookie headers.
+ * Reconstruct the Auth.js session cookie from
+ * Set-Cookie headers.
+ *
+ * Auth.js chunks oversized JWTs into
+ * <name>.0, <name>.1, ... and reassembles them
+ * by ascending numeric suffix. The same order is
+ * reproduced here so no chunk is lost.
+ *
+ * Returns the complete session token value, or
+ * null when no session cookie was present.
  */
-function extractSessionCookie(allCookies = []) {
-  for (const cookie of allCookies) {
-    const firstPart = cookie.split(';')[0];
+function extractSessionCookie(
+  allCookies = [],
+  cookieName = COOKIE_NAME
+) {
+  const chunks = new Map();
+  let unchunked = null;
 
-    if (
-      firstPart.startsWith(`${COOKIE_NAME}=`)
-    ) {
-      return firstPart.substring(
-        COOKIE_NAME.length + 1
+  for (const cookie of allCookies) {
+    const pair = cookie.split(';')[0];
+    const separator = pair.indexOf('=');
+
+    if (separator <= 0) {
+      continue;
+    }
+
+    const name = pair.slice(0, separator);
+    const value = pair.slice(separator + 1);
+
+    if (!value) {
+      continue;
+    }
+
+    if (name === cookieName) {
+      unchunked = value;
+      continue;
+    }
+
+    if (name.startsWith(`${cookieName}.`)) {
+      const suffix = name.slice(
+        cookieName.length + 1
       );
+      const index = Number.parseInt(suffix, 10);
+
+      if (
+        Number.isInteger(index) &&
+        index >= 0 &&
+        String(index) === suffix
+      ) {
+        chunks.set(index, value);
+      }
     }
   }
 
-  return null;
+  if (unchunked) {
+    return unchunked;
+  }
+
+  if (chunks.size === 0) {
+    return null;
+  }
+
+  const sortedIndexes = [...chunks.keys()].sort(
+    (a, b) => a - b
+  );
+
+  /**
+   * Chunks must form a contiguous 0..n-1 range,
+   * otherwise the reconstructed value would be
+   * corrupted.
+   */
+  const isContiguous = sortedIndexes.every(
+    (index, position) => index === position
+  );
+
+  if (!isContiguous) {
+    return null;
+  }
+
+  const value = sortedIndexes
+    .map((index) => chunks.get(index))
+    .join('');
+
+  return value || null;
 }
 
 /**
@@ -411,6 +467,8 @@ async function main() {
     failures: [],
   };
 
+  const seen = new Set();
+
   /**
    * Generate sessions sequentially.
    */
@@ -448,24 +506,22 @@ async function main() {
 
       /**
        * 3. Extract session cookie.
+       * Chunked cookies are reassembled here.
        */
-      let sessionCookieValue = null;
-
-      if (
-        loginResult.sessionCookies.length > 0
-      ) {
-        sessionCookieValue =
-          loginResult.sessionCookies[0];
-      } else {
-        sessionCookieValue =
-          extractSessionCookie(
-            loginResult.allCookies
-          );
-      }
+      const sessionCookieValue =
+        extractSessionCookie(
+          loginResult.allCookies
+        );
 
       if (!sessionCookieValue) {
         throw new Error(
           'No session cookie received'
+        );
+      }
+
+      if (seen.has(sessionCookieValue)) {
+        throw new Error(
+          'Duplicate session cookie returned'
         );
       }
 
@@ -488,6 +544,8 @@ async function main() {
        * 5. Store session.
        */
       results.authenticated++;
+
+      seen.add(sessionCookieValue);
 
       results.cookies.push(
         sessionCookieValue
@@ -543,6 +601,19 @@ async function main() {
     }
 
     console.log('');
+  }
+
+  /**
+   * Never write an empty session cookie to disk.
+   */
+  if (
+    results.cookies.some((cookie) => !cookie)
+  ) {
+    console.error(
+      'ERROR: Empty session cookie detected. File not written.'
+    );
+
+    process.exit(1);
   }
 
   /**

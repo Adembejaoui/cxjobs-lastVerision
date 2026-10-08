@@ -373,8 +373,6 @@ export class CandidateOnboardingIncompleteError extends Error {
 
 export const companySizeSchema = z.string();
 
-export const subscriptionPlanSchema = z.enum(["ESSENTIAL", "GROW", "PREMIUM"]);
-
 export const benefitCategorySchema = z.enum([
   "HEALTH",
   "FINANCIAL",
@@ -427,6 +425,7 @@ export const companyProfileSchema = z.object({
   linkedinUrl: z.string().optional().nullable(),
   twitterUrl: z.string().optional().nullable(),
   facebookUrl: z.string().optional().nullable(),
+  emailCompany: z.string().email("Invalid company contact email").max(254, "Email must be 254 characters or less").optional().nullable(),
 });
 
 // ==================== Types ====================

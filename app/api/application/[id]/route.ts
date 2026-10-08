@@ -126,6 +126,7 @@ export async function GET(
     if (session.user.role === "COMPANY") {
       const company = await prisma.companies.findUnique({
         where: { userId: session.user.id },
+        select: { id: true },
       });
 
       if (!company || application.jobOffer?.companyId !== company.id) {

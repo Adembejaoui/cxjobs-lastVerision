@@ -17,6 +17,8 @@ import {
   X,
   Menu,
   ChartNoAxesCombined,
+  Users,
+  Key,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { signOut } from "next-auth/react";
@@ -32,6 +34,12 @@ interface UserData {
   role?: string;
 }
 
+interface CompanyData {
+  id?: string;
+  name?: string | null;
+  logoUrl?: string | null;
+}
+
 interface NavItem {
   label: string;
   icon: React.ElementType;
@@ -42,6 +50,7 @@ interface NavItem {
 interface DashboardSidebarProps {
   userRole?: string;
   user?: UserData;
+  company?: CompanyData | null;
   className?: string;
 }
 
@@ -59,6 +68,14 @@ const candidateNavItems: NavItem[] = [
   { label: "Profile", icon: User, href: "/dashboard/candidate/profile" },
 ];
 
+const adminNavItems: NavItem[] = [
+  { label: "Admin Overview", icon: LayoutDashboard, href: "/dashboard/admin" },
+  { label: "Users", icon: Users, href: "/dashboard/admin/users" },
+  { label: "Companies", icon: Building2, href: "/dashboard/admin/companies" },
+  { label: "Tokens", icon: Key, href: "/dashboard/admin/tokens" },
+  { label: "Statistics", icon: ChartNoAxesCombined, href: "/dashboard/admin/stats" },
+];
+
 function getInitials(name?: string | null) {
   if (!name) return "U";
   return name
@@ -69,12 +86,15 @@ function getInitials(name?: string | null) {
     .slice(0, 2);
 }
 
-export function DashboardSidebar({ userRole, user, className }: DashboardSidebarProps) {
+export function DashboardSidebar({ userRole, user, company, className }: DashboardSidebarProps) {
   const pathname = usePathname();
   const [isCollapsed, setIsCollapsed] = useState(false);
 
   const role = userRole || user?.role || "CANDIDATE";
-  const navItems = role === "COMPANY" ? companyNavItems : candidateNavItems;
+  const navItems =
+    role === "COMPANY" ? companyNavItems :
+    role === "ADMIN" ? adminNavItems :
+    candidateNavItems;
 
   const isActiveRoute = useCallback(
     (href: string) => {
@@ -180,7 +200,7 @@ export function DashboardSidebar({ userRole, user, className }: DashboardSidebar
         </ul>
       </nav>
 
-      {/* Footer - User Card */}
+      {/* Footer - User/Company Card */}
       <div className="border-t border-white/10 p-4">
         <div
           className={cn(
@@ -188,31 +208,64 @@ export function DashboardSidebar({ userRole, user, className }: DashboardSidebar
             isCollapsed && "justify-center px-2"
           )}
         >
-          {user?.image ? (
-            <img
-              src={user.image}
-              alt={user.name || "User"}
-              className="h-10 w-10 flex-shrink-0 rounded-full object-cover"
-            />
+          {role === "COMPANY" && company ? (
+            // Company identity for COMPANY role
+            <>
+              {company.logoUrl ? (
+                <img
+                  src={company.logoUrl}
+                  alt={company.name || "Company"}
+                  className="h-10 w-10 flex-shrink-0 rounded-full object-cover"
+                />
+              ) : (
+                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[#46d39a] text-sm font-bold text-[#071738]">
+                  {getInitials(company?.name)}
+                </div>
+              )}
+              <div
+                className={cn(
+                  "min-w-0 flex-1 overflow-hidden transition-all duration-300",
+                  isCollapsed ? "w-0 opacity-0" : "w-auto opacity-100"
+                )}
+              >
+                <p className="truncate text-sm font-semibold text-white">
+                  {company?.name || "Company"}
+                </p>
+                <p className="truncate text-xs text-white/55 capitalize">
+                  company
+                </p>
+              </div>
+            </>
           ) : (
-            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[#46d39a] text-sm font-bold text-[#071738]">
-              {getInitials(user?.name)}
-            </div>
-          )}
+            // User identity for CANDIDATE/ADMIN roles
+            <>
+              {user?.image ? (
+                <img
+                  src={user.image}
+                  alt={user.name || "User"}
+                  className="h-10 w-10 flex-shrink-0 rounded-full object-cover"
+                />
+              ) : (
+                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[#46d39a] text-sm font-bold text-[#071738]">
+                  {getInitials(user?.name)}
+                </div>
+              )}
 
-          <div
-            className={cn(
-              "min-w-0 flex-1 overflow-hidden transition-all duration-300",
-              isCollapsed ? "w-0 opacity-0" : "w-auto opacity-100"
-            )}
-          >
-            <p className="truncate text-sm font-semibold text-white">
-              {user?.name || "User"}
-            </p>
-            <p className="truncate text-xs text-white/55 capitalize">
-              {role.toLowerCase()}
-            </p>
-          </div>
+              <div
+                className={cn(
+                  "min-w-0 flex-1 overflow-hidden transition-all duration-300",
+                  isCollapsed ? "w-0 opacity-0" : "w-auto opacity-100"
+                )}
+              >
+                <p className="truncate text-sm font-semibold text-white">
+                  {user?.name || "User"}
+                </p>
+                <p className="truncate text-xs text-white/55 capitalize">
+                  {role.toLowerCase()}
+                </p>
+              </div>
+            </>
+          )}
 
           <button
             onClick={() => signOut({ callbackUrl: "/" })}
@@ -234,14 +287,18 @@ export function DashboardSidebar({ userRole, user, className }: DashboardSidebar
 interface MobileSidebarProps {
   userRole?: string;
   user?: UserData;
+  company?: CompanyData | null;
 }
 
-export function MobileSidebar({ userRole, user }: MobileSidebarProps) {
+export function MobileSidebar({ userRole, user, company }: MobileSidebarProps) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
   const role = userRole || user?.role || "CANDIDATE";
-  const navItems = role === "COMPANY" ? companyNavItems : candidateNavItems;
+  const navItems =
+    role === "COMPANY" ? companyNavItems :
+    role === "ADMIN" ? adminNavItems :
+    candidateNavItems;
 
   const isActiveRoute = useCallback(
     (href: string) => {
@@ -336,28 +393,56 @@ export function MobileSidebar({ userRole, user }: MobileSidebarProps) {
           </ul>
         </nav>
 
-        {/* User Section */}
+        {/* User/Company Section */}
         <div className="absolute bottom-0 left-0 right-0 border-t border-white/10 bg-[#071738] p-4">
           <div className="flex items-center gap-4 rounded-2xl bg-white/5 px-4 py-4">
-            {user?.image ? (
-              <img
-                src={user.image}
-                alt={user.name || "User"}
-                className="h-10 w-10 rounded-full object-cover"
-              />
+            {role === "COMPANY" && company ? (
+              // Company identity for COMPANY role
+              <>
+                {company.logoUrl ? (
+                  <img
+                    src={company.logoUrl}
+                    alt={company.name || "Company"}
+                    className="h-10 w-10 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#46d39a] text-sm font-bold text-[#071738]">
+                    {getInitials(company?.name)}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="truncate text-sm font-semibold text-white">
+                    {company?.name || "Company"}
+                  </p>
+                  <p className="text-xs text-white/55 capitalize">
+                    company
+                  </p>
+                </div>
+              </>
             ) : (
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#46d39a] text-sm font-bold text-[#071738]">
-                {getInitials(user?.name)}
-              </div>
+              // User identity for CANDIDATE/ADMIN roles
+              <>
+                {user?.image ? (
+                  <img
+                    src={user.image}
+                    alt={user.name || "User"}
+                    className="h-10 w-10 rounded-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#46d39a] text-sm font-bold text-[#071738]">
+                    {getInitials(user?.name)}
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="truncate text-sm font-semibold text-white">
+                    {user?.name || "User"}
+                  </p>
+                  <p className="text-xs text-white/55 capitalize">
+                    {role.toLowerCase()}
+                  </p>
+                </div>
+              </>
             )}
-            <div className="flex-1 min-w-0">
-              <p className="truncate text-sm font-semibold text-white">
-                {user?.name || "User"}
-              </p>
-              <p className="text-xs text-white/55 capitalize">
-                {role.toLowerCase()}
-              </p>
-            </div>
             <button
               onClick={() => signOut({ callbackUrl: "/" })}
               className="rounded-lg p-2 text-white/50 hover:bg-white/10 hover:text-white"
