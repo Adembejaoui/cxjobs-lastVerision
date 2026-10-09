@@ -119,8 +119,7 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const session = await auth();
-  const job = await getJob(slug, session?.user?.id, session?.user?.role);
+  const job = await getPublishedJob(slug);
 
   if (!job) {
     return { title: 'Job Not Found | CXJobs' };
