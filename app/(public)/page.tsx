@@ -1,5 +1,6 @@
 import CXHeroSearch from "@/components/landing/cx-hero-search";
 import { CoverflowCarousel } from "@/components/landing/coverflow-carousel";
+import { LandingVisitorTracker } from "@/components/landing-visitor-tracker";
 import prisma from "@/lib/prisma";
 
 async function getFeaturedCompanies() {
@@ -37,6 +38,7 @@ export default async function CXJobsLandingPage() {
 
   return (
     <main className="flex min-h-screen flex-col bg-slate-50">
+      <LandingVisitorTracker />
       <CXHeroSearch />
       <section className="py-16 px-4 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-7xl">

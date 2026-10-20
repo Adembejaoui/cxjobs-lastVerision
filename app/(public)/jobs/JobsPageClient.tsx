@@ -289,13 +289,21 @@ export default function JobsPageClient({ initialJobs = [], totalJobs = 0 }: Jobs
   // jobs and does NOT touch the URL — the user must click "Apply Filters".
   // (Activity toggling is handled inline by the single-select dropdown.)
 
-  // Clear the pending filter state. Does NOT trigger a request — the user
-  // must click "Apply Filters" for the cleared state to take effect.
-  const clearPendingFilters = () => {
-    setPendingActivity(activityTypes.map(item => ({ ...item, checked: false })))
+  // Clear ALL filters — pending and applied — and immediately refresh the
+  // list. Resets pagination to page 1 and clears the URL filters. Used by
+  // the Reset button and the empty-state Clear Filters action.
+  const clearAllFilters = () => {
+    const clearedActivity = activityTypes.map(item => ({ ...item, checked: false }))
+    setPendingActivity(clearedActivity)
     setPendingLanguage("")
     setPendingLocation("")
     setPendingSearch("")
+    setAppliedActivity(clearedActivity)
+    setAppliedLanguage("")
+    setAppliedLocation("")
+    setAppliedSearch("")
+    setCurrentPage(1)
+    router.replace("/jobs", { scroll: false })
   }
 
   // Apply the pending filters: copy them into the applied state, reset to
@@ -502,7 +510,7 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
 {/* Reset / Apply */}
               <div className="flex items-center gap-2">
                 <button
-                  onClick={clearPendingFilters}
+                  onClick={clearAllFilters}
                   className="rounded-2xl border border-[#d7e0ea] bg-white px-4 py-3 text-[14px] font-bold text-red-600 hover:bg-red-50 transition-colors"
                 >
                   Reset
@@ -603,11 +611,8 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
                <p className="mt-2 text-[16px] text-[#95a5be]">
                  Try adjusting your filter criteria or clear all filters
                </p>
-<button
-                  onClick={() => {
-                    clearPendingFilters()
-                    applyFilters()
-                  }}
+                <button
+                  onClick={clearAllFilters}
                   className="mt-4 rounded-[18px] bg-[#45c68d] px-6 py-3 text-[16px] font-extrabold text-white shadow-lg transition hover:translate-y-[-1px]"
                 >
                   Clear Filters

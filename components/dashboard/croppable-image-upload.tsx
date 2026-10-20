@@ -9,6 +9,9 @@ import {
   X,
   Loader2,
   Image as ImageIcon,
+  AlertCircle,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +19,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -345,11 +349,16 @@ export function CroppableImageUpload({
 
   const displayPreview = preview || currentImageUrl;
 
+  // Circular frame for avatars, soft rounded rectangle for everything else
+  const frameRadius = type === "avatar" ? "rounded-full" : "rounded-xl";
+
   // ── Render ───────────────────────────────────────────────────
   return (
-    <div className={cn("space-y-2", className)}>
+    <div className={cn("flex w-full flex-col items-center gap-2.5", className)}>
       {label && (
-        <Label className="text-sm font-medium text-slate-700">{label}</Label>
+        <Label className="self-start text-sm font-medium text-slate-800">
+          {label}
+        </Label>
       )}
 
       <input
@@ -357,87 +366,93 @@ export function CroppableImageUpload({
         type="file"
         accept="image/*"
         onChange={handleFileChange}
-        className="hidden"
+        className="peer sr-only"
         id={`${type}-crop`}
         disabled={isUploading}
       />
 
       {/* ── Preview with image ─────────────────────────────────── */}
       {displayPreview ? (
-        <div className="relative group">
+        <div className="flex w-full flex-col items-center gap-3">
           <div
             className={cn(
-              "rounded-lg border-2 border-dashed border-slate-200 overflow-hidden bg-slate-50 relative",
+              "relative w-full overflow-hidden bg-slate-100 shadow-sm ring-1 ring-slate-200",
+              frameRadius,
               ASPECT_CLASS[aspectLabel],
               previewClassName,
             )}
           >
             <img
               src={displayPreview}
-              alt="Preview"
-              className="w-full h-full object-cover"
+              alt={label ? `${label} preview` : "Image preview"}
+              className="h-full w-full object-cover"
             />
+            {isUploading && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/50 backdrop-blur-[1px]">
+                <Loader2 className="h-7 w-7 animate-spin text-white" />
+              </div>
+            )}
           </div>
-          {/* Hover overlay */}
-          <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 rounded-lg">
+
+          <div className="flex items-center gap-2">
             <Button
               type="button"
-              variant="secondary"
+              variant="outline"
               size="sm"
               onClick={() => fileInputRef.current?.click()}
               disabled={isUploading}
-              className="bg-white/90 hover:bg-white"
+              className="h-8 gap-1.5 rounded-lg border-slate-200 bg-white px-3 text-slate-700 shadow-sm hover:bg-slate-50"
             >
-              <Upload className="h-4 w-4 mr-1" />
+              <Upload className="h-3.5 w-3.5" />
               Change
             </Button>
             <Button
               type="button"
-              variant="destructive"
+              variant="ghost"
               size="sm"
               onClick={handleRemove}
-              className="bg-red-500/90 hover:bg-red-500"
+              disabled={isUploading}
+              className="h-8 gap-1.5 rounded-lg px-3 text-slate-500 hover:bg-red-50 hover:text-red-600"
             >
-              <X className="h-4 w-4 mr-1" />
+              <X className="h-3.5 w-3.5" />
               Remove
             </Button>
           </div>
-          {isUploading && (
-            <div className="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg z-10">
-              <Loader2 className="h-8 w-8 animate-spin text-white" />
-            </div>
-          )}
         </div>
       ) : (
         /* ── Upload placeholder ────────────────────────────────── */
         <label
           htmlFor={`${type}-crop`}
           className={cn(
-            "flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-200 bg-slate-50 cursor-pointer hover:border-slate-300 hover:bg-slate-100 transition-colors",
+            "group flex w-full cursor-pointer flex-col items-center justify-center gap-3 border-2 border-dashed border-slate-300 bg-slate-50/70 p-4 text-center transition-colors",
+            "hover:border-slate-400 hover:bg-slate-100/80",
+            "peer-focus-visible:border-slate-500 peer-focus-visible:ring-2 peer-focus-visible:ring-slate-400 peer-focus-visible:ring-offset-2",
+            "peer-disabled:cursor-not-allowed peer-disabled:opacity-60",
+            frameRadius,
             ASPECT_CLASS[aspectLabel],
             previewClassName,
           )}
         >
           {isUploading ? (
             <>
-              <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+              <Loader2 className="h-7 w-7 animate-spin text-slate-400" />
               <span className="text-sm text-slate-500">Uploading…</span>
             </>
           ) : (
             <>
-              <div className="p-3 rounded-full bg-slate-100">
+              <div className="rounded-full bg-white p-3 shadow-sm ring-1 ring-slate-200 transition-transform group-hover:scale-105">
                 {type === "logo" || type === "avatar" ? (
-                  <ImageIcon className="h-6 w-6 text-slate-400" />
+                  <ImageIcon className="h-5 w-5 text-slate-500" />
                 ) : (
-                  <Upload className="h-6 w-6 text-slate-400" />
+                  <Upload className="h-5 w-5 text-slate-500" />
                 )}
               </div>
-              <div className="text-center">
-                <span className="text-sm text-slate-600 font-medium">
+              <div className="space-y-0.5">
+                <p className="text-sm font-medium text-slate-700">
                   Click to upload
-                </span>
-                <p className="text-xs text-slate-400 mt-1">
-                  PNG, JPG or WEBP (max. {maxSize})
+                </p>
+                <p className="text-xs text-slate-500">
+                  Image up to {maxSize} · {aspectLabel} crop
                 </p>
               </div>
             </>
@@ -445,43 +460,91 @@ export function CroppableImageUpload({
         </label>
       )}
 
-      {error && <p className="text-sm text-red-500 mt-1">{error}</p>}
+      {error && (
+        <div
+          role="alert"
+          className="flex w-full items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+        >
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
 
       {/* ── Editor + Crop Dialog ──────────────────────────────── */}
       <Dialog open={dialogOpen} onOpenChange={(open) => !open && handleCancel()}>
-        <DialogContent className="max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Edit &amp; crop {label ?? type}</DialogTitle>
+        <DialogContent className="max-h-[92vh] w-[calc(100%-2rem)] max-w-2xl gap-0 overflow-hidden p-0 sm:rounded-2xl">
+          <DialogHeader className="space-y-1 border-b border-slate-100 px-5 py-4 text-left">
+            <DialogTitle className="text-base font-semibold text-slate-900">
+              Edit &amp; crop {label ?? type}
+            </DialogTitle>
+            <DialogDescription className="text-sm text-slate-500">
+              Drag to reposition. Use the slider or scroll to zoom.
+            </DialogDescription>
           </DialogHeader>
 
-          {/* Crop canvas */}
-          <div
-            className="relative w-full bg-slate-900 rounded-lg overflow-hidden"
-            style={{ height: 360 }}
-          >
-            {rawImage && (
-              <Cropper
-                image={rawImage}
-                crop={crop}
-                zoom={zoom}
-                rotation={rotation}
-                aspect={aspect}
-                onCropChange={setCrop}
-                onCropComplete={onCropComplete}
-                onZoomChange={setZoom}
-                onRotationChange={setCropperRotation}
+          <div className="space-y-4 overflow-y-auto bg-slate-50/60 px-5 py-4">
+            {/* Crop canvas */}
+            <div className="relative h-[min(52vh,380px)] w-full overflow-hidden rounded-xl bg-slate-900 ring-1 ring-slate-900/10">
+              {rawImage && (
+                <Cropper
+                  image={rawImage}
+                  crop={crop}
+                  zoom={zoom}
+                  rotation={rotation}
+                  aspect={aspect}
+                  onCropChange={setCrop}
+                  onCropComplete={onCropComplete}
+                  onZoomChange={setZoom}
+                  onRotationChange={setCropperRotation}
+                />
+              )}
+            </div>
+
+            {/* Zoom control */}
+            <div className="flex items-center gap-3 px-1">
+              <ZoomOut className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+              <input
+                type="range"
+                min={1}
+                max={3}
+                step={0.01}
+                value={zoom}
+                onChange={(e) => setZoom(Number(e.target.value))}
+                aria-label="Zoom"
+                className="h-1.5 w-full cursor-pointer appearance-none rounded-full bg-slate-200 accent-slate-900"
               />
+              <ZoomIn className="h-4 w-4 shrink-0 text-slate-400" aria-hidden />
+            </div>
+
+            {error && (
+              <div
+                role="alert"
+                className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+              >
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{error}</span>
+              </div>
             )}
-          </div>          
+          </div>
+
           {/* ── Footer ─────────────────────────────────────────────── */}
-          <DialogFooter>
-            <Button variant="outline" onClick={handleCancel} disabled={isUploading}>
+          <DialogFooter className="gap-2 border-t border-slate-100 bg-white px-5 py-3 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={handleCancel}
+              disabled={isUploading}
+              className="rounded-lg"
+            >
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={isUploading}>
+            <Button
+              onClick={handleSave}
+              disabled={isUploading}
+              className="min-w-24 rounded-lg"
+            >
               {isUploading ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Saving…
                 </>
               ) : (

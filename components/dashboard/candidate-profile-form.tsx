@@ -608,7 +608,6 @@ export function CandidateProfileForm({ candidate }: CandidateProfileFormProps) {
                   onChange={(url) => setPersonalData((prev) => ({ ...prev, avatarUrl: url || "" }))}
                   type="avatar"
                   maxSize="2MB"
-                  className="w-24 pl-20 shrink-0"
                   previewClassName="w-24 h-24 rounded-full border-0"
                 />
               </div>

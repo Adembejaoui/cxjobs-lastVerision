@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { CompanyCard, PagerButton } from './components'
 import { AdminBannerCard, type AdminBanner } from '@/components/admin-banner'
 import { logger } from "@/lib/logger";
@@ -120,39 +121,67 @@ const sidebarBanners = sortedBanners.filter((b) => b.priority > 1);
 const topBanner = sortedBanners.filter((b) => b.priority === 1);
 
 export default function CompaniesPageClient({ initialCompanies = [], totalCompanies = 0 }: CompaniesPageClientProps) {
-  const [companies, setCompanies] = useState<CompanyFromAPI[]>(initialCompanies)
-  const [total, setTotal] = useState(totalCompanies)
-  const [selectedSizes, setSelectedSizes] = useState<FilterOption[]>(companySizesInitial)
-  const [selectedLocations, setSelectedLocations] = useState<FilterOption[]>(locationsInitial)
-  const [currentPage, setCurrentPage] = useState(1)
-  const [searchQuery, setSearchQuery] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
+  const searchParams = useSearchParams()
+  const router = useRouter()
 
   const LIMIT = 20
 
+  // URL initialization: read the supported query parameters and seed both the
+  // pending and the applied filter states from them, so the first company-list
+  // request already uses the URL's filters (no default-then-URL double fetch).
+  // useSearchParams is safe during server rendering — no window access here.
+  const initialSearch = searchParams.get('search') ?? ''
+  const initialLocation = searchParams.get('location') ?? ''
+  const initialCompanySize = searchParams.get('companySize') ?? ''
+  const initialPageParam = Number.parseInt(searchParams.get('page') ?? '1', 10)
+  const initialPage = Number.isNaN(initialPageParam) || initialPageParam < 1 ? 1 : initialPageParam
+
+  const locationsWithSelection = (value: string) =>
+    locationsInitial.map(item => ({ ...item, checked: item.value === value }))
+
+  const sizesWithSelection = (value: string) =>
+    companySizesInitial.map(item => ({ ...item, checked: item.value === value }))
+
+  // Pending filter state: what the editable controls stage. Changing these never
+  // triggers a request, never updates the results, and never changes the URL —
+  // the user must click "Apply Filters".
+  const [pendingSearch, setPendingSearch] = useState(initialSearch)
+  const [pendingLocations, setPendingLocations] = useState<FilterOption[]>(() => locationsWithSelection(initialLocation))
+  const [pendingSizes, setPendingSizes] = useState<FilterOption[]>(() => sizesWithSelection(initialCompanySize))
+
+  // Applied filter state: the source of truth for company fetching and the URL.
+  const [appliedSearch, setAppliedSearch] = useState(initialSearch)
+  const [appliedLocations, setAppliedLocations] = useState<FilterOption[]>(() => locationsWithSelection(initialLocation))
+  const [appliedSizes, setAppliedSizes] = useState<FilterOption[]>(() => sizesWithSelection(initialCompanySize))
+
+  const [companies, setCompanies] = useState<CompanyFromAPI[]>(initialCompanies)
+  const [total, setTotal] = useState(totalCompanies)
+  const [currentPage, setCurrentPage] = useState(initialPage)
+  const [isLoading, setIsLoading] = useState(false)
+
+  // buildQueryParams reads ONLY the applied state, so pending edits can never
+  // leak into a request.
   const buildQueryParams = useCallback((page: number) => {
     const params = new URLSearchParams()
     params.set('page', page.toString())
     params.set('limit', LIMIT.toString())
 
-    if (searchQuery) {
-      params.set('search', searchQuery)
+    if (appliedSearch) {
+      params.set('search', appliedSearch)
     }
 
-    const activeLocation = selectedLocations.find(l => l.checked)
+    const activeLocation = appliedLocations.find(l => l.checked)
     if (activeLocation) {
       params.set('location', activeLocation.value)
     }
 
-    const activeSize = selectedSizes.find(s => s.checked)
+    const activeSize = appliedSizes.find(s => s.checked)
     if (activeSize) {
       params.set('companySize', activeSize.value)
     }
 
-  
-
     return params.toString()
-  }, [searchQuery, selectedLocations, selectedSizes])
+  }, [appliedSearch, appliedLocations, appliedSizes])
 
   const fetchCompanies = useCallback(async (page: number) => {
     setIsLoading(true)
@@ -172,35 +201,109 @@ export default function CompaniesPageClient({ initialCompanies = [], totalCompan
     }
   }, [buildQueryParams])
 
+  // Fetch when the current page changes OR when the APPLIED filters change.
+  // Pending edits are deliberately excluded from buildQueryParams, so they never
+  // enter this dependency list and produce zero requests. When "Apply Filters"
+  // is clicked, the applied states change, which recreates buildQueryParams and
+  // fetchCompanies and re-runs this effect exactly once (React batches the
+  // state updates, so several applied values changing together still yield one
+  // request).
   useEffect(() => {
     fetchCompanies(currentPage)
   }, [currentPage, fetchCompanies])
 
+  // Keep the URL in sync with the applied filters and pagination. Pending edits
+  // are not dependencies, so they never change the URL. The effect only runs on
+  // the client, so reading window.location.search is safe. The string comparison
+  // avoids a redundant replace when the URL already matches (e.g. on mount).
+  useEffect(() => {
+    const currentQuery = window.location.search.startsWith('?')
+      ? window.location.search.slice(1)
+      : window.location.search
+
+    const params = new URLSearchParams(currentQuery)
+    params.set('page', currentPage.toString())
+
+    if (appliedSearch) {
+      params.set('search', appliedSearch)
+    } else {
+      params.delete('search')
+    }
+
+    const activeLocation = appliedLocations.find(l => l.checked)
+    if (activeLocation) {
+      params.set('location', activeLocation.value)
+    } else {
+      params.delete('location')
+    }
+
+    const activeSize = appliedSizes.find(s => s.checked)
+    if (activeSize) {
+      params.set('companySize', activeSize.value)
+    } else {
+      params.delete('companySize')
+    }
+
+    const nextQuery = params.toString()
+    if (nextQuery !== currentQuery) {
+      router.replace(`/companies?${nextQuery}`, { scroll: false })
+    }
+  }, [currentPage, appliedSearch, appliedLocations, appliedSizes, router])
+
+  // Toggle a filter chip. Chips apply immediately, so they update both the
+  // pending and the applied state in one batched update (one request).
   const toggleFilter = (
-    setter: React.Dispatch<React.SetStateAction<FilterOption[]>>,
+    pendingSetter: React.Dispatch<React.SetStateAction<FilterOption[]>>,
+    appliedSetter: React.Dispatch<React.SetStateAction<FilterOption[]>>,
     label: string
   ) => {
-    setter(prev =>
+    const toggle = (prev: FilterOption[]) =>
       prev.map(item =>
         item.label === label ? { ...item, checked: !item.checked } : item
       )
-    )
+    pendingSetter(toggle)
+    appliedSetter(toggle)
     setCurrentPage(1)
   }
 
+  // Clear ALL filters — pending and applied — and immediately refresh the
+  // list. Resets pagination to page 1 and clears the URL filters. Used by
+  // the filter-bar Clear button and the empty-state Clear Filters action.
   const clearAllFilters = () => {
-    setSelectedSizes(companySizesInitial.map(item => ({ ...item })))
-    setSelectedLocations(locationsInitial.map(item => ({ ...item })))
-    setSearchQuery("")
-    setCurrentPage(1)
-
+    const clearedLocations = locationsInitial.map(item => ({ ...item }))
+    const clearedSizes = companySizesInitial.map(item => ({ ...item }))
+    setPendingLocations(clearedLocations)
+    setPendingSizes(clearedSizes)
+    setPendingSearch("")
+    commitFilters("", clearedLocations, clearedSizes)
   }
 
-  const hasActiveFilters =
-    selectedSizes.some(item => item.checked) ||
-    selectedLocations.some(item => item.checked) ||
-    searchQuery.length > 0 
+  // Commit filters into the applied state and reset pagination to page 1. The
+  // URL syncs through the effect above, and the batched state updates make the
+  // fetch effect run exactly once with the new applied filters.
+  const commitFilters = (search: string, locations: FilterOption[], sizes: FilterOption[]) => {
+    setAppliedSearch(search)
+    setAppliedLocations(locations)
+    setAppliedSizes(sizes)
+    setCurrentPage(1)
+  }
 
+  // Apply the staged (pending) filters. Guarded against duplicate submissions
+  // while a request is in progress. Works even when the current page is
+  // already page 1 — the applied-state change alone re-runs the fetch effect.
+  const applyFilters = () => {
+    if (isLoading) return
+    commitFilters(pendingSearch, pendingLocations, pendingSizes)
+  }
+
+  // Derived from the APPLIED filters — these drive the rendered chips and the
+  // "filters active" count. Pending changes do not affect these until Apply.
+  const hasActiveFilters =
+    appliedSizes.some(item => item.checked) ||
+    appliedLocations.some(item => item.checked) ||
+    appliedSearch.length > 0
+
+  const checkedCount = appliedSizes.filter(item => item.checked).length + appliedLocations.filter(item => item.checked).length
 
   const transformedCompanies = companies.map((company, index) => ({
     id: company.id,
@@ -214,8 +317,6 @@ export default function CompaniesPageClient({ initialCompanies = [], totalCompan
     coverUrl: company.coverImageUrl,
     isFeatured: index === 0,
   }))
-
-  const checkedCount = selectedSizes.filter(item => item.checked).length + selectedLocations.filter(item => item.checked).length
 
   // NOTE: previously this interleaved sidebar-priority banners every 2 cards.
   // Since those banners now live permanently in the sidebar (desktop) /
@@ -273,16 +374,21 @@ export default function CompaniesPageClient({ initialCompanies = [], totalCompan
                 <input
                   type="text"
                   placeholder="Search companies, industries..."
-                  value={searchQuery}
+                  value={pendingSearch}
                   onChange={(e) => {
-                    setSearchQuery(e.target.value)
-                    setCurrentPage(1)
+                    setPendingSearch(e.target.value)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      applyFilters()
+                    }
                   }}
                   className="w-full rounded-[16px] border border-[#d7e0ea] bg-white px-4 py-3 text-[16px] font-semibold text-[#344865] placeholder:text-[#95a5be] focus:border-[#45c68d] focus:outline-none focus:ring-2 focus:ring-[#45c68d]/20"
                 />
-                {searchQuery && (
+                {pendingSearch && (
                   <button
-                    onClick={() => setSearchQuery("")}
+                    onClick={() => setPendingSearch("")}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-[#95a5be] hover:text-[#344865] transition-colors"
                   >
                     ×
@@ -292,16 +398,15 @@ export default function CompaniesPageClient({ initialCompanies = [], totalCompan
 
               {/* Location */}
               <select
-                value={selectedLocations.find(l => l.checked)?.value || ""}
+                value={pendingLocations.find(l => l.checked)?.value || ""}
                 onChange={(e) => {
                   const val = e.target.value
-                  setSelectedLocations(prev =>
+                  setPendingLocations(prev =>
                     prev.map(item => ({
                       ...item,
                       checked: item.value === val
                     }))
                   )
-                  setCurrentPage(1)
                 }}
                 className="rounded-[16px] border border-[#d7e0ea] bg-white px-4 py-3 text-[16px] font-bold text-[#29476f] shadow-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#45c68d]"
               >
@@ -310,38 +415,43 @@ export default function CompaniesPageClient({ initialCompanies = [], totalCompan
                   <option key={item.value} value={item.value}>{item.label}</option>
                 ))}
               </select>
-              {/* Clear */}
+              {/* Reset / Apply */}
               <div className="flex items-center gap-2">
-                {hasActiveFilters && (
-                  <button
-                    onClick={clearAllFilters}
-                    className="rounded-[16px] border border-[#d7e0ea] bg-white px-4 py-3 text-[14px] font-bold text-red-600 hover:bg-red-50 transition-colors"
-                  >
-                    Clear
-                  </button>
-                )}
+                <button
+                  onClick={clearAllFilters}
+                  className="rounded-[16px] border border-[#d7e0ea] bg-white px-4 py-3 text-[14px] font-bold text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  Clear
+                </button>
+                <button
+                  onClick={applyFilters}
+                  disabled={isLoading}
+                  className="rounded-[16px] border border-[#45c68d] bg-[#45c68d] px-4 py-3 text-[14px] font-bold text-white hover:bg-[#38b073] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Apply Filters
+                </button>
               </div>
             </div>
 
             {/* Active Filters */}
             {hasActiveFilters && (
               <div className="mt-3 flex flex-wrap gap-2">
-                {searchQuery && (
+                {appliedSearch && (
                   <span className="inline-flex items-center gap-2 rounded-full bg-teal-100 px-3 py-1.5 text-xs font-semibold text-teal-700">
-                    &quot;{searchQuery}&quot;
-                    <button onClick={() => setSearchQuery("")} className="hover:text-teal-900 transition-colors">×</button>
+                    &quot;{appliedSearch}&quot;
+                    <button onClick={() => { setPendingSearch(""); setAppliedSearch(""); }} className="hover:text-teal-900 transition-colors">×</button>
                   </span>
                 )}
-                {selectedLocations.filter(item => item.checked).map(item => (
+                {appliedLocations.filter(item => item.checked).map(item => (
                   <span key={item.value} className="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1.5 text-xs font-semibold text-blue-700">
                     {item.label}
-                    <button onClick={() => toggleFilter(setSelectedLocations, item.label)} className="hover:text-blue-900 transition-colors">×</button>
+                    <button onClick={() => toggleFilter(setPendingLocations, setAppliedLocations, item.label)} className="hover:text-blue-900 transition-colors">×</button>
                   </span>
                 ))}
-                {selectedSizes.filter(item => item.checked).map(item => (
+                {appliedSizes.filter(item => item.checked).map(item => (
                   <span key={item.value} className="inline-flex items-center gap-2 rounded-full bg-purple-100 px-3 py-1.5 text-xs font-semibold text-purple-700">
                     {item.label}
-                    <button onClick={() => toggleFilter(setSelectedSizes, item.label)} className="hover:text-purple-900 transition-colors">×</button>
+                    <button onClick={() => toggleFilter(setPendingSizes, setAppliedSizes, item.label)} className="hover:text-purple-900 transition-colors">×</button>
                   </span>
                 ))}
               </div>
@@ -356,7 +466,7 @@ export default function CompaniesPageClient({ initialCompanies = [], totalCompan
                 Showing {transformedCompanies.length} of {total} companies
                 {hasActiveFilters && (
                   <span className="ml-1 text-[#45c68d]">
-                    ({checkedCount + (searchQuery ? 1 : 0)} filters active)
+                    ({checkedCount + (appliedSearch ? 1 : 0)} filters active)
                   </span>
                 )}
               </p>

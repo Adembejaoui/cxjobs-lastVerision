@@ -124,6 +124,8 @@ model Candidate {
   workMode          WorkMode?
   dateOfBirth       DateTime?
   gender            String?
+  lastCvExportAt    DateTime?
+  cvExportCount     Int              @default(0)
   applications      Application[]
   skills            CandidateSkill[]
   user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -134,6 +136,7 @@ model Candidate {
   @@index([userId])
   @@index([dateOfBirth])
   @@index([gender])
+  @@index([lastCvExportAt])
   @@map("candidates")
 }
 
@@ -382,6 +385,15 @@ model CompanyInvitation {
   @@index([createdAt])
   @@index([status])
   @@map("company_invitations")
+}
+
+model LandingPageVisitor {
+  id          String   @id @default(uuid())
+  visitorHash String   @unique
+  firstSeenAt DateTime @default(now())
+
+  @@index([firstSeenAt])
+  @@map("landing_page_visitors")
 }
 
 enum UserRole {

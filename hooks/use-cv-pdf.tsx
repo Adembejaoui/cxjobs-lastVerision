@@ -5,19 +5,34 @@ import { pdf } from "@react-pdf/renderer";
 import { CVPDFDocument, Candidate } from "@/components/cv/cv-pdf-document";
 import { logger } from "@/lib/logger";
 
+interface CooldownInfo {
+  remainingMs: number;
+  remainingDays: number;
+  remainingHours: number;
+  remainingMinutes: number;
+  nextExportAt: string;
+}
+
 interface UseCVPDFOptions {
   candidate: Candidate;
   watermarkSrc?: string | null;
 }
 
 interface UseCVPDFReturn {
-  generatePDF: () => Promise<boolean>;
+  checkEligibility: () => Promise<{ success: boolean; error?: string; cooldown?: CooldownInfo; nextExportAt?: string }>;
+  generatePDFBlob: () => Promise<Blob | null>;
+  commitExport: () => Promise<{ success: boolean; error?: string; cooldown?: CooldownInfo; nextExportAt?: string }>;
+  triggerDownload: (blob: Blob) => void;
+  isChecking: boolean;
   isGenerating: boolean;
+  isCommitting: boolean;
   error: string | null;
 }
 
 export function useCVPDF({ candidate, watermarkSrc }: UseCVPDFOptions): UseCVPDFReturn {
+  const [isChecking, setIsChecking] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isCommitting, setIsCommitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const resolveWatermarkSrc = useCallback(async (): Promise<string | null> => {
@@ -94,14 +109,34 @@ export function useCVPDF({ candidate, watermarkSrc }: UseCVPDFOptions): UseCVPDF
     };
   }, [candidate]);
 
-  const generatePDF = useCallback(async (): Promise<boolean> => {
+  const checkEligibility = useCallback(async () => {
+    setIsChecking(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/candidate/cv/export", {
+        method: "GET",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await response.json();
+      if (!data.success) {
+        return { success: false, error: data.error, cooldown: data.cooldown };
+      }
+      return { success: true, nextExportAt: data.nextExportAt };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to check eligibility";
+      logger.error("Export eligibility check failed", { error: err });
+      return { success: false, error: errorMessage };
+    } finally {
+      setIsChecking(false);
+    }
+  }, []);
+
+  const generatePDFBlob = useCallback(async (): Promise<Blob | null> => {
     setIsGenerating(true);
     setError(null);
 
     try {
       const watermarkDataUrl = await resolveWatermarkSrc();
-
-    
 
       const blob = await pdf(
         <CVPDFDocument candidate={sanitizedCandidate} watermarkSrc={watermarkDataUrl ?? watermarkSrc ?? null} />
@@ -111,6 +146,41 @@ export function useCVPDF({ candidate, watermarkSrc }: UseCVPDFOptions): UseCVPDF
         throw new Error("Generated PDF is empty");
       }
 
+      return blob;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to generate PDF";
+      logger.error("PDF generation failed", { error: err });
+      setError(errorMessage);
+      return null;
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [resolveWatermarkSrc, sanitizedCandidate, watermarkSrc]);
+
+  const commitExport = useCallback(async () => {
+    setIsCommitting(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/candidate/cv/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await response.json();
+      if (!data.success) {
+        return { success: false, error: data.error, cooldown: data.cooldown };
+      }
+      return { success: true, nextExportAt: data.nextExportAt };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Failed to commit export";
+      logger.error("Export commit failed", { error: err });
+      return { success: false, error: errorMessage };
+    } finally {
+      setIsCommitting(false);
+    }
+  }, []);
+
+  const triggerDownload = useCallback((blob: Blob) => {
+    try {
       const url = URL.createObjectURL(blob);
 
       const fullName = [
@@ -133,22 +203,21 @@ export function useCVPDF({ candidate, watermarkSrc }: UseCVPDFOptions): UseCVPDF
       setTimeout(() => {
         URL.revokeObjectURL(url);
       }, 1000);
-
-      return true;
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to generate PDF";
-      logger.error("PDF generation failed");
+      const errorMessage = err instanceof Error ? err.message : "Failed to trigger download";
+      logger.error("Download trigger failed", { error: err });
       setError(errorMessage);
-      return false;
-    } finally {
-      setIsGenerating(false);
     }
-  }, [resolveWatermarkSrc, sanitizedCandidate, watermarkSrc]);
+  }, [sanitizedCandidate]);
 
   return {
-    generatePDF,
+    checkEligibility,
+    generatePDFBlob,
+    commitExport,
+    triggerDownload,
+    isChecking,
     isGenerating,
+    isCommitting,
     error,
   };
 }
