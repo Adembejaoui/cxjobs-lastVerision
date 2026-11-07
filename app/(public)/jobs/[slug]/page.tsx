@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation'
 import { unstable_cache } from 'next/cache'
 import { auth } from '@/lib/auth'
 import prisma from '@/lib/prisma'
+import { BenefitScope, JobOfferStatus } from '@/app/generated/prisma/client'
 import { JobDetailClient, JobOffer } from './job-detail-client'
 import { logger } from "@/lib/logger";
 
@@ -13,29 +14,29 @@ const getPublishedJob = unstable_cache(
   async (slug: string): Promise<JobOffer | null> => {
     try {
       const job = await prisma.jobOffer.findFirst({
-        where: {
-          slug,
-          deletedAt: null,
-          status: "PUBLISHED",
-        },
-        include: {
-          company: {
-            select: {
-              id: true,
-              name: true,
-              slug: true,
-              logoUrl: true,
-              location: true,
-              website: true,
-              description: true,
-              isRemoteFriendly: true,
-              isHybridFriendly: true,
-              benefits: {
-                where: { scope: "CORE" },
-                select: { id: true, name: true, icon: true },
-              },
+where: {
+        slug,
+        deletedAt: null,
+        status: JobOfferStatus.PUBLISHED,
+      },
+      include: {
+        company: {
+          select: {
+            id: true,
+            name: true,
+            slug: true,
+            logoUrl: true,
+            location: true,
+            website: true,
+            description: true,
+            isRemoteFriendly: true,
+            isHybridFriendly: true,
+            benefits: {
+              where: { scope: BenefitScope.CORE },
+              select: { id: true, name: true, icon: true },
             },
           },
+        },
           benefits: { include: { benefit: true } },
           languages: true,
           _count: { select: { applications: true } },
@@ -58,7 +59,7 @@ const jobOfferInclude = {
       id: true, name: true, slug: true, logoUrl: true,
       location: true, website: true, description: true,
       isRemoteFriendly: true, isHybridFriendly: true,
-      benefits: { where: { scope: "CORE" }, select: { id: true, name: true, icon: true } },
+      benefits: { where: { scope: BenefitScope.CORE }, select: { id: true, name: true, icon: true } },
     },
   },
   benefits: { include: { benefit: true } },
@@ -173,7 +174,7 @@ async function getJob(slug: string, userId?: string, userRole?: string): Promise
 export async function generateStaticParams() {
   try {
     const jobs = await prisma.jobOffer.findMany({
-      where: { status: "PUBLISHED", deletedAt: null },
+      where: { status: JobOfferStatus.PUBLISHED, deletedAt: null },
       select: { slug: true },
       take: 1000,
     });

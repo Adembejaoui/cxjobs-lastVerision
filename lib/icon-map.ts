@@ -1,3 +1,4 @@
+import { createElement, type ComponentType, type SVGProps } from "react";
 import {
   Heart,
   DollarSign,
@@ -50,7 +51,6 @@ import {
   Medal,
   LucideIcon,
 } from "lucide-react";
-import { createElement, type ComponentType } from "react";
 
 export const ICON_MAP: Record<string, LucideIcon> = {
   heart: Heart,
@@ -107,5 +107,5 @@ export const ICON_MAP: Record<string, LucideIcon> = {
 export function DynamicIcon({ name, className }: { name: string; className?: string }) {
   const Icon = ICON_MAP[name];
   if (!Icon) return null;
-  return createElement(Icon as ComponentType<any>, { className });
+  return createElement(Icon as ComponentType<SVGProps<SVGSVGElement>>, { className });
 }

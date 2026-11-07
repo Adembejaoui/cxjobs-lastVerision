@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import  prisma  from "@/lib/prisma";
+import { JobOfferStatus } from "@/app/generated/prisma/client";
 import { logger } from "@/lib/logger";
 
 interface RouteParams {
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           select: { jobs: true },
         },
         jobs: {
-          where: { status: "PUBLISHED" },
+          where: { status: JobOfferStatus.PUBLISHED },
           select: {
             id: true,
             title: true,

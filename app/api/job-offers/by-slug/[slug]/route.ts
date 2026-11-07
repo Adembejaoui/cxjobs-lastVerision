@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import  prisma from "@/lib/prisma";
+import { BenefitScope } from "@/app/generated/prisma/client";
 import { unstable_cache } from "next/cache";
 import { logger } from "@/lib/logger";
 import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
@@ -28,7 +29,7 @@ const getPublicJobOfferBySlug = unstable_cache(
             isRemoteFriendly: true,
             isHybridFriendly: true,
             benefits: {
-              where: { scope: "CORE" },
+              where: { scope: BenefitScope.CORE },
             },
           },
         },
@@ -105,7 +106,7 @@ export async function GET(
             isRemoteFriendly: true,
             isHybridFriendly: true,
             benefits: {
-              where: { scope: "CORE" },
+              where: { scope: BenefitScope.CORE },
             },
           },
         },

@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { JobOfferStatus, LanguageLevel } from "@/app/generated/prisma/client";
 import { CompanyAnalyticsAge } from "@/types/company-analytics";
 import { buildJobWhere } from "@/lib/analytics-utils";
 
@@ -231,7 +232,7 @@ export async function getDashboardJobPerformance(
   return prisma.jobOffer.findMany({
     where: {
       ...buildJobWhere(companyId, language, fromDate, { includeTimeWindow: true }),
-      status: "PUBLISHED",
+      status: JobOfferStatus.PUBLISHED,
     },
     select: {
       id: true,
@@ -240,7 +241,7 @@ export async function getDashboardJobPerformance(
       customLocation: true,
       views: true,
       languages: {
-        where: { level: "REQUIRED" },
+        where: { level: LanguageLevel.REQUIRED },
         select: { language: true },
       },
       _count: { select: { applications: true } },
