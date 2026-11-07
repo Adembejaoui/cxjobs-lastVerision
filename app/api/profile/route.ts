@@ -609,6 +609,7 @@ async function upsertCandidateProfile(userId: string, data: unknown, alreadyOnbo
   const cleanedProfileData = {
     ...profileData,
     preferredJobTypes: profileData.preferredJobTypes === null ? undefined : profileData.preferredJobTypes,
+    shiftType: profileData.shiftType === null ? undefined : profileData.shiftType,
   };
 
   // Use transaction to ensure atomicity for writes

@@ -9,6 +9,8 @@ import { JOB_ROLES, getJobRoleConfig, getRequiredFields } from "@/lib/job-role-c
 import { normalizeLinkedInUrl } from "@/lib/validations/linkedin";
 import { logger } from "@/lib/logger";
 import { CroppableImageUpload } from "@/components/dashboard/croppable-image-upload";
+import { GraduationCap, Briefcase, Globe } from "lucide-react";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 
 interface FormData {
   targetJobRole: string;
@@ -23,7 +25,7 @@ interface FormData {
   resumeUrl: string;
   linkedinUrl: string;
   workMode: string;
-  shiftType: string;
+  shiftType: string[];
   preferredJobTypes: string[];
   dateOfBirth: string;
   gender: string;
@@ -46,7 +48,7 @@ const initialFormData: FormData = {
   resumeUrl: "",
   linkedinUrl: "",
   workMode: "",
-  shiftType: "",
+  shiftType: [],
   preferredJobTypes: [],
   dateOfBirth: "",
   gender: "",
@@ -156,6 +158,13 @@ const isValidDate = (value: string): boolean => {
   if (!value) return false;
   const parsed = new Date(value);
   return !Number.isNaN(parsed.getTime());
+};
+
+const formatDate = (value: string): string => {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString(undefined, { month: "short", year: "numeric" });
 };
 
 const isRoleFieldRequired = (roleId: string, field: string): boolean => {
@@ -341,6 +350,9 @@ export default function ManualOnboardingPage() {
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<ValidationErrors>({});
   const [formData, setFormData] = useState<FormData>(initialFormData);
+  const [editingExperienceIndex, setEditingExperienceIndex] = useState<number | null>(null);
+  const [editingEducationIndex, setEditingEducationIndex] = useState<number | null>(null);
+  const [editingLanguageIndex, setEditingLanguageIndex] = useState<number | null>(null);
   const [recommendedSkills, setRecommendedSkills] = useState<string[]>([]);
   const firstInputErrorRef = useRef<HTMLInputElement | null>(null);
   const firstSectionErrorRef = useRef<HTMLDivElement | null>(null);
@@ -451,7 +463,15 @@ export default function ManualOnboardingPage() {
     }
   };
 
-  const handleAddExperience = () => {
+  const handleEditExperience = (index: number) => {
+    const experience = formData.experiences[index];
+    setNewExperience({ ...experience });
+    setEditingExperienceIndex(index);
+    setError(null);
+    clearFieldError(`experiences.${index}`);
+  };
+
+  const handleSaveExperience = () => {
     const draftErrors: ValidationErrors = {};
     if (isBlank(newExperience.title)) draftErrors.title = "Job title is required.";
     if (isBlank(newExperience.company)) draftErrors.company = "Company name is required.";
@@ -472,10 +492,16 @@ export default function ManualOnboardingPage() {
     }
 
     setError(null);
-    setFormData((prev) => ({
-      ...prev,
-      experiences: [...prev.experiences, { ...newExperience }],
-    }));
+    setFormData((prev) => {
+      const experiences = [...prev.experiences];
+      const entry = { ...newExperience };
+      if (editingExperienceIndex !== null) {
+        experiences[editingExperienceIndex] = entry;
+      } else {
+        experiences.push(entry);
+      }
+      return { ...prev, experiences };
+    });
     clearFieldError("experiences");
     setNewExperience({
       title: "",
@@ -486,6 +512,21 @@ export default function ManualOnboardingPage() {
       current: false,
       description: "",
     });
+    setEditingExperienceIndex(null);
+  };
+
+  const handleCancelExperience = () => {
+    setNewExperience({
+      title: "",
+      company: "",
+      location: "",
+      startDate: "",
+      endDate: "",
+      current: false,
+      description: "",
+    });
+    setEditingExperienceIndex(null);
+    setError(null);
   };
 
   const handleRemoveExperience = (index: number) => {
@@ -493,10 +534,24 @@ export default function ManualOnboardingPage() {
       ...prev,
       experiences: prev.experiences.filter((_, i) => i !== index),
     }));
+    setEditingExperienceIndex((current) => {
+      if (current === null) return null;
+      if (current === index) return null;
+      return current > index ? current - 1 : current;
+    });
     clearFieldError("experiences");
   };
 
-  const handleAddLanguage = () => {
+  const handleEditLanguage = (index: number) => {
+    const language = formData.languages[index];
+    setNewLanguage({ name: language.name, level: language.level });
+    setIsOtherLanguage(false);
+    setEditingLanguageIndex(index);
+    setError(null);
+    clearFieldError(`languages.${index}`);
+  };
+
+  const handleSaveLanguage = () => {
     const name = newLanguage.name.trim();
     if (!name) {
       setError("Please select or type a language name before adding it.");
@@ -506,18 +561,37 @@ export default function ManualOnboardingPage() {
       setError("Please select a proficiency level for this language.");
       return;
     }
-    if (formData.languages.some((l) => l.name.toLowerCase() === name.toLowerCase())) {
+    if (
+      formData.languages.some(
+        (l, i) => i !== editingLanguageIndex && l.name.toLowerCase() === name.toLowerCase()
+      )
+    ) {
       setError(`"${name}" is already in your language list.`);
       return;
     }
+
     setError(null);
-    setFormData((prev) => ({
-      ...prev,
-      languages: [...prev.languages, { name, level: newLanguage.level }],
-    }));
+    setFormData((prev) => {
+      const languages = [...prev.languages];
+      const entry = { name, level: newLanguage.level };
+      if (editingLanguageIndex !== null) {
+        languages[editingLanguageIndex] = entry;
+      } else {
+        languages.push(entry);
+      }
+      return { ...prev, languages };
+    });
     setNewLanguage({ name: "", level: "BASIC" });
     setIsOtherLanguage(false);
+    setEditingLanguageIndex(null);
     clearFieldError("languages");
+  };
+
+  const handleCancelLanguage = () => {
+    setNewLanguage({ name: "", level: "BASIC" });
+    setIsOtherLanguage(false);
+    setEditingLanguageIndex(null);
+    setError(null);
   };
 
   const handleRemoveLanguage = (index: number) => {
@@ -525,10 +599,23 @@ export default function ManualOnboardingPage() {
       ...prev,
       languages: prev.languages.filter((_, i) => i !== index),
     }));
+    setEditingLanguageIndex((current) => {
+      if (current === null) return null;
+      if (current === index) return null;
+      return current > index ? current - 1 : current;
+    });
     clearFieldError("languages");
   };
 
-  const handleAddEducation = () => {
+  const handleEditEducation = (index: number) => {
+    const entry = formData.education[index];
+    setNewEducation({ ...entry });
+    setEditingEducationIndex(index);
+    setError(null);
+    clearFieldError(`education.${index}`);
+  };
+
+  const handleSaveEducation = () => {
     const draftErrors: ValidationErrors = {};
     if (isBlank(newEducation.institution)) draftErrors.institution = "Institution is required.";
     if (isBlank(newEducation.degree)) draftErrors.degree = "Degree is required.";
@@ -549,10 +636,16 @@ export default function ManualOnboardingPage() {
     }
 
     setError(null);
-    setFormData((prev) => ({
-      ...prev,
-      education: [...prev.education, { ...newEducation }],
-    }));
+    setFormData((prev) => {
+      const education = [...prev.education];
+      const entry = { ...newEducation };
+      if (editingEducationIndex !== null) {
+        education[editingEducationIndex] = entry;
+      } else {
+        education.push(entry);
+      }
+      return { ...prev, education };
+    });
     clearFieldError("education");
     setNewEducation({
       institution: "",
@@ -561,6 +654,19 @@ export default function ManualOnboardingPage() {
       startDate: "",
       endDate: "",
     });
+    setEditingEducationIndex(null);
+  };
+
+  const handleCancelEducation = () => {
+    setNewEducation({
+      institution: "",
+      degree: "",
+      field: "",
+      startDate: "",
+      endDate: "",
+    });
+    setEditingEducationIndex(null);
+    setError(null);
   };
 
   const handleRemoveEducation = (index: number) => {
@@ -568,6 +674,11 @@ export default function ManualOnboardingPage() {
       ...prev,
       education: prev.education.filter((_, i) => i !== index),
     }));
+    setEditingEducationIndex((current) => {
+      if (current === null) return null;
+      if (current === index) return null;
+      return current > index ? current - 1 : current;
+    });
     clearFieldError("education");
   };
 
@@ -580,6 +691,15 @@ export default function ManualOnboardingPage() {
     }));
   };
 
+  const toggleShiftType = (type: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      shiftType: prev.shiftType.includes(type)
+        ? prev.shiftType.filter((t) => t !== type)
+        : [...prev.shiftType, type],
+    }));
+  };
+
   const getStepValidation = (): ValidationErrors => validateStep(STEPS[currentStep], formData);
 
   const handleSelectRole = (roleId: string) => {
@@ -588,6 +708,15 @@ export default function ManualOnboardingPage() {
   };
 
   const handleNext = () => {
+    if (
+      editingExperienceIndex !== null ||
+      editingEducationIndex !== null ||
+      editingLanguageIndex !== null
+    ) {
+      setError("Please save or cancel your changes before continuing.");
+      return;
+    }
+
     const stepErrors = getStepValidation();
 
     if (Object.keys(stepErrors).length > 0) {
@@ -911,79 +1040,142 @@ export default function ManualOnboardingPage() {
       case "languages":
         return (
           <div className="space-y-5">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Add Language</label>
-              <div className="flex gap-2 mb-3">
-                <select
-                  value={isOtherLanguage ? "OTHER" : newLanguage.name === "" ? "" : newLanguage.name}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val === "OTHER") {
-                      setIsOtherLanguage(true);
-                      setNewLanguage((prev) => ({ ...prev, name: "" }));
-                    } else {
-                      setIsOtherLanguage(false);
-                      setNewLanguage((prev) => ({ ...prev, name: val }));
-                    }
-                  }}
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">Select a language</option>
-                  <option value="Arabic">Arabic</option>
-                  <option value="Dutch">Dutch</option>
-                  <option value="English">English</option>
-                  <option value="French">French</option>
-                  <option value="Italian">Italian</option>
-                  <option value="Portuguese">Portuguese</option>
-                  <option value="Spanish">Spanish</option>
-                  <option value="OTHER">Other</option>
-                </select>
-                {isOtherLanguage && (
-                  <input
-                    type="text"
-                    value={newLanguage.name}
-                    onChange={(e) => setNewLanguage((prev) => ({ ...prev, name: e.target.value }))}
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Enter your language"
-                    autoFocus
-                  />
-                )}
-                <select
-                  value={newLanguage.level}
-                  onChange={(e) => setNewLanguage((prev) => ({ ...prev, level: e.target.value }))}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="BASIC">Basic</option>
-                  <option value="CONVERSATIONAL">Conversational</option>
-                  <option value="FLUENT">Fluent</option>
-                  <option value="NATIVE">Native</option>
-                </select>
-                <button
-                  type="button"
-                  onClick={handleAddLanguage}
-                  disabled={!newLanguage.name}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  Add
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {formData.languages.map((lang, index) => (
-                  <span
-                    key={index}
-                    className="inline-flex items-center px-3 py-1.5 bg-green-50 text-green-700 rounded-full text-sm font-medium"
-                  >
-                    {lang.name} - {lang.level}
+            <div className="flex items-center gap-2">
+              <Globe className="w-5 h-5 text-blue-600" />
+              <h2 className="text-lg font-semibold text-gray-900">Languages</h2>
+            </div>
+            <p className="text-sm text-gray-600">
+              Add the languages you speak and your proficiency level. Each entry can be edited or removed at any time.
+            </p>
+
+            <Card className="p-5 border border-slate-200">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold text-gray-900">
+                  {editingLanguageIndex !== null ? "Edit Language" : "Add Language"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Language <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={
+                        isOtherLanguage ? "OTHER" : newLanguage.name === "" ? "" : newLanguage.name
+                      }
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === "OTHER") {
+                          setIsOtherLanguage(true);
+                          setNewLanguage((prev) => ({ ...prev, name: "" }));
+                        } else {
+                          setIsOtherLanguage(false);
+                          setNewLanguage((prev) => ({ ...prev, name: val }));
+                        }
+                      }}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="">Select a language</option>
+                      <option value="Arabic">Arabic</option>
+                      <option value="Dutch">Dutch</option>
+                      <option value="English">English</option>
+                      <option value="French">French</option>
+                      <option value="Italian">Italian</option>
+                      <option value="Portuguese">Portuguese</option>
+                      <option value="Spanish">Spanish</option>
+                      <option value="OTHER">Other</option>
+                    </select>
+                    {isOtherLanguage && (
+                      <input
+                        type="text"
+                        value={newLanguage.name}
+                        onChange={(e) => setNewLanguage((prev) => ({ ...prev, name: e.target.value }))}
+                        className="mt-2 w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Enter your language"
+                        autoFocus
+                      />
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Proficiency <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={newLanguage.level}
+                      onChange={(e) => setNewLanguage((prev) => ({ ...prev, level: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="BASIC">Basic</option>
+                      <option value="CONVERSATIONAL">Conversational</option>
+                      <option value="FLUENT">Fluent</option>
+                      <option value="NATIVE">Native</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="mt-5 flex flex-col sm:flex-row gap-3 justify-end">
+                  {editingLanguageIndex !== null && (
                     <button
                       type="button"
-                      onClick={() => handleRemoveLanguage(index)}
-                      className="ml-2 text-green-500 hover:text-green-700"
+                      onClick={handleCancelLanguage}
+                      disabled={saving}
+                      className="px-4 py-2 text-sm font-medium text-gray-600 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
                     >
-                      ×
+                      Cancel
                     </button>
-                  </span>
-                ))}
-              </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleSaveLanguage}
+                    disabled={saving || !newLanguage.name || !newLanguage.level}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {editingLanguageIndex !== null ? "Save Changes" : "Add Language"}
+                  </button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="space-y-3">
+              {formData.languages.map((lang, index) => {
+                const isEditing = editingLanguageIndex === index;
+                return (
+                  <Card key={index} className="p-4 border border-slate-100 rounded-lg hover:shadow-sm transition-all">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex-shrink-0 w-8 h-8 rounded bg-green-50 flex items-center justify-center text-green-600">
+                          <Globe className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="font-medium text-gray-900">{lang.name}</div>
+                          <div className="text-sm text-gray-600">{lang.level}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 ml-2">
+                        <button
+                          type="button"
+                          onClick={() => handleEditLanguage(index)}
+                          disabled={saving || isEditing}
+                          className="px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-100 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveLanguage(index)}
+                          disabled={saving}
+                          className="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-100 bg-red-50 rounded-lg hover:bg-red-100 hover:text-red-700 transition-colors disabled:opacity-50"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })}
+              {formData.languages.length === 0 && (
+                <p className="text-sm text-gray-500 text-center py-4">No languages added yet.</p>
+              )}
               <FieldError id="languages-error" message={fieldErrors.languages} />
             </div>
           </div>
@@ -992,89 +1184,126 @@ export default function ManualOnboardingPage() {
       case "experience":
         return (
           <div className="space-y-5">
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <label className="block text-sm font-medium text-gray-700 mb-3">Add Work Experience</label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Job Title <span className="text-red-500">*</span></label>
-                  <input
-                    type="text"
-                    value={newExperience.title}
-                    onChange={(e) => setNewExperience((prev) => ({ ...prev, title: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="e.g., Customer Service Agent"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Company <span className="text-red-500">*</span></label>
-                  <input
-                    type="text"
-                    value={newExperience.company}
-                    onChange={(e) => setNewExperience((prev) => ({ ...prev, company: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="Company name"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Location</label>
-                  <input
-                    type="text"
-                    value={newExperience.location}
-                    onChange={(e) => setNewExperience((prev) => ({ ...prev, location: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="City, Country"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Start Date <span className="text-red-500">*</span></label>
-                  <input
-                    type="date"
-                    value={newExperience.startDate}
-                    onChange={(e) => setNewExperience((prev) => ({ ...prev, startDate: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">End Date</label>
-                  <input
-                    type="date"
-                    value={newExperience.endDate}
-                    onChange={(e) => setNewExperience((prev) => ({ ...prev, endDate: e.target.value }))}
-                    disabled={newExperience.current}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:bg-gray-100"
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={newExperience.current}
-                      onChange={(e) => setNewExperience((prev) => ({ ...prev, current: e.target.checked, endDate: e.target.checked ? "" : prev.endDate }))}
-                      className="rounded border-gray-300 text-blue-600"
-                    />
-                    <span className="text-sm text-gray-700">I currently work here</span>
-                  </label>
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
-                  <textarea
-                    value={newExperience.description}
-                    onChange={(e) => setNewExperience((prev) => ({ ...prev, description: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
-                    placeholder="Describe your responsibilities and achievements..."
-                    rows={2}
-                  />
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleAddExperience}
-                disabled={!newExperience.title || !newExperience.company || !newExperience.startDate}
-                className="w-full mt-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Add Experience
-              </button>
+            <div className="flex items-center gap-2">
+              <Briefcase className="w-5 h-5 text-blue-600" />
+              <h2 className="text-lg font-semibold text-gray-900">Work Experience</h2>
             </div>
+            <p className="text-sm text-gray-600">
+              Add your work history. Each entry can be edited or removed at any time.
+            </p>
+
+            <Card className="p-5 border border-slate-200">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold text-gray-900">
+                  {editingExperienceIndex !== null ? "Edit Experience" : "Add Work Experience"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Job Title <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={newExperience.title}
+                      onChange={(e) => setNewExperience((prev) => ({ ...prev, title: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="e.g., Customer Service Agent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Company <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={newExperience.company}
+                      onChange={(e) => setNewExperience((prev) => ({ ...prev, company: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Company name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Location</label>
+                    <input
+                      type="text"
+                      value={newExperience.location}
+                      onChange={(e) => setNewExperience((prev) => ({ ...prev, location: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="City, Country"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Start Date <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={newExperience.startDate}
+                      onChange={(e) => setNewExperience((prev) => ({ ...prev, startDate: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">End Date</label>
+                    <input
+                      type="date"
+                      value={newExperience.endDate}
+                      onChange={(e) => setNewExperience((prev) => ({ ...prev, endDate: e.target.value }))}
+                      disabled={newExperience.current}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:bg-slate-100"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={newExperience.current}
+                        onChange={(e) => setNewExperience((prev) => ({ ...prev, current: e.target.checked, endDate: e.target.checked ? "" : prev.endDate }))}
+                        className="rounded border-slate-300 text-blue-600"
+                      />
+                      <span className="text-sm text-gray-700">I currently work here</span>
+                    </label>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
+                    <textarea
+                      value={newExperience.description}
+                      onChange={(e) => setNewExperience((prev) => ({ ...prev, description: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none"
+                      placeholder="Describe your responsibilities and achievements..."
+                      rows={2}
+                    />
+                  </div>
+                </div>
+                <div className="mt-5 flex flex-col sm:flex-row gap-3 justify-end">
+                  {editingExperienceIndex !== null && (
+                    <button
+                      type="button"
+                      onClick={handleCancelExperience}
+                      disabled={saving}
+                      className="px-4 py-2 text-sm font-medium text-gray-600 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleSaveExperience}
+                    disabled={
+                      saving ||
+                      !newExperience.title ||
+                      !newExperience.company ||
+                      !newExperience.startDate
+                    }
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {editingExperienceIndex !== null ? "Save Changes" : "Add Experience"}
+                  </button>
+                </div>
+              </CardContent>
+            </Card>
 
             <div className="space-y-3">
               {formData.experiences.map((exp, index) => {
@@ -1084,30 +1313,51 @@ export default function ManualOnboardingPage() {
                   fieldErrors[`experiences.${index}.startDate`],
                   fieldErrors[`experiences.${index}.endDate`],
                 ].filter(Boolean) as string[];
+                const isEditing = editingExperienceIndex === index;
                 return (
-                <div key={index} className="p-4 bg-gray-50 rounded-lg">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="font-medium text-gray-900">{exp.title}</div>
-                      <div className="text-sm text-gray-600">{exp.company}</div>
-                      <div className="text-xs text-gray-500">
-                        {exp.startDate} - {exp.current ? "Present" : exp.endDate}
+                  <Card key={index} className="p-4 border border-slate-100 rounded-lg hover:shadow-sm transition-all">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex-shrink-0 w-8 h-8 rounded bg-blue-50 flex items-center justify-center text-blue-600">
+                          <Briefcase size={20} />
+                        </div>
+                        <div>
+                          <div className="font-medium text-gray-900">{exp.title}</div>
+                          <div className="text-sm text-gray-600">{exp.company}</div>
+                          {exp.location && <div className="text-xs text-gray-500">{exp.location}</div>}
+                          <div className="text-xs text-gray-500">
+                            {formatDate(exp.startDate)} – {exp.current ? "Present" : formatDate(exp.endDate) || "Present"}
+                          </div>
+                          {entryErrors.map((message) => (
+                            <p key={message} role="alert" className={FIELD_ERROR_CLASS}>{message}</p>
+                          ))}
+                        </div>
                       </div>
-                      {entryErrors.map((message) => (
-                        <p key={message} role="alert" className={FIELD_ERROR_CLASS}>{message}</p>
-                      ))}
+                      <div className="flex items-center gap-2 ml-2">
+                        <button
+                          type="button"
+                          onClick={() => handleEditExperience(index)}
+                          disabled={saving || isEditing}
+                          className="px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-100 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveExperience(index)}
+                          disabled={saving}
+                          className="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-100 bg-red-50 rounded-lg hover:bg-red-100 hover:text-red-700 transition-colors disabled:opacity-50"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveExperience(index)}
-                      className="text-gray-400 hover:text-red-600"
-                    >
-                      ×
-                    </button>
-                  </div>
-                </div>
+                  </Card>
                 );
               })}
+              {formData.experiences.length === 0 && (
+                <p className="text-sm text-gray-500 text-center py-4">No experience entries yet.</p>
+              )}
               <FieldError id="experiences-error" message={fieldErrors.experiences} />
             </div>
           </div>
@@ -1116,67 +1366,104 @@ export default function ManualOnboardingPage() {
       case "education":
         return (
           <div className="space-y-5">
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <label className="block text-sm font-medium text-gray-700 mb-3">Add Education</label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Institution <span className="text-red-500">*</span></label>
-                  <input
-                    type="text"
-                    value={newEducation.institution}
-                    onChange={(e) => setNewEducation((prev) => ({ ...prev, institution: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="e.g., University of Tunis"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Degree <span className="text-red-500">*</span></label>
-                  <input
-                    type="text"
-                    value={newEducation.degree}
-                    onChange={(e) => setNewEducation((prev) => ({ ...prev, degree: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="e.g., Bachelor, Master"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Field of Study</label>
-                  <input
-                    type="text"
-                    value={newEducation.field}
-                    onChange={(e) => setNewEducation((prev) => ({ ...prev, field: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="e.g., Computer Science"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Start Date <span className="text-red-500">*</span></label>
-                  <input
-                    type="date"
-                    value={newEducation.startDate}
-                    onChange={(e) => setNewEducation((prev) => ({ ...prev, startDate: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">End Date</label>
-                  <input
-                    type="date"
-                    value={newEducation.endDate}
-                    onChange={(e) => setNewEducation((prev) => ({ ...prev, endDate: e.target.value }))}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={handleAddEducation}
-                disabled={!newEducation.institution || !newEducation.degree || !newEducation.startDate}
-                className="w-full mt-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                Add Education
-              </button>
+            <div className="flex items-center gap-2">
+              <GraduationCap className="w-5 h-5 text-blue-600" />
+              <h2 className="text-lg font-semibold text-gray-900">Education</h2>
             </div>
+            <p className="text-sm text-gray-600">
+              Add your educational background. Each entry can be edited or removed at any time.
+            </p>
+
+            <Card className="p-5 border border-slate-200">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold text-gray-900">
+                  {editingEducationIndex !== null ? "Edit Education" : "Add Education"}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Institution <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={newEducation.institution}
+                      onChange={(e) => setNewEducation((prev) => ({ ...prev, institution: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="e.g., University of Tunis"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Degree <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={newEducation.degree}
+                      onChange={(e) => setNewEducation((prev) => ({ ...prev, degree: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="e.g., Bachelor, Master"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Field of Study</label>
+                    <input
+                      type="text"
+                      value={newEducation.field}
+                      onChange={(e) => setNewEducation((prev) => ({ ...prev, field: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="e.g., Computer Science"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">
+                      Start Date <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="date"
+                      value={newEducation.startDate}
+                      onChange={(e) => setNewEducation((prev) => ({ ...prev, startDate: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">End Date</label>
+                    <input
+                      type="date"
+                      value={newEducation.endDate}
+                      onChange={(e) => setNewEducation((prev) => ({ ...prev, endDate: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+                <div className="mt-5 flex flex-col sm:flex-row gap-3 justify-end">
+                  {editingEducationIndex !== null && (
+                    <button
+                      type="button"
+                      onClick={handleCancelEducation}
+                      disabled={saving}
+                      className="px-4 py-2 text-sm font-medium text-gray-600 border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleSaveEducation}
+                    disabled={
+                      saving ||
+                      !newEducation.institution ||
+                      !newEducation.degree ||
+                      !newEducation.startDate
+                    }
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {editingEducationIndex !== null ? "Save Changes" : "Add Education"}
+                  </button>
+                </div>
+              </CardContent>
+            </Card>
 
             <div className="space-y-3">
               {formData.education.map((edu, index) => {
@@ -1186,31 +1473,51 @@ export default function ManualOnboardingPage() {
                   fieldErrors[`education.${index}.startDate`],
                   fieldErrors[`education.${index}.endDate`],
                 ].filter(Boolean) as string[];
+                const isEditing = editingEducationIndex === index;
                 return (
-                <div key={index} className="p-4 bg-gray-50 rounded-lg">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="font-medium text-gray-900">{edu.degree}</div>
-                      <div className="text-sm text-gray-600">{edu.institution}</div>
-                      {edu.field && <div className="text-xs text-gray-500">{edu.field}</div>}
-                      <div className="text-xs text-gray-500">
-                        {edu.startDate} - {edu.endDate}
+                  <Card key={index} className="p-4 border border-slate-100 rounded-lg hover:shadow-sm transition-all">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="flex-shrink-0 w-8 h-8 rounded bg-blue-50 flex items-center justify-center text-blue-600">
+                          <GraduationCap size={20} />
+                        </div>
+                        <div>
+                          <div className="font-medium text-gray-900">{edu.degree}</div>
+                          <div className="text-sm text-gray-600">{edu.institution}</div>
+                          {edu.field && <div className="text-xs text-gray-500">{edu.field}</div>}
+                          <div className="text-xs text-gray-500">
+                            {formatDate(edu.startDate)} – {formatDate(edu.endDate) || "Present"}
+                          </div>
+                          {entryErrors.map((message) => (
+                            <p key={message} role="alert" className={FIELD_ERROR_CLASS}>{message}</p>
+                          ))}
+                        </div>
                       </div>
-                      {entryErrors.map((message) => (
-                        <p key={message} role="alert" className={FIELD_ERROR_CLASS}>{message}</p>
-                      ))}
+                      <div className="flex items-center gap-2 ml-2">
+                        <button
+                          type="button"
+                          onClick={() => handleEditEducation(index)}
+                          disabled={saving || isEditing}
+                          className="px-3 py-1.5 text-xs font-medium text-blue-600 border border-blue-100 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors disabled:opacity-50"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveEducation(index)}
+                          disabled={saving}
+                          className="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-100 bg-red-50 rounded-lg hover:bg-red-100 hover:text-red-700 transition-colors disabled:opacity-50"
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveEducation(index)}
-                      className="text-gray-400 hover:text-red-600"
-                    >
-                      ×
-                    </button>
-                  </div>
-                </div>
+                  </Card>
                 );
               })}
+              {formData.education.length === 0 && (
+                <p className="text-sm text-gray-500 text-center py-4">No education entries yet.</p>
+              )}
               <FieldError id="education-error" message={fieldErrors.education} />
             </div>
           </div>
@@ -1255,11 +1562,11 @@ export default function ManualOnboardingPage() {
                   <button
                     key={shift.id}
                     type="button"
-                    onClick={() => updateField("shiftType", shift.id)}
+                    onClick={() => toggleShiftType(shift.id)}
                     className={`p-3 rounded-lg border-2 transition-colors ${
-                      formData.shiftType === shift.id
-                        ? "border-blue-500 bg-blue-50"
-                        : "border-gray-200 hover:border-gray-300"
+                      formData.shiftType.includes(shift.id)
+                        ? "border-blue-500 bg-blue-50 text-blue-700"
+                        : "border-gray-200 hover:border-gray-300 text-gray-700"
                     }`}
                   >
                     <div className="text-xl mb-1">{shift.icon}</div>

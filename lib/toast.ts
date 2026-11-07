@@ -5,6 +5,7 @@ type ToastType = "success" | "error" | "info" | "warning";
 interface ToastOptions {
   description?: string;
   duration?: number;
+  position?: "top-left" | "top-right" | "bottom-left" | "bottom-right" | "top-center" | "bottom-center";
   action?: {
     label: string;
     onClick: () => void;
@@ -25,6 +26,7 @@ export function showToast(
   const toastOptions = {
     description: options?.description,
     duration: options?.duration,
+    position: options?.position,
     action: options?.action,
   };
 

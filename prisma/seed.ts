@@ -415,7 +415,7 @@ async function main() {
       summary: `Candidate ${n} is a deterministic K6 performance-test candidate profile.`,
       targetJobRole: JOB_ROLE_TARGETS[(n - 1) % JOB_ROLE_TARGETS.length],
       workMode: WORK_MODES[(n - 1) % WORK_MODES.length],
-      shiftType: SHIFT_TYPES[(n - 1) % SHIFT_TYPES.length],
+      shiftType: [SHIFT_TYPES[(n - 1) % SHIFT_TYPES.length]],
       // genderSchema accepts exactly "Male" or "Female" (case-sensitive).
       gender: GENDERS[(n - 1) % GENDERS.length],
       // Ages 26..40 at seed time; hasValidDateOfBirth only requires a real date.

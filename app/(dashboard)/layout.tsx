@@ -27,22 +27,30 @@ export default async function DashboardLayout({
     }
   }
   const userRole = user.role;
-  const displayUser = {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    image: user.image,
-    role: userRole,
-  };
 
-  // Fetch company data for COMPANY users to display in sidebar
+  // Fetch profile data for sidebar image source
+  let profileImage: string | null = user.image ?? null;
   let companyData = null;
   if (userRole === "COMPANY") {
     companyData = await prisma.companies.findUnique({
       where: { userId: user.id },
       select: { id: true, name: true, logoUrl: true },
     });
+  } else if (userRole === "CANDIDATE") {
+    const candidate = await prisma.candidate.findUnique({
+      where: { userId: user.id },
+      select: { avatarUrl: true },
+    });
+    profileImage = candidate?.avatarUrl ?? null;
   }
+
+  const displayUser = {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    image: userRole === "COMPANY" ? null : profileImage,
+    role: userRole,
+  };
 
   return (
     <div className="flex min-h-screen bg-slate-50">

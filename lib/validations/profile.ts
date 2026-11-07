@@ -15,7 +15,7 @@ export const jobRoleTargetSchema = z.enum([
 
 export const workModeSchema = z.enum(["ONSITE", "REMOTE", "HYBRID"]);
 
-export const shiftTypeSchema = z.enum(["DAY", "NIGHT", "FLEXIBLE", "ROTATION"]);
+export const shiftTypeSchema = z.array(z.enum(["DAY", "NIGHT", "FLEXIBLE", "ROTATION"]));
 
 // Candidate gender has exactly two valid values, stored exactly as written:
 // "Male" or "Female". Validation is an exact, case-sensitive match with no

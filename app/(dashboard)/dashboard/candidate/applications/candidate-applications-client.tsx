@@ -193,44 +193,60 @@ export function CandidateApplicationsClient({
       </div>
 
       {filteredApplications.length > 0 ? (
-        <div className="space-y-4">
-          {filteredApplications.map((app) => (
-            <Card key={app.id}>
-              <CardContent className="p-6">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="flex gap-4">
-                    <div className="rounded-lg bg-slate-100 p-3">
-                      <Briefcase className="h-6 w-6 text-slate-600" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-slate-900">{app.jobOffer?.title}</h3>
-                      <p className="text-sm text-slate-500">{app.jobOffer?.company?.name}</p>
-                      {(app.jobOffer?.customLocation || app.jobOffer?.company?.location) && (
-                        <p className="text-xs text-slate-400 mt-1">
-                          {app.jobOffer?.customLocation || app.jobOffer?.company?.location}
-                          {app.jobOffer?.isRemote && " (Remote)"}
-                          {app.jobOffer?.isHybrid && " (Hybrid)"}
-                        </p>
-                      )}
-                      <p className="mt-1 text-xs text-slate-400">Applied on {formatDate(app.createdAt)}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${getStatusColor(app.status)}`}>
-                      {getStatusIcon(app.status)}
-                      {formatStatus(app.status)}
-                    </span>
-                    <Link href={`/jobs/${app.jobOffer?.slug}`}>
-                      <Button variant="ghost" size="icon">
-                        <ExternalLink className="h-4 w-4" />
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+  <div className="space-y-4">
+    {filteredApplications.map((app) => (
+      <Card key={app.id}>
+        <CardContent className="p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+
+            {/* Left side */}
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-slate-100">
+                <Briefcase className="h-6 w-6 text-slate-600" />
+              </div>
+
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">
+                  {app.jobOffer?.title}
+                </h3>
+
+                <p className="text-sm text-slate-500">
+                  {app.jobOffer?.company?.name}
+                </p>
+
+                {(app.jobOffer?.customLocation || app.jobOffer?.company?.location) && (
+                  <p className="mt-1 text-xs text-slate-400">
+                    {app.jobOffer?.customLocation || app.jobOffer?.company?.location}
+                    {app.jobOffer?.isRemote && " (Remote)"}
+                    {app.jobOffer?.isHybrid && " (Hybrid)"}
+                  </p>
+                )}
+
+                <p className="mt-1 text-xs text-slate-400">
+                  Applied on {formatDate(app.createdAt)}
+                </p>
+              </div>
+            </div>
+
+            {/* Right side */}
+            <div className="flex items-center gap-3">
+              <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${getStatusColor(app.status)}`}>
+                {getStatusIcon(app.status)}
+                {formatStatus(app.status)}
+              </span>
+
+              <Link href={`/jobs/${app.jobOffer?.slug}`}>
+                <Button variant="ghost" size="icon">
+                  <ExternalLink className="h-4 w-4" />
+                </Button>
+              </Link>
+            </div>
+
+          </div>
+        </CardContent>
+      </Card>
+    ))}
+  </div>
       ) : (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16">

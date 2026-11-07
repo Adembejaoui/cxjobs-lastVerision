@@ -531,9 +531,10 @@ function SidebarSection({ icon, title, children }: { icon: React.ReactNode; titl
 interface CVPDFDocumentProps {
   candidate: Candidate;
   watermarkSrc?: string | null;
+  profileImageSrc?: string | null;
 }
 
-export function CVPDFDocument({ candidate, watermarkSrc }: CVPDFDocumentProps) {
+export function CVPDFDocument({ candidate, watermarkSrc, profileImageSrc }: CVPDFDocumentProps) {
   const fullName = `${candidate.lastName || ""} ${candidate.firstName || ""}`.trim() || "Your Name";
   const initials = getInitials(candidate.firstName, candidate.lastName);
   const competencies = getCoreCompetencies(candidate.targetJobRole);
@@ -551,10 +552,11 @@ export function CVPDFDocument({ candidate, watermarkSrc }: CVPDFDocumentProps) {
           <View style={styles.profileSection}>
             {/* Avatar */}
             <View style={styles.avatarContainer}>
-              {(candidate.avatarUrl || candidate.user?.image) ? (
+              {profileImageSrc ? (
                 <Image
                   style={styles.avatarImage}
-                  src={(candidate.avatarUrl || candidate.user?.image) as string}
+                  src={profileImageSrc}
+                  cache={false}
                 />
               ) : (
                 <Text style={styles.avatarInitials}>{initials}</Text>

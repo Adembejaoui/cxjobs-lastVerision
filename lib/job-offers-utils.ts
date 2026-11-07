@@ -97,21 +97,32 @@ export function applyJobOfferFilters(
   }
 
   if (filters.search) {
-    where.OR = [
-      ...(Array.isArray(where.OR) ? where.OR : []),
-      {
-        title: {
-          contains: filters.search,
-          mode: "insensitive",
+    const trimmedSearch = filters.search.trim();
+    if (trimmedSearch) {
+      where.OR = [
+        ...(Array.isArray(where.OR) ? where.OR : []),
+        {
+          title: {
+            contains: trimmedSearch,
+            mode: "insensitive",
+          },
         },
-      },
-      {
-        description: {
-          contains: filters.search,
-          mode: "insensitive",
+        {
+          description: {
+            contains: trimmedSearch,
+            mode: "insensitive",
+          },
         },
-      },
-    ];
+        {
+          company: {
+            name: {
+              contains: trimmedSearch,
+              mode: "insensitive",
+            },
+          },
+        },
+      ];
+    }
   }
 
   if (filters.language) {

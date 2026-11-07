@@ -421,43 +421,30 @@ export function CroppableImageUpload({
         </div>
       ) : (
         /* ── Upload placeholder ────────────────────────────────── */
-        <label
-          htmlFor={`${type}-crop`}
-          className={cn(
-            "group flex w-full cursor-pointer flex-col items-center justify-center gap-3 border-2 border-dashed border-slate-300 bg-slate-50/70 p-4 text-center transition-colors",
-            "hover:border-slate-400 hover:bg-slate-100/80",
-            "peer-focus-visible:border-slate-500 peer-focus-visible:ring-2 peer-focus-visible:ring-slate-400 peer-focus-visible:ring-offset-2",
-            "peer-disabled:cursor-not-allowed peer-disabled:opacity-60",
-            frameRadius,
-            ASPECT_CLASS[aspectLabel],
-            previewClassName,
-          )}
-        >
-          {isUploading ? (
-            <>
-              <Loader2 className="h-7 w-7 animate-spin text-slate-400" />
-              <span className="text-sm text-slate-500">Uploading…</span>
-            </>
-          ) : (
-            <>
-              <div className="rounded-full bg-white p-3 shadow-sm ring-1 ring-slate-200 transition-transform group-hover:scale-105">
-                {type === "logo" || type === "avatar" ? (
-                  <ImageIcon className="h-5 w-5 text-slate-500" />
-                ) : (
-                  <Upload className="h-5 w-5 text-slate-500" />
-                )}
-              </div>
-              <div className="space-y-0.5">
-                <p className="text-sm font-medium text-slate-700">
-                  Click to upload
-                </p>
-                <p className="text-xs text-slate-500">
-                  Image up to {maxSize} · {aspectLabel} crop
-                </p>
-              </div>
-            </>
-          )}
-        </label>
+       <label
+  htmlFor={`${type}-crop`}
+  className={cn(
+    "flex w-full cursor-pointer flex-col items-center justify-center gap-2 border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500 transition-colors",
+    "hover:border-slate-400 hover:bg-slate-100",
+    "peer-focus-visible:ring-2 peer-focus-visible:ring-slate-400",
+    "peer-disabled:cursor-not-allowed peer-disabled:opacity-60",
+    frameRadius,
+    ASPECT_CLASS[aspectLabel],
+    previewClassName,
+  )}
+>
+  {isUploading ? (
+    <>
+      <Loader2 className="h-5 w-5 animate-spin" />
+      Uploading…
+    </>
+  ) : (
+    <>
+      <Upload className="h-5 w-5" />
+      Click to upload
+    </>
+  )}
+</label>
       )}
 
       {error && (

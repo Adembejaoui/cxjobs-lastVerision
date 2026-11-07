@@ -267,6 +267,7 @@ export default async function CompanyDetailPage({
             <CultureSection culture={company.culture} />
 
             <JobOpenings
+              companyName={company.name}
               jobs={company.jobs.map((job) => ({
                 title: job.title,
                 location:

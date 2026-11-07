@@ -35,6 +35,52 @@ export function useCVPDF({ candidate, watermarkSrc }: UseCVPDFOptions): UseCVPDF
   const [isCommitting, setIsCommitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const resolveImageSrc = useCallback(async (src: string | null | undefined): Promise<string | null> => {
+    const url = src?.trim();
+    if (!url) return null;
+    if (url.startsWith("data:")) return url;
+
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const type = blob.type || "";
+
+    if (type === "image/jpeg" || type === "image/png") {
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (typeof reader.result === "string") resolve(reader.result);
+          else reject(new Error("Failed to read image as data URL"));
+        };
+        reader.onerror = () => reject(new Error("Failed to convert image"));
+        reader.readAsDataURL(blob);
+      });
+    }
+
+    // Convert unsupported formats (e.g. webp) to PNG via canvas
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const i = new Image();
+        i.onload = () => resolve(i);
+        i.onerror = () => reject(new Error("Failed to load image for conversion"));
+        i.src = objectUrl;
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas not supported");
+      ctx.drawImage(img, 0, 0);
+      return canvas.toDataURL("image/png");
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }, []);
+
   const resolveWatermarkSrc = useCallback(async (): Promise<string | null> => {
     const src = watermarkSrc?.trim();
     if (!src) return null;
@@ -137,9 +183,10 @@ export function useCVPDF({ candidate, watermarkSrc }: UseCVPDFOptions): UseCVPDF
 
     try {
       const watermarkDataUrl = await resolveWatermarkSrc();
+      const profileImageDataUrl = await resolveImageSrc(candidate.avatarUrl).catch(() => null);
 
       const blob = await pdf(
-        <CVPDFDocument candidate={sanitizedCandidate} watermarkSrc={watermarkDataUrl ?? watermarkSrc ?? null} />
+        <CVPDFDocument candidate={sanitizedCandidate} watermarkSrc={watermarkDataUrl ?? watermarkSrc ?? null} profileImageSrc={profileImageDataUrl} />
       ).toBlob();
 
       if (!blob || blob.size === 0) {
@@ -155,7 +202,7 @@ export function useCVPDF({ candidate, watermarkSrc }: UseCVPDFOptions): UseCVPDF
     } finally {
       setIsGenerating(false);
     }
-  }, [resolveWatermarkSrc, sanitizedCandidate, watermarkSrc]);
+  }, [resolveWatermarkSrc, resolveImageSrc, sanitizedCandidate, watermarkSrc, candidate.avatarUrl]);
 
   const commitExport = useCallback(async () => {
     setIsCommitting(true);

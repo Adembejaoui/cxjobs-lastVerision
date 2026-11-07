@@ -8,7 +8,6 @@ interface CompanyCardProps {
   description: string
   location: string
   size: string
-  jobsCount: number
 
   logoUrl?: string | null
   coverUrl?: string | null
@@ -20,8 +19,7 @@ export function CompanyCard({
   description, 
   location, 
   size, 
-  jobsCount, 
-  
+   
   logoUrl,
   coverUrl 
 }: CompanyCardProps) {
@@ -75,16 +73,8 @@ export function CompanyCard({
           </h3>
         </div>
 
-        {/* Badges */}
-        <div className="mb-4 flex flex-wrap justify-center gap-2">
-          <span className="rounded-full bg-[#e8f8ef] px-3 py-1 text-[11px] font-extrabold tracking-[0.04em] text-[#42be84]">
-            {jobsCount} JOBS
-          </span>
-       
-        </div>
-
         {/* Description */}
-        <p className="mb-4 text-center text-[13px] text-[#95a5be] line-clamp-2 flex-1">
+        <p className="mb-3 text-center text-[13px] text-[#95a5be] line-clamp-2 flex-1">
           {description}
         </p>
 

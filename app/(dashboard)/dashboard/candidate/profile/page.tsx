@@ -76,7 +76,7 @@ function getMissingPreferences(candidate: {
   preferredJobTypes?: string[];
   targetJobRole?: string;
   workMode?: string;
-  shiftType?: string;
+  shiftType?: string[];
 }): string[] {
   const missing: string[] = [];
   
@@ -89,7 +89,7 @@ function getMissingPreferences(candidate: {
   if (!candidate.workMode) {
     missing.push("Work mode preference");
   }
-  if (!candidate.shiftType) {
+  if (!candidate.shiftType || candidate.shiftType.length === 0) {
     missing.push("Shift type preference");
   }
   

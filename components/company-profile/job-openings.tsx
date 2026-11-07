@@ -1,4 +1,5 @@
 import React from 'react'
+import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -14,6 +15,7 @@ interface JobOpening {
 }
 
 interface JobOpeningsProps {
+  companyName?: string
   jobs?: JobOpening[]
   totalCount?: number
 }
@@ -32,9 +34,12 @@ function activityTypeLabel(type: string | null | undefined, custom: string | nul
   return labels[type] || type
 }
 
-export function JobOpenings({ jobs, totalCount }: JobOpeningsProps) {
+export function JobOpenings({ companyName, jobs, totalCount }: JobOpeningsProps) {
   const hasJobs = jobs && jobs.length > 0
   const count = totalCount || (hasJobs ? jobs!.length : 0)
+  const jobsSearchHref = companyName
+    ? `/jobs?${new URLSearchParams({ search: companyName }).toString()}`
+    : '/jobs'
 
   const getStatusBadgeColor = (status: string | undefined) => {
     switch (status?.toUpperCase()) {
@@ -116,10 +121,11 @@ export function JobOpenings({ jobs, totalCount }: JobOpeningsProps) {
       )}
 
       {hasJobs && (
-        <Button 
+        <Button
+          asChild
           className="w-full bg-primary text-primary-foreground hover:bg-primary/90 py-6 text-base font-semibold"
         >
-          View All Open Positions
+          <Link href={jobsSearchHref}>View All Open Positions</Link>
         </Button>
       )}
     </section>

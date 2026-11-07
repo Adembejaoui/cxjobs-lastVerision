@@ -22,7 +22,7 @@ export default async function PublicLayout({
     <UserProvider user={user}>
       <Navbar user={user} />
       {children}
-      <Footer />
+      <Footer user={user} />
     </UserProvider>
   );
 }

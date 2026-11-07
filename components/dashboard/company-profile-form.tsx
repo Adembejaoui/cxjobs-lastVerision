@@ -147,7 +147,7 @@ function SectionIcon({ icon: Icon }: { icon: React.ElementType }) {
 }
 
 const pillTriggerClass =
-  "rounded-full border border-slate-200 px-4 py-1.5 text-sm font-medium text-slate-600 transition-colors data-[state=active]:border-[#071738] data-[state=active]:bg-[#071738] data-[state=active]:text-white data-[state=active]:shadow-none";
+  "rounded-full border border-slate-200 px-4 py-1.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 data-[state=active]:border-[#47d79d] data-[state=active]:bg-[#47d79d] data-[state=active]:text-[#071738] data-[state=active]:shadow-sm";
 
 export function CompanyProfileForm({ company, showWelcome = false }: CompanyProfileFormProps) {
   const router = useRouter();
@@ -320,8 +320,9 @@ export function CompanyProfileForm({ company, showWelcome = false }: CompanyProf
       }
 
       setSuccess("Company profile updated successfully!");
-      showSuccess("Company profile updated successfully", {
-        description: "Your changes have been saved.",
+      showSuccess("Profile updated successfully.", {
+        position: "bottom-right",
+        duration: 4000,
       });
       router.refresh();
     } catch (err: unknown) {

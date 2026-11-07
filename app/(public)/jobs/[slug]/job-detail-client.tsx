@@ -142,9 +142,10 @@ function SubLabel({ label }: { label: string }) {
 
 interface JobDetailClientProps {
   job: JobOffer
+  isHistorical?: boolean
 }
 
-export function JobDetailClient({ job }: JobDetailClientProps) {
+export function JobDetailClient({ job, isHistorical = false }: JobDetailClientProps) {
   const user = useUser()
   const [isSaved, setIsSaved] = useState(false)
   const [hasApplied, setHasApplied] = useState(false)
@@ -152,6 +153,13 @@ export function JobDetailClient({ job }: JobDetailClientProps) {
 
   const isCandidate = user?.role === 'CANDIDATE'
   const isCompany = user?.role === 'COMPANY'
+
+  // A job is "available for new applications" only when it is PUBLISHED.
+  // Historical jobs (CLOSED, EXPIRED, ARCHIVED, DRAFT) reached through an
+  // existing application must not expose apply actions.
+  const isJobAvailable = job.status === 'PUBLISHED'
+  const showApplyActions = isCandidate && isJobAvailable && !hasApplied
+  const showAlreadyApplied = isCandidate && hasApplied
 
   useEffect(() => {
     async function checkApplication() {
@@ -278,7 +286,11 @@ const salaryDisplay = job.salary || (
                   Already Applied
                 </button>
               ) : isCompany ? null
-                : isCandidate && job.applicationType === "EXTERNAL" ? (
+                : !isJobAvailable ? (
+                <button className="inline-flex h-14 items-center justify-center rounded-[18px] bg-slate-200 px-8 text-[17px] font-semibold text-slate-600" disabled>
+                  No Longer Available
+                </button>
+              ) : isCandidate && job.applicationType === "EXTERNAL" ? (
                 <a
                   href={job.externalApplyUrl || "#"}
                   target="_blank"

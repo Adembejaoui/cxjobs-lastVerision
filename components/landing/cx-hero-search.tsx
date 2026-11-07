@@ -1,8 +1,9 @@
 "use client"
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Briefcase, Globe } from "lucide-react";
+import { ChevronDown, Briefcase, Globe, Laptop, Building2, Users } from "lucide-react";
 
 const languages = [
   "English",
@@ -57,12 +58,7 @@ export default function CXHeroSearch() {
   const [location, setLocation] = useState("");
   const [selectedActivityType, setSelectedActivityType] = useState("");
   const [selectedLanguage, setSelectedLanguage] = useState("");
-  const popularTags = [
-    { label: "Work from Home", active: true },
-    { label: "Immediate Start", active: false },
-    { label: "Night Shift", active: false },
-    { label: "Spanish Speaker", active: false },
-  ];
+  
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -157,25 +153,38 @@ export default function CXHeroSearch() {
             </button>
           </div>
         </form>
-
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-          <span className="text-sm font-extrabold tracking-[0.04em] text-[#a6b0c3] md:text-base">
-            POPULAR:
-          </span>
-
-          {popularTags.map((tag) => (
-            <button
-              key={tag.label}
-              className={`rounded-full border px-4 py-2 text-sm font-bold transition md:text-base ${
-                tag.active
-                  ? "border-[#b6e4cc] bg-[#dff3e8] text-[#42ba80]"
-                  : "border-[#d3dce8] bg-[#f8fafc] text-[#66799a]"
-              }`}
-              type="button"
-            >
-              {tag.label}
-            </button>
-          ))}
+        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {[
+            { title: "Remote & Flexible Jobs", description: "Discover flexible career opportunities.", href: "/jobs?location=Remote", icon: Laptop, tone: "jobs" },
+            { title: "Latest Opportunities", description: "Find your next career move.", href: "/jobs", icon: Briefcase, tone: "jobs" },
+            { title: "Discover Employers", description: "Meet companies on CXJobs.", href: "/companies", icon: Building2, tone: "companies" },
+          ].map((item) => {
+            const Icon = item.icon;
+            const isJobs = item.tone === "jobs";
+            return (
+              <Link
+                key={item.title}
+                href={item.href}
+                className={`group flex items-center gap-3 rounded-2xl border p-4 transition hover:-translate-y-0.5 hover:shadow-md ${
+                  isJobs
+                    ? "border-[#d6e8f5] bg-[#f0f7fd] hover:border-[#b8d6ee]"
+                    : "border-[#dceee4] bg-[#f1faf5] hover:border-[#bfe3cf]"
+                }`}
+              >
+                <span
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                    isJobs ? "bg-[#1f3d73] text-white" : "bg-[#42ba80] text-white"
+                  }`}
+                >
+                  <Icon className="h-5 w-5" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-bold text-[#1f3d73]">{item.title}</span>
+                  <span className="block text-xs text-[#4d5f7c]">{item.description}</span>
+                </span>
+              </Link>
+            );
+          })}
         </div>
       </div>
     </section>

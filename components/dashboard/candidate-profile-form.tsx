@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { CroppableImageUpload } from "@/components/dashboard/croppable-image-upload";
 import { normalizeLinkedInUrl } from "@/lib/validations/linkedin";
+import { showSuccess } from "@/lib/toast";
 
 interface Experience {
   id?: string;
@@ -76,7 +77,7 @@ interface Candidate {
   targetJobRole: string | null;
   preferredJobTypes: string[];
   workMode: string | null;
-  shiftType: string | null;
+  shiftType: string[];
   dateOfBirth: string | null;
   gender: string | null;
   user?: {
@@ -262,7 +263,7 @@ export function CandidateProfileForm({ candidate }: CandidateProfileFormProps) {
 
   const [preferencesData, setPreferencesData] = useState({
     workMode: candidate.workMode ?? null,
-    shiftType: candidate.shiftType ?? null,
+    shiftType: candidate.shiftType ?? [],
     preferredJobTypes: candidate.preferredJobTypes ?? [],
   });
 
@@ -357,6 +358,15 @@ export function CandidateProfileForm({ candidate }: CandidateProfileFormProps) {
       preferredJobTypes: prev.preferredJobTypes.includes(type)
         ? prev.preferredJobTypes.filter((t) => t !== type)
         : [...prev.preferredJobTypes, type],
+    }));
+  };
+
+  const toggleShiftType = (type: string) => {
+    setPreferencesData(prev => ({
+      ...prev,
+      shiftType: prev.shiftType.includes(type)
+        ? prev.shiftType.filter((t) => t !== type)
+        : [...prev.shiftType, type],
     }));
   };
 
@@ -556,6 +566,10 @@ export function CandidateProfileForm({ candidate }: CandidateProfileFormProps) {
       }
 
       setSuccess("Profile updated successfully!");
+      showSuccess("Profile updated successfully.", {
+        position: "bottom-right",
+        duration: 4000,
+      });
       router.refresh();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to update profile");
@@ -580,12 +594,12 @@ export function CandidateProfileForm({ candidate }: CandidateProfileFormProps) {
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
         <TabsList className="grid w-full grid-cols-6 lg:grid-cols-6 bg-gray-100">
-          <TabsTrigger value="personal" className="text-xs sm:text-sm">Personal</TabsTrigger>
-          <TabsTrigger value="experience" className="text-xs sm:text-sm">Experience</TabsTrigger>
-          <TabsTrigger value="education" className="text-xs sm:text-sm">Education</TabsTrigger>
-          <TabsTrigger value="languages" className="text-xs sm:text-sm">Languages</TabsTrigger>
-          <TabsTrigger value="skills" className="text-xs sm:text-sm">Skills</TabsTrigger>
-          <TabsTrigger value="preferences" className="text-xs sm:text-sm">Preferences</TabsTrigger>
+          <TabsTrigger value="personal" className="text-xs sm:text-sm font-semibold text-slate-600 transition-colors hover:text-slate-900 data-[state=active]:bg-[#47d79d] data-[state=active]:text-[#071738] data-[state=active]:shadow-sm">Personal</TabsTrigger>
+          <TabsTrigger value="experience" className="text-xs sm:text-sm font-semibold text-slate-600 transition-colors hover:text-slate-900 data-[state=active]:bg-[#47d79d] data-[state=active]:text-[#071738] data-[state=active]:shadow-sm">Experience</TabsTrigger>
+          <TabsTrigger value="education" className="text-xs sm:text-sm font-semibold text-slate-600 transition-colors hover:text-slate-900 data-[state=active]:bg-[#47d79d] data-[state=active]:text-[#071738] data-[state=active]:shadow-sm">Education</TabsTrigger>
+          <TabsTrigger value="languages" className="text-xs sm:text-sm font-semibold text-slate-600 transition-colors hover:text-slate-900 data-[state=active]:bg-[#47d79d] data-[state=active]:text-[#071738] data-[state=active]:shadow-sm">Languages</TabsTrigger>
+          <TabsTrigger value="skills" className="text-xs sm:text-sm font-semibold text-slate-600 transition-colors hover:text-slate-900 data-[state=active]:bg-[#47d79d] data-[state=active]:text-[#071738] data-[state=active]:shadow-sm">Skills</TabsTrigger>
+          <TabsTrigger value="preferences" className="text-xs sm:text-sm font-semibold text-slate-600 transition-colors hover:text-slate-900 data-[state=active]:bg-[#47d79d] data-[state=active]:text-[#071738] data-[state=active]:shadow-sm">Preferences</TabsTrigger>
         </TabsList>
 
         {/* Personal Information Tab */}
@@ -998,8 +1012,8 @@ export function CandidateProfileForm({ candidate }: CandidateProfileFormProps) {
                     <button
                       key={shift.value}
                       type="button"
-                      onClick={() => handlePreferencesChange("shiftType", shift.value)}
-                      className={`p-3 rounded-lg border-2 transition-colors ${preferencesData.shiftType === shift.value ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-300"}`}
+                      onClick={() => toggleShiftType(shift.value)}
+                      className={`p-3 rounded-lg border-2 transition-colors ${preferencesData.shiftType.includes(shift.value) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 hover:border-gray-300 text-gray-700"}`}
                     >
                       <div className="text-sm font-medium text-gray-900">{shift.label}</div>
                     </button>

@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { CompanyCard, PagerButton } from './components'
-import { AdminBannerCard, type AdminBanner } from '@/components/admin-banner'
 import { logger } from "@/lib/logger";
 
 interface FilterOption {
@@ -68,57 +67,6 @@ const locationsInitial = [
   { label: "Tataouine", value: "Tataouine", checked: false },
   { label: "Tozeur", value: "Tozeur", checked: false },
 ]
-
-const MOCK_BANNERS: AdminBanner[] = [
-  {
-    id: "company-banner-1",
-    priority: 1,
-    title: "Top-Rated CX Employers — Verified Reviews",
-    description: "Discover 200+ companies rated by customer experience professionals. Find your next career move with confidence.",
-    image: null,
-    backgroundImage: "https://hvbbactmgfhecqbetlhg.supabase.co/storage/v1/object/public/covers/3072fe0f-914c-49ba-ad81-83e061683df2/1779137761635-3m7sdt.png",
-    badge: "FEATURED EMPLOYERS",
-    ctaText: "Explore Companies",
-    ctaLink: "/companies?filter=top-rated",
-    ctaExternal: false,
-  },
-  {
-    id: "company-banner-2",
-    priority: 2,
-    title: "Post Your First Job Today",
-    description: "Reach thousands of CX candidates. Simple pricing, no hidden fees.",
-    image: null,
-    badge: "FOR EMPLOYERS",
-    ctaText: "Post a Job",
-    ctaLink: "/dashboard/company/jobs",
-    ctaExternal: false,
-  },
-  {
-    id: "company-banner-3",
-    priority: 3,
-    title: "CX Industry Report 2026",
-    description: "Trends, salaries, and hiring insights for customer experience teams.",
-    image: null,
-    badge: "RESOURCE",
-    ctaText: "Read Report",
-    ctaLink: "https://example.com/cx-industry-report-2026",
-    ctaExternal: true,
-  },
-  {
-    id: "company-banner-4",
-    priority: 4,
-    mode: "image",
-    backgroundImage: "https://hvbbactmgfhecqbetlhg.supabase.co/storage/v1/object/public/logos/3072fe0f-914c-49ba-ad81-83e061683df2/1779137720717-y554l6.png",
-    ctaLink: "https://example.com/cx-industry-report-2026",
-    ctaExternal: true,
-  },
-];
-
-const sortedBanners = [...MOCK_BANNERS].sort((a, b) => a.priority - b.priority);
-// Banners with priority > 1: these live in the left sidebar on desktop
-const sidebarBanners = sortedBanners.filter((b) => b.priority > 1);
-// Banner with priority 1: this sits above the company list, on every device
-const topBanner = sortedBanners.filter((b) => b.priority === 1);
 
 export default function CompaniesPageClient({ initialCompanies = [], totalCompanies = 0 }: CompaniesPageClientProps) {
   const searchParams = useSearchParams()
@@ -312,7 +260,6 @@ export default function CompaniesPageClient({ initialCompanies = [], totalCompan
     description: company.description || "",
     location: company.location || "Not specified",
     size: company.companySize || "Unknown",
-    jobsCount: company._count?.jobs ?? 0,
     logoUrl: company.logoUrl,
     coverUrl: company.coverImageUrl,
     isFeatured: index === 0,
@@ -330,7 +277,6 @@ export default function CompaniesPageClient({ initialCompanies = [], totalCompan
         description={company.description}
         location={company.location}
         size={company.size}
-        jobsCount={company.jobsCount}
         logoUrl={company.logoUrl}
         coverUrl={company.coverUrl}
       />
@@ -339,32 +285,8 @@ export default function CompaniesPageClient({ initialCompanies = [], totalCompan
 
   return (
     <main className="min-h-screen px-4 py-5 text-slate-900 md:px-6 lg:px-8">
-      <div className="mx-auto max-w-[1600px] gap-5 lg:grid lg:grid-cols-[320px_1fr]">
-        {/* Sidebar - desktop only, priority > 1 banners stacked vertically */}
-        <aside className="hidden lg:block space-y-5">
-          {sidebarBanners.map((banner) => (
-            <AdminBannerCard key={banner.id} banner={banner} />
-          ))}
-        </aside>
-
-        {/* Main Content: priority 1 banner + filters + company grid + pagination */}
+      <div className="mx-auto max-w-[1600px] space-y-5">
         <section className="space-y-5">
-          {/* Priority 1 banner, shown above the company list on every device */}
-          <div className="space-y-5">
-            {topBanner.map((banner) => (
-              <AdminBannerCard key={banner.id} banner={banner} />
-            ))}
-          </div>
-
-          {/* Mobile fallback: sidebar banners have nowhere to render below
-              the lg breakpoint, so show them here, stacked, mobile-only */}
-          {sidebarBanners.length > 0 && (
-            <div className="space-y-5 lg:hidden">
-              {sidebarBanners.map((banner) => (
-                <AdminBannerCard key={banner.id} banner={banner} />
-              ))}
-            </div>
-          )}
 
           {/* Filter Bar */}
           <div className="rounded-[26px] bg-[#f4f6f8] p-4 shadow-[0_14px_30px_rgba(0,0,0,0.25)]">
@@ -459,7 +381,7 @@ export default function CompaniesPageClient({ initialCompanies = [], totalCompan
           </div>
 
           {/* Results Header */}
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
               <h2 className="text-[28px] font-black tracking-[-0.03em] text-[#163257]">Top Companies</h2>
               <p className="mt-1 text-[18px] font-semibold text-[#70839c]">
@@ -474,7 +396,7 @@ export default function CompaniesPageClient({ initialCompanies = [], totalCompan
           </div>
 
           {/* Company Listings - 3 Column Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {isLoading ? (
               <>
                 {[1, 2, 3, 4, 5, 6].map((i) => (

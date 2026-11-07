@@ -8,7 +8,6 @@ import {
   JobCard,
   JobData
 } from './components'
-import { AdminBannerCard, type AdminBanner } from '@/components/admin-banner'
 import { logger } from "@/lib/logger";
 
 interface FilterOption {
@@ -109,53 +108,6 @@ interface JobsPageClientProps {
   totalJobs?: number
 }
 
-
-const MOCK_BANNERS: AdminBanner[] = [
-   {
-    id: "job-banner-1",
-    priority: 1,
-    mode: "image",
-    backgroundImage: "https://hvbbactmgfhecqbetlhg.supabase.co/storage/v1/object/public/covers/3072fe0f-914c-49ba-ad81-83e061683df2/1779137761635-3m7sdt.png",
-    ctaLink: "https://example.com/cx-salary-report-2026",
-    ctaExternal: true,
-  },
-  {
-    id: "job-banner-2",
-    priority: 2,
-    title: "Upload Your CV and Get Matched",
-    description: "Complete your profile in 2 minutes and let top CX employers find you.",
-    image: null,
-    badge: "NEW",
-    ctaText: "Upload CV",
-    ctaLink: "/dashboard/candidate/cv",
-    ctaExternal: false,
-  },
-  {
-    id: "job-banner-3",
-    priority: 3,
-    title: "Salary Transparency Report 2026",
-    description: "See what CX professionals are earning this year. Free download.",
-    image: null,
-    badge: "RESOURCE",
-    ctaText: "Download Now",
-    ctaLink: "https://example.com/cx-salary-report-2026",
-    ctaExternal: true,
-  },
-  {
-    id: "job-banner-4",
-    priority: 4,
-    mode: "image",
-    backgroundImage: "https://images.unsplash.com/photo-1552664730-d307ca884978?w=1200&auto=format&fit=crop&q=80",
-    ctaLink: "https://example.com/cx-salary-report-2026",
-    ctaExternal: true,
-  },
-];
-
-const sortedBanners = [...MOCK_BANNERS].sort((a, b) => a.priority - b.priority);
-// Banners with priority > 1: these live in the left sidebar on desktop
-const sidebarBanners = sortedBanners.filter((b) => b.priority > 1);
-// Banner with priority 1: this sits above the job list, on every device
-const topBanner = sortedBanners.filter((b) => b.priority === 1);
 
 export default function JobsPageClient({ initialJobs = [], totalJobs = 0 }: JobsPageClientProps) {
   const searchParams = useSearchParams()
@@ -404,32 +356,8 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
 
   return (
     <main className="min-h-screen px-4 py-5 text-slate-900 md:px-6 lg:px-8">
-      <div className="mx-auto max-w-400 gap-5 lg:grid lg:grid-cols-[320px_1fr]">
-        {/* Sidebar - desktop only, priority > 1 banners stacked vertically */}
-        <aside className="hidden lg:block space-y-5">
-          {sidebarBanners.map((banner) => (
-            <AdminBannerCard key={banner.id} banner={banner} />
-          ))}
-        </aside>
-
-        {/* Main Content: priority 1 banner + filters + job list + pagination */}
+      <div className="mx-auto max-w-400 space-y-5">
         <section className="space-y-5">
-          {/* Priority 1 banner, shown above the job list on every device */}
-          <div className="space-y-5">
-            {topBanner.map((banner) => (
-              <AdminBannerCard key={banner.id} banner={banner} />
-            ))}
-          </div>
-
-          {/* Mobile fallback: sidebar banners have nowhere to render below
-              the lg breakpoint, so show them here, stacked, mobile-only */}
-          {sidebarBanners.length > 0 && (
-            <div className="space-y-5 lg:hidden">
-              {sidebarBanners.map((banner) => (
-                <AdminBannerCard key={banner.id} banner={banner} />
-              ))}
-            </div>
-          )}
 
           {/* Filter Bar */}
           <div className="rounded-[26px] bg-[#f4f6f8] p-4 shadow-[0_14px_30px_rgba(0,0,0,0.25)]">
@@ -438,10 +366,16 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
               <div className="relative flex-1">
                 <input
                   type="text"
-                  placeholder="Search jobs, companies..."
+                  placeholder="Search by job title or company name..."
                   value={pendingSearch}
                   onChange={(e) => {
                     setPendingSearch(e.target.value)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      applyFilters()
+                    }
                   }}
                   className="w-full rounded-2xl border border-[#d7e0ea] bg-white px-4 py-3 text-[16px] font-semibold text-[#344865] placeholder:text-[#95a5be] focus:border-[#45c68d] focus:outline-none focus:ring-2 focus:ring-[#45c68d]/20"
                 />
@@ -560,7 +494,7 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
            </div>
 
           {/* Results Header */}
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
               <h2 className="text-[28px] font-black tracking-[-0.03em] text-[#163257]">Call Center Jobs</h2>
               <p className="mt-1 text-[18px] font-semibold text-[#70839c]">
@@ -575,7 +509,7 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
           </div>
 
          {/* Job Listings */}
-         <div className="space-y-5">
+         <div className="space-y-4">
            {isLoading ? (
              <>
                {[1, 2, 3].map((i) => (
