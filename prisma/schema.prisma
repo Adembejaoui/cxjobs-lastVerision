@@ -8,17 +8,19 @@ datasource db {
 }
 
 model User {
-  id                      String                   @id @default(uuid())
+  id                      String                     @id @default(uuid())
   name                    String?
-  email                   String                   @unique
+  email                   String                     @unique
   emailVerified           DateTime?
   passwordHash            String?
   image                   String?
-  role                    UserRole                 @default(CANDIDATE)
-  isOnboarded             Boolean                  @default(false)
-  isActive                Boolean                  @default(true)
-  createdAt               DateTime                 @default(now())
-  updatedAt               DateTime                 @updatedAt
+  role                    UserRole                   @default(CANDIDATE)
+  isOnboarded             Boolean                    @default(false)
+  isActive                Boolean                    @default(true)
+  /// Incremented to revoke every existing session (password reset, suspension, identity change).
+  sessionVersion          Int                        @default(0)
+  createdAt               DateTime                   @default(now())
+  updatedAt               DateTime                   @updatedAt
   deletedAt               DateTime?
   accounts                Account[]
   candidate               Candidate?
@@ -26,6 +28,8 @@ model User {
   emailVerificationTokens EmailVerificationToken[]
   passwordResetTokens     PasswordResetToken[]
   sessions                Session[]
+  notifications           Notification[]
+  applicationStatusEvents ApplicationStatusHistory[]
 
   @@index([email])
   @@index([role])
@@ -276,6 +280,15 @@ model JobOffer {
   @@index([status, createdAt])
   @@index([deletedAt, status, createdAt])
   @@index([companyId, deletedAt, status, createdAt])
+  // Trigram GIN indexes serving case-insensitive substring search
+  // (`contains` + `mode: "insensitive"` → ILIKE '%…%') in lib/job-offers-utils.ts
+  // and the candidate dashboard. They MUST be declared here: indexes missing
+  // from the schema are treated as drift and dropped by `prisma migrate dev`,
+  // which is exactly how earlier migrations lost them. Requires pg_trgm
+  // (created in migration 20261109130000_restore_trigram_search_indexes).
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "idx_job_offers_title_trgm")
+  @@index([description(ops: raw("gin_trgm_ops"))], type: Gin, map: "idx_job_offers_description_trgm")
+  @@index([customLocation(ops: raw("gin_trgm_ops"))], type: Gin, map: "idx_job_offers_custom_location_trgm")
   @@map("job_offers")
 }
 
@@ -307,18 +320,19 @@ model JobLanguage {
 }
 
 model Application {
-  id          String            @id @default(uuid())
-  candidateId String
-  jobOfferId  String
-  coverLetter String?
-  cvUrl       String?
-  status      ApplicationStatus @default(NOUVEAU)
-  notes       String?
-  isSaved     Boolean           @default(false)
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  candidate   Candidate         @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  jobOffer    JobOffer          @relation(fields: [jobOfferId], references: [id], onDelete: Cascade)
+  id            String                     @id @default(uuid())
+  candidateId   String
+  jobOfferId    String
+  coverLetter   String?
+  cvUrl         String?
+  status        ApplicationStatus          @default(NOUVEAU)
+  notes         String?
+  isSaved       Boolean                    @default(false)
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
+  candidate     Candidate                  @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  jobOffer      JobOffer                   @relation(fields: [jobOfferId], references: [id], onDelete: Cascade)
+  statusHistory ApplicationStatusHistory[]
 
   @@unique([candidateId, jobOfferId])
   @@index([candidateId, createdAt])
@@ -332,38 +346,88 @@ model Application {
 }
 
 model companies {
-  id                    String           @id @default(uuid())
-  userId                String           @unique
-  name                  String
-  slug                  String           @unique
-  logoUrl               String?
-  coverImageUrl         String?
-  companySize           String?
-  location              String?
-  website               String?
-  foundedYear           Int?
-  description           String?
-  culture               String?
-  isRemoteFriendly      Boolean          @default(false)
-  isHybridFriendly      Boolean          @default(false)
-  linkedinUrl           String?
-  twitterUrl            String?
-  facebookUrl           String?
-  emailCompany          String?
-  isVerified            Boolean          @default(false)
-  verifiedAt            DateTime?
-  deletedAt             DateTime?
-  createdAt             DateTime         @default(now())
-  updatedAt             DateTime         @updatedAt
-  users                 User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  benefits              CompanyBenefit[]
-  count                 CompanyCount?
-  jobs                  JobOffer[]
+  id               String                @id @default(uuid())
+  userId           String                @unique
+  name             String
+  slug             String                @unique
+  logoUrl          String?
+  coverImageUrl    String?
+  companySize      String?
+  location         String?
+  website          String?
+  foundedYear      Int?
+  description      String?
+  culture          String?
+  isRemoteFriendly Boolean               @default(false)
+  isHybridFriendly Boolean               @default(false)
+  linkedinUrl      String?
+  twitterUrl       String?
+  facebookUrl      String?
+  emailCompany     String?
+  isVerified       Boolean               @default(false)
+  verifiedAt       DateTime?
+  deletedAt        DateTime?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  users            User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  benefits         CompanyBenefit[]
+  count            CompanyCount?
+  jobs             JobOffer[]
+  slugRedirects    CompanySlugRedirect[]
 
   @@index([slug])
   @@index([userId])
   @@index([name])
+  // Trigram GIN indexes for job search by company name / location (see the
+  // note on job_offers). Declared so `prisma migrate dev` never drops them.
+  @@index([name(ops: raw("gin_trgm_ops"))], type: Gin, map: "idx_companies_name_trgm")
+  @@index([location(ops: raw("gin_trgm_ops"))], type: Gin, map: "idx_companies_location_trgm")
   @@map("companies")
+}
+
+/// A company's previous public slugs (launch plan A6). Old /companies/<slug>
+/// links keep working by redirecting to the company's current slug. A slug
+/// listed here cannot be claimed by another company.
+model CompanySlugRedirect {
+  slug      String    @id
+  companyId String
+  createdAt DateTime  @default(now())
+  company   companies @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@map("company_slug_redirects")
+}
+
+/// Append-only record of every application status change (launch plan A7).
+model ApplicationStatusHistory {
+  id            String             @id @default(uuid())
+  applicationId String
+  fromStatus    ApplicationStatus?
+  toStatus      ApplicationStatus
+  changedById   String?
+  createdAt     DateTime           @default(now())
+  application   Application        @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  changedBy     User?              @relation(fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([applicationId, createdAt])
+  @@map("application_status_history")
+}
+
+/// In-app notifications (launch plan A7).
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String?
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+  @@index([userId, createdAt])
+  @@map("notifications")
 }
 
 model CompanyInvitation {
@@ -482,6 +546,11 @@ enum ApplicationStatus {
   ENTRETIEN
   EMBAUCHES
   REFUSE
+}
+
+enum NotificationType {
+  NEW_APPLICATION
+  APPLICATION_STATUS_CHANGED
 }
 
 enum ActivityType {

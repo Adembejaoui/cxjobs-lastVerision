@@ -2,6 +2,9 @@ import { z } from "zod";
 
 export const ALLOWED_INVITATION_DURATIONS = [7, 14, 30, 60, 90] as const;
 
+// Emails are normalized (trim + lowercase) like every other stored address
+// (NF-06/H8), so invitations, the uniqueness checks and the account created
+// from them all agree on one spelling.
 export const createCompanyInvitationSchema = z.object({
   managerName: z
     .string()
@@ -10,6 +13,8 @@ export const createCompanyInvitationSchema = z.object({
     .optional(),
   managerEmail: z
     .string()
+    .trim()
+    .toLowerCase()
     .email("Invalid manager email address")
     .max(254, "Email must be 254 characters or less")
     .optional(),
@@ -19,6 +24,8 @@ export const createCompanyInvitationSchema = z.object({
     .max(200, "Company name must be 200 characters or less"),
   companyEmail: z
     .string()
+    .trim()
+    .toLowerCase()
     .email("Invalid company email address")
     .max(254, "Email must be 254 characters or less"),
   durationDays: z

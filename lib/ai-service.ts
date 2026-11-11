@@ -1,16 +1,77 @@
 import { ContractType, EmploymentType } from "@/app/generated/prisma/enums";
-import OpenAI from "openai";
+import OpenAI, { APIConnectionTimeoutError, APIError, APIUserAbortError } from "openai";
 import { logger } from "./logger";
+import { AIServiceError } from "./ai-errors";
 
-// Initialize OpenAI client
-const getOpenAIClient = () => {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY environment variable is not set");
-  }
+// ─── Client limits (Phase 3 / H4) ─────────────────────────────────────────
+//
+// The SDK defaults are a 10-minute timeout and 2 retries, so one stalled
+// upstream request could keep a serverless function (and its DB connection)
+// busy for many minutes. Each attempt is now capped at 20 s, with one retry
+// (the SDK retries only connection errors, 408/409/429 and 5xx, with backoff):
+// worst case ≈ 2 × 20 s + backoff, well inside a 60 s function budget.
+// Callers with their own deadline pass an AbortSignal, which cancels the
+// attempt AND any pending retry.
+export const AI_REQUEST_TIMEOUT_MS = 20_000;
+export const AI_MAX_RETRIES = 1;
+
+export interface AICallOptions {
+  /** Aborts the request (and any retry), e.g. on a route-level deadline. */
+  signal?: AbortSignal;
+}
+
+// The only error type this module throws (see lib/ai-errors.ts).
+export { AIServiceError, type AIFailureKind } from "./ai-errors";
+
+export function createOpenAIClient(opts: {
+  apiKey: string;
+  timeoutMs?: number;
+  maxRetries?: number;
+  /** Test seam. */
+  fetch?: typeof fetch;
+}): OpenAI {
   return new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
+    apiKey: opts.apiKey,
+    timeout: opts.timeoutMs ?? AI_REQUEST_TIMEOUT_MS,
+    maxRetries: opts.maxRetries ?? AI_MAX_RETRIES,
+    ...(opts.fetch ? { fetch: opts.fetch } : {}),
   });
+}
+
+let clientOverride: OpenAI | null = null;
+/** Test hook: inject a client (null restores the env-based one). */
+export function __setOpenAIClientForTests(client: OpenAI | null): void {
+  clientOverride = client;
+}
+
+const getOpenAIClient = () => {
+  if (clientOverride) return clientOverride;
+  if (!process.env.OPENAI_API_KEY) {
+    throw new AIServiceError("AI service is not configured", "unavailable");
+  }
+  return createOpenAIClient({ apiKey: process.env.OPENAI_API_KEY });
 };
+
+/** Classify any failure into a safe, generic AIServiceError. */
+function toAIServiceError(error: unknown, message: string): AIServiceError {
+  if (error instanceof AIServiceError) return new AIServiceError(message, error.kind);
+  if (error instanceof APIConnectionTimeoutError || error instanceof APIUserAbortError) {
+    return new AIServiceError(message, "timeout");
+  }
+  if (error instanceof SyntaxError) return new AIServiceError(message, "invalid_response");
+  return new AIServiceError(message, "unavailable");
+}
+
+/**
+ * Log fields for a provider failure: class name, HTTP status and error code
+ * only. Never the raw error object (its body/headers could echo request data).
+ */
+function aiErrorLogFields(error: unknown): Record<string, unknown> {
+  return {
+    error: error instanceof Error ? error.name : "unknown",
+    ...(error instanceof APIError ? { status: error.status, code: error.code ?? undefined } : {}),
+  };
+}
 
 /**
  * Input for job description generation
@@ -72,7 +133,8 @@ export interface JobUrlScrapeOutput {
  * Generate a professional job description using AI
  */
 export async function generateJobDescription(
-  input: JobGenerationInput
+  input: JobGenerationInput,
+  options: AICallOptions = {}
 ): Promise<JobGenerationOutput> {
   const openai = getOpenAIClient();
   const language = input.language || "en";
@@ -136,7 +198,7 @@ Format the response as JSON with keys: description, requirements (array), benefi
       response_format: { type: "json_object" },
       temperature: 0.7,
       max_tokens: 1500,
-    });
+    }, { signal: options.signal });
 
     const content = completion.choices[0].message.content;
     
@@ -153,8 +215,8 @@ Format the response as JSON with keys: description, requirements (array), benefi
       excerpt: result.excerpt || "",
     };
   } catch (error) {
-    logger.error("AI generation failed", { error });
-    throw new Error("Failed to generate job description");
+    logger.error("AI generation failed", aiErrorLogFields(error));
+    throw toAIServiceError(error, "Failed to generate job description");
   }
 }
 
@@ -202,7 +264,8 @@ export interface CVParseOutput {
  * Parse CV text using AI to extract structured information
  */
 export async function parseCVWithAI(
-  input: CVParseInput
+  input: CVParseInput,
+  options: AICallOptions = {}
 ): Promise<CVParseOutput> {
   const openai = getOpenAIClient();
   const language = input.language || "en";
@@ -297,7 +360,7 @@ Expected JSON:
       response_format: { type: "json_object" },
       temperature: 0.2,
       max_tokens: 3000,
-    });
+    }, { signal: options.signal });
 
     const content = completion.choices[0].message.content;
     
@@ -328,8 +391,8 @@ Expected JSON:
       languages: Array.isArray(result.languages) ? result.languages.filter((l: { name?: string }) => l && l.name) : [],
     };
   } catch (error) {
-    logger.error("AI CV parsing failed", { error });
-    throw new Error("Failed to parse CV with AI");
+    logger.error("AI CV parsing failed", aiErrorLogFields(error));
+    throw toAIServiceError(error, "Failed to parse CV with AI");
   }
 }
 
@@ -337,7 +400,8 @@ Expected JSON:
  * Extract structured job offer data from URL/content text using AI
  */
 export async function extractJobFromUrlText(
-  input: JobUrlScrapeInput
+  input: JobUrlScrapeInput,
+  options: AICallOptions = {}
 ): Promise<JobUrlScrapeOutput> {
   const openai = getOpenAIClient();
   const language = input.language || "en";
@@ -425,7 +489,7 @@ CRITICAL RULES:
       response_format: { type: "json_object" },
       temperature: 0.3,
       max_tokens: 1500,
-    });
+    }, { signal: options.signal });
 
     const content = completion.choices[0].message.content;
     if (!content) throw new Error("No response from AI");
@@ -433,8 +497,8 @@ CRITICAL RULES:
     const result: JobUrlScrapeOutput = JSON.parse(content);
     return result;
   } catch (error) {
-    logger.error("Job URL scraping failed", { error });
-    throw new Error("Failed to extract job data from URL");
+    logger.error("Job URL scraping failed", aiErrorLogFields(error));
+    throw toAIServiceError(error, "Failed to extract job data from URL");
   }
 }
 

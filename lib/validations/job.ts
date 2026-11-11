@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { optionalSafeUrlSchema, safeUrlSchema } from "@/lib/security/safe-url";
 
 // ==================== Job Offer Schemas ====================
 
@@ -54,7 +55,7 @@ export const createJobOfferSchema = z.object({
   softSkills: z.array(z.string()).optional(),
   status: jobStatusSchema.optional().default("DRAFT"),
   applicationType: applicationMethodSchema.optional().default("INTERNAL"),
-  externalApplyUrl: z.string().url("Please enter a valid URL").optional().nullable(),
+  externalApplyUrl: optionalSafeUrlSchema(),
    expiresAt: z
      .preprocess(
        (val) => (val && typeof val === "string" && val.trim() ? new Date(val) : null),
@@ -84,6 +85,9 @@ export const createJobOfferSchema = z.object({
 }, {
   message: "Expiration date must be in the future",
   path: ["expiresAt"],
+}).refine((data) => data.salaryMin == null || data.salaryMax == null || data.salaryMin <= data.salaryMax, {
+  message: "Maximum salary must be greater than or equal to minimum salary",
+  path: ["salaryMax"],
 });
 
 // Base schema for update (without refinement)
@@ -112,8 +116,11 @@ const updateJobOfferBaseSchema = z.object({
   technicalTools: z.array(z.string()).optional(),
   softSkills: z.array(z.string()).optional(),
   status: jobStatusSchema.optional(),
-  applicationType: applicationMethodSchema.optional().default("INTERNAL"),
-   externalApplyUrl: z.string().url("Please enter a valid URL").optional().nullable(),
+  // No default here: this schema validates PARTIAL updates. A default would
+  // rewrite applicationType on every PUT that omits it (e.g. a status-only
+  // change), silently turning EXTERNAL jobs into INTERNAL ones.
+  applicationType: applicationMethodSchema.optional(),
+   externalApplyUrl: optionalSafeUrlSchema(),
    expiresAt: z
      .preprocess(
        (val) => (val && typeof val === "string" && val.trim() ? new Date(val) : null),
@@ -124,22 +131,6 @@ closedAt: z.coerce.date().optional().nullable(),
    highlight: z.boolean().optional(),
    publishedAt: z.coerce.date().optional().nullable(),
  }).refine((data) => {
-  if (data.activityType === "OTHER" && (!data.activityCustom || data.activityCustom.trim().length === 0)) {
-    return false;
-  }
-  return true;
-}, {
-  message: "Custom activity name is required when activity type is 'Other'",
-  path: ["activityCustom"],
-}).refine((data) => {
-  if (data.applicationType === "EXTERNAL") {
-    return !!data.externalApplyUrl && data.externalApplyUrl.length > 0;
-  }
-  return true;
-}, {
-  message: "External apply URL is required when application type is EXTERNAL",
-  path: ["externalApplyUrl"],
-}).refine((data) => {
   if (data.expiresAt && data.expiresAt <= new Date()) {
     return false;
   }
@@ -149,7 +140,52 @@ closedAt: z.coerce.date().optional().nullable(),
   path: ["expiresAt"],
 });
 
+// Cross-field rules (activityCustom for OTHER, external URL for EXTERNAL,
+// salaryMin <= salaryMax) depend on the job's FINAL state, i.e. the stored row
+// merged with the partial payload, so they are enforced by
+// `validateEffectiveJobState` in the PUT route rather than on the payload alone.
 export const updateJobOfferSchema = updateJobOfferBaseSchema;
+
+export interface EffectiveJobState {
+  activityType?: string | null;
+  activityCustom?: string | null;
+  applicationType?: string | null;
+  externalApplyUrl?: string | null;
+  salaryMin?: number | null;
+  salaryMax?: number | null;
+}
+
+/** Field errors for a job's final state, or null when it is consistent. */
+export function validateEffectiveJobState(job: EffectiveJobState): Record<string, string[]> | null {
+  const errors: Record<string, string[]> = {};
+  if (job.activityType === "OTHER" && !job.activityCustom?.trim()) {
+    errors.activityCustom = ["Custom activity name is required when activity type is 'Other'"];
+  }
+  if (job.applicationType === "EXTERNAL" && !job.externalApplyUrl?.trim()) {
+    errors.externalApplyUrl = ["External apply URL is required when application type is EXTERNAL"];
+  }
+  if (job.salaryMin != null && job.salaryMax != null && job.salaryMin > job.salaryMax) {
+    errors.salaryMax = ["Maximum salary must be greater than or equal to minimum salary"];
+  }
+  return Object.keys(errors).length > 0 ? errors : null;
+}
+
+/** Merge a partial update over the stored row (undefined = unchanged). */
+export function mergeJobState(
+  existing: EffectiveJobState,
+  update: EffectiveJobState
+): EffectiveJobState {
+  const pick = <K extends keyof EffectiveJobState>(k: K) =>
+    update[k] !== undefined ? update[k] : existing[k];
+  return {
+    activityType: pick("activityType"),
+    activityCustom: pick("activityCustom"),
+    applicationType: pick("applicationType"),
+    externalApplyUrl: pick("externalApplyUrl"),
+    salaryMin: pick("salaryMin"),
+    salaryMax: pick("salaryMax"),
+  };
+}
 
 // ==================== Lifecycle Transition Validation ====================
 
@@ -175,7 +211,7 @@ export function getInvalidTransitionError(fromStatus: string, toStatus: string):
 // ==================== Job URL Scraping Schema ====================
 
 export const scrapeJobUrlSchema = z.object({
-  url: z.string().url("Please enter a valid URL"),
+  url: safeUrlSchema({ allowHttp: false }, "Please enter a valid https:// URL"),
   language: z.enum(["en", "fr"]).default("en").optional(),
 });
 

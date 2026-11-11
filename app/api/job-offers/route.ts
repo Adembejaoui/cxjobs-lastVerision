@@ -5,11 +5,15 @@ import { createJobOfferSchema, contractTypeSchema, employmentTypeSchema, activit
 import { parsePaginationParams } from "@/lib/utils";
 import { unstable_cache } from "next/cache";
 import { revalidateJobOffers } from "@/lib/cache";
+import { activeCompanyWhere, isCompanyActive, COMPANY_ACTIVITY_SELECT } from "@/lib/security/company-activity";
+import { companySuspendedResponse } from "@/lib/server/company-guard";
 import { invalidateCompanyAnalytics } from "@/lib/local-cache";
 import { logger } from "@/lib/logger";
 import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
 import { getClientIp } from "@/lib/utils";
 import { getSortOrder, buildJobOfferWhereClause } from "@/lib/job-offers-utils";
+import { validateBenefitOwnership } from "@/lib/security/benefits";
+import { resolveJobOfferListScope, privateScopeBaseWhere } from "@/lib/security/job-offer-scope";
 
 // Cached function for fetching public job offers
 async function getPublicJobOffers(filters: {
@@ -36,6 +40,10 @@ async function getPublicJobOffers(filters: {
       const baseWhere: Record<string, unknown> = {
         deletedAt: null,
         status: "PUBLISHED",
+        // F-04: jobs of suspended or deleted companies are never public. A
+        // top-level key: the filter builder only appends to `AND`, so no
+        // search, location or language filter can replace it.
+        company: activeCompanyWhere(),
       };
 
       if (filters.companyId) {
@@ -99,7 +107,15 @@ async function getPublicJobOffers(filters: {
   )();
 }
 
-const LIST_LIMIT = { windowMs: 60_000, max: 60 };
+/** Integer query param, or undefined when absent/garbled (never NaN). */
+function parseNonNegativeInt(raw: string | null): number | undefined {
+  if (!raw || !/^\d{1,9}$/.test(raw.trim())) return undefined;
+  return Number.parseInt(raw.trim(), 10);
+}
+
+// Cheap, cached public read: fails OPEN so a Redis outage does not take the
+// public catalogue down (NF-10). Writes, auth and AI stay fail-closed.
+const LIST_LIMIT = { windowMs: 60_000, max: 60, failOpen: true };
 const POST_LIMIT = { windowMs: 60_000, max: 10 };
 
 // GET /api/job-offers - List job offers (public with filters)
@@ -134,8 +150,8 @@ export async function GET(request: NextRequest) {
       isHybrid: searchParams.get("isHybrid") === "true" ? true : searchParams.get("isHybrid") === "false" ? false : undefined,
       location: searchParams.get("location") || undefined,
       search: searchParams.get("search") || undefined,
-      salaryMin: searchParams.get("salaryMin") ? parseInt(searchParams.get("salaryMin")!, 10) : undefined,
-      salaryMax: searchParams.get("salaryMax") ? parseInt(searchParams.get("salaryMax")!, 10) : undefined,
+      salaryMin: parseNonNegativeInt(searchParams.get("salaryMin")),
+      salaryMax: parseNonNegativeInt(searchParams.get("salaryMax")),
       sort: searchParams.get("sort") || undefined,
       language: searchParams.get("language") || undefined,
     };
@@ -181,20 +197,31 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Check if user is a company owner or admin (needs uncached results)
+    // Scope is derived from the authenticated identity and the DB-resolved
+    // company relationship only; `companyId` can narrow but never widen it.
     const session = await auth();
-    const isCompanyOwner = session?.user?.role === "COMPANY";
-    const isAdmin = session?.user?.role === "ADMIN";
+    const scope = await resolveJobOfferListScope(
+      {
+        role: session?.user?.role,
+        userId: session?.user?.id,
+        requestedCompanyId: filters.companyId,
+        requestedStatus: filters.status,
+      },
+      async (userId) =>
+        (await prisma.companies.findUnique({ where: { userId }, select: { id: true } }))?.id ?? null
+    );
 
-    // For public users, use cached results
-    if (!isCompanyOwner && !isAdmin) {
+    // Public catalogue (anonymous, candidates, foreign-company or profile-less
+    // COMPANY users): cached, PUBLISHED only.
+    if (scope.kind === "public") {
       const { jobOffers, total } = await getPublicJobOffers({
         page: filters.page,
         limit: filters.limit,
         skip: filters.skip,
-        companyId: filters.companyId,
+        companyId: scope.companyId,
         contractType: filters.contractType,
         employmentType: filters.employmentType,
+        activityType: filters.activityType,
         isRemote: filters.isRemote,
         isHybrid: filters.isHybrid,
         location: filters.location,
@@ -216,36 +243,16 @@ export async function GET(request: NextRequest) {
         },
       }, {
         headers: {
-          'Cache-Control': 'public, s-maxage=300, stale-while-revalidate=60',
+          // Responses vary by session, so shared caches must not store a
+          // response produced for one identity and serve it to another.
+          'Cache-Control': session?.user ? 'private, no-store' : 'public, s-maxage=300, stale-while-revalidate=60',
         },
       });
     }
 
-    // For company owners and admins, fetch uncached results
+    // Owner / admin: uncached, any status within the resolved scope.
     const now = new Date();
-
-    const baseWhere: Record<string, unknown> = {
-      deletedAt: null,
-    };
-
-    // Admins can see all jobs including drafts, companies see only their own
-    if (!isAdmin) {
-      const company = await prisma.companies.findUnique({
-        where: { userId: session!.user.id },
-        select: { id: true },
-      });
-      if (company) {
-        baseWhere.companyId = company.id;
-      }
-    }
-
-    if (filters.status) {
-      baseWhere.status = filters.status;
-    }
-
-    if (filters.companyId) {
-      baseWhere.companyId = filters.companyId;
-    }
+    const baseWhere = privateScopeBaseWhere(scope);
 
     const { where } = buildJobOfferWhereClause(baseWhere, filters, now);
 
@@ -284,6 +291,8 @@ export async function GET(request: NextRequest) {
         total,
         totalPages: Math.ceil(total / filters.limit),
       },
+    }, {
+      headers: { 'Cache-Control': 'private, no-store' },
     });
   } catch (error) {
      logger.error("Get job offers error", { error });
@@ -322,10 +331,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get company profile
+    // Get company profile (with its activity state, read from the DB now)
     const company = await prisma.companies.findUnique({
       where: { userId: session.user.id },
-      select: { id: true },
+      select: { id: true, ...COMPANY_ACTIVITY_SELECT },
     });
 
     if (!company) {
@@ -335,13 +344,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // F-04: a suspended company cannot create (or publish) jobs.
+    if (!isCompanyActive(company)) {
+      return companySuspendedResponse();
+    }
+
     const body = await request.json();
     const validationResult = createJobOfferSchema.safeParse(body);
 
     if (!validationResult.success) {
       logger.error("POST /api/job-offers validation failed", {
         fieldErrors: validationResult.error.flatten().fieldErrors,
-        body,
         userId: session.user.id,
       });
       return NextResponse.json(
@@ -356,20 +369,17 @@ export async function POST(request: NextRequest) {
 
     const { slug, benefitIds, languages, ...jobData } = validationResult.data;
 
-    // Verify all benefitIds belong to this company before creating the job
+    // Every benefitId must exist and belong to the authenticated company.
+    let validatedBenefitIds: string[] = [];
     if (benefitIds && benefitIds.length > 0) {
-      const validBenefits = await prisma.companyBenefit.findMany({
-        where: {
-          id: { in: benefitIds },
-          companyId: company.id,
-        },
-      });
-      if (validBenefits.length !== benefitIds.length) {
+      const check = await validateBenefitOwnership(prisma, company.id, benefitIds);
+      if (!check.ok) {
         return NextResponse.json(
           { success: false, error: "One or more benefits are invalid or do not belong to your company", code: "INVALID_BENEFITS" },
           { status: 400 }
         );
       }
+      validatedBenefitIds = check.benefitIds;
     }
 
     // Generate slug from title if not provided
@@ -401,10 +411,10 @@ export async function POST(request: NextRequest) {
           companyId: company.id,
           publishedAt,
           expiresAt,
-          ...(benefitIds && benefitIds.length > 0
+          ...(validatedBenefitIds.length > 0
             ? {
                 benefits: {
-                  create: benefitIds.map((benefitId) => ({
+                  create: validatedBenefitIds.map((benefitId) => ({
                     benefitId,
                   })),
                 },

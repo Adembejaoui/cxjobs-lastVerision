@@ -2,11 +2,16 @@ import CXHeroSearch from "@/components/landing/cx-hero-search";
 import { CoverflowCarousel } from "@/components/landing/coverflow-carousel";
 import { LandingVisitorTracker } from "@/components/landing-visitor-tracker";
 import prisma from "@/lib/prisma";
+import { activeCompanyWhere } from "@/lib/security/company-activity";
+import { connection } from "next/server";
 
 async function getFeaturedCompanies() {
+  // Request-time only: keeps `next build` from querying the database during
+  // prerendering (the page was already rendered dynamically at runtime).
+  await connection();
   const companies = await prisma.companies.findMany({
     where: {
-      deletedAt: null,
+      ...activeCompanyWhere(), // F-04: never feature a suspended company
       logoUrl: { not: null },
     },
     select: {

@@ -1,5 +1,7 @@
 "use client";
 
+import { NotificationBell } from "@/components/dashboard/notification-bell";
+
 interface UserData {
   id?: string;
   name?: string | null;
@@ -38,9 +40,10 @@ export function DashboardHeader({ user }: DashboardHeaderProps) {
      
 
       {/* Actions */}
-      <div className="flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-2">
+        {user.role !== "ADMIN" && <NotificationBell />}
         {/* User Avatar - Mobile only */}
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#47d79d] text-xs font-bold text-[#071738] lg:hidden">
+        <div aria-hidden="true" className="flex h-8 w-8 items-center justify-center rounded-full bg-[#47d79d] text-xs font-bold text-[#071738] lg:hidden">
           {user.name?.charAt(0).toUpperCase() || "U"}
         </div>
       </div>

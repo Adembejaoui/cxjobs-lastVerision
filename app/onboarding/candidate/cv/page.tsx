@@ -168,8 +168,9 @@ export default function CVOnboardingPage() {
             body: uploadFormDataCV,
           });
           const uploadData = await uploadRes.json();
-          if (uploadData.success && uploadData.data?.url) {
-            uploadedResumeUrl = uploadData.data.url;
+          // Persist the private object path, never the short-lived signed URL.
+          if (uploadData.success && uploadData.data?.path) {
+            uploadedResumeUrl = uploadData.data.path;
           }
         } catch {
           logger.error("CV upload failed");

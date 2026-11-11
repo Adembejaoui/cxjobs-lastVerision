@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
 import { parsePaginationParams } from "@/lib/utils";
 import { logger } from "@/lib/logger";
+import { buildInvitationLink } from "@/lib/security/invitation-link";
 import {
   createCompanyInvitationSchema,
   companyInvitationStatuses,
@@ -11,6 +12,7 @@ import {
   isValidCompanyInvitationStatus,
 } from "@/lib/validations/company-invitation";
 import crypto from "crypto";
+import { emailIsTaken, type EmailLookupDb } from "@/lib/server/user-email";
 import { encryptToken } from "@/lib/server/invitation-token-crypto";
 
 const APP_BASE_URL =
@@ -107,16 +109,12 @@ export async function POST(request: NextRequest) {
     const { managerName, managerEmail, companyName, companyEmail, durationDays } =
       validation.data;
 
-    // Normalize companyEmail for validation
-    const normalizedCompanyEmail = companyEmail.trim().toLowerCase();
+    // The schema already trims + lowercases both addresses.
+    const normalizedCompanyEmail = companyEmail;
 
-    // Check if companyEmail is already used by any User
-    const existingUser = await prisma.user.findUnique({
-      where: { email: normalizedCompanyEmail },
-      select: { id: true },
-    });
-
-    if (existingUser) {
+    // Check if companyEmail is already used by any User, including legacy
+    // mixed-case rows that an exact match would miss.
+    if (await emailIsTaken(prisma.user as unknown as EmailLookupDb<{ email: string }>, normalizedCompanyEmail)) {
       return NextResponse.json(
         {
           success: false,
@@ -129,8 +127,7 @@ export async function POST(request: NextRequest) {
 
     // Check if managerEmail equals companyEmail
     if (managerEmail) {
-      const normalizedManagerEmail = managerEmail.trim().toLowerCase();
-      if (normalizedManagerEmail === normalizedCompanyEmail) {
+      if (managerEmail === normalizedCompanyEmail) {
         return NextResponse.json(
           {
             success: false,
@@ -176,7 +173,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const link = `${APP_BASE_URL}/onboarding/company?token=${rawToken}`;
+    // Token in the URL fragment, never the query string (H3).
+    const link = buildInvitationLink(APP_BASE_URL, rawToken);
 
     logger.info("COMPANY_INVITATION_TOKEN_GENERATED", {
       invitationId: invitation.id,
@@ -201,7 +199,8 @@ export async function POST(request: NextRequest) {
           link,
         },
       },
-      { status: 201 }
+      // Carries a live bearer secret: never store in any cache.
+      { status: 201, headers: { "Cache-Control": "no-store" } }
     );
   } catch (error) {
     logger.error("Failed to generate company invitation token", { error });

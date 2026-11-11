@@ -1,10 +1,11 @@
 import { notFound } from 'next/navigation'
 import { unstable_cache } from 'next/cache'
-import { auth } from '@/lib/auth'
 import prisma from '@/lib/prisma'
-import { BenefitScope, JobOfferStatus } from '@/app/generated/prisma/client'
+import { BenefitScope } from '@/app/generated/prisma/client'
 import { JobDetailClient, JobOffer } from './job-detail-client'
 import { logger } from "@/lib/logger";
+import { publicJobWhere } from '@/lib/security/company-activity'
+import { buildJobPostingJsonLd, serializeJsonLd } from '@/lib/seo/job-posting'
 
 export const revalidate = 600;
 export const dynamicParams = true;
@@ -14,11 +15,8 @@ const getPublishedJob = unstable_cache(
   async (slug: string): Promise<JobOffer | null> => {
     try {
       const job = await prisma.jobOffer.findFirst({
-where: {
-        slug,
-        deletedAt: null,
-        status: JobOfferStatus.PUBLISHED,
-      },
+      // F-04: published, not deleted, not expired, active company.
+      where: { slug, ...publicJobWhere() },
       include: {
         company: {
           select: {
@@ -44,145 +42,23 @@ where: {
       });
       return job as JobOffer | null;
     } catch (error) {
-      logger.error("Failed to fetch published job", { error });
-      return null;
+      // Rethrown on purpose: a database outage must not turn into a 404 that
+      // the ISR cache keeps serving. On a failed regeneration Next keeps the
+      // last good page; on a first render the branded error page is shown.
+      logger.error("Failed to fetch published job", { error: error instanceof Error ? error.name : "unknown" });
+      throw error;
     }
   },
   ["published-job-detail"],
   { revalidate: 600, tags: ["job-offer"] }
 );
 
-// Shared include for uncached job fetches (company/admin/historical candidate)
-const jobOfferInclude = {
-  company: {
-    select: {
-      id: true, name: true, slug: true, logoUrl: true,
-      location: true, website: true, description: true,
-      isRemoteFriendly: true, isHybridFriendly: true,
-      benefits: { where: { scope: BenefitScope.CORE }, select: { id: true, name: true, icon: true } },
-    },
-  },
-  benefits: { include: { benefit: true } },
-  languages: true,
-  _count: { select: { applications: true } },
-};
-
-// Uncached fetch for company owners / admins (any status)
-async function getJobUncached(slug: string, userId?: string, userRole?: string): Promise<JobOffer | null> {
-  try {
-    const job = await prisma.jobOffer.findFirst({
-      where: { slug, deletedAt: null },
-      include: jobOfferInclude,
-    });
-
-    if (!job) return null;
-
-    // Company owners can view their own jobs regardless of status
-    if (userRole === 'COMPANY' && userId) {
-      const userCompany = await prisma.companies.findFirst({
-        where: { userId, id: job.companyId },
-      });
-      if (userCompany) return job;
-    }
-
-    // Admins can view any job
-    if (userRole === 'ADMIN') return job;
-
-    // Everyone else: only published
-    if (job.status === 'PUBLISHED') return job;
-
-    return null;
-  } catch {
-    logger.error("Failed to fetch job");
-    return null;
-  }
-}
-
-// Fetch a job by slug for a candidate who has an existing application.
-// Used to allow access to historical jobs (CLOSED, EXPIRED, ARCHIVED, etc.)
-// that are no longer accepting applications but belong to the candidate's history.
-async function getJobForCandidate(slug: string, userId: string): Promise<JobOffer | null> {
-  try {
-    // Resolve the candidate record from the authenticated user id
-    const candidate = await prisma.candidate.findUnique({
-      where: { userId },
-      select: { id: true },
-    });
-
-    if (!candidate) return null;
-
-    // Fetch the job by slug (any non-deleted status)
-    const job = await prisma.jobOffer.findFirst({
-      where: { slug, deletedAt: null },
-      include: jobOfferInclude,
-    });
-
-    if (!job) return null;
-
-    // Ownership check: the candidate must have an existing application for this job
-    const application = await prisma.application.findFirst({
-      where: {
-        candidateId: candidate.id,
-        jobOfferId: job.id,
-      },
-      select: { id: true },
-    });
-
-    if (!application) return null;
-
-    return job;
-  } catch {
-    logger.error("Failed to fetch job for candidate");
-    return null;
-  }
-}
-
-interface JobWithMeta {
-  job: JobOffer;
-  isHistorical: boolean;
-}
-
-async function getJob(slug: string, userId?: string, userRole?: string): Promise<JobWithMeta | null> {
-  // Public path (no session): cached published job only
-  if (!userId) {
-    const job = await getPublishedJob(slug);
-    return job ? { job, isHistorical: false } : null;
-  }
-
-  // Company/admin path: uncached, any status for owned jobs
-  if (userRole === 'COMPANY' || userRole === 'ADMIN') {
-    const job = await getJobUncached(slug, userId, userRole);
-    if (!job) return null;
-    return { job, isHistorical: job.status !== 'PUBLISHED' };
-  }
-
-  // Candidate path: try published first, then fall back to historical
-  const publishedJob = await getPublishedJob(slug);
-  if (publishedJob) {
-    return { job: publishedJob, isHistorical: false };
-  }
-
-  // Candidate has no published job match; check for a historical application
-  const historicalJob = await getJobForCandidate(slug, userId);
-  if (historicalJob) {
-    return { job: historicalJob, isHistorical: true };
-  }
-
-  return null;
-}
-
-export async function generateStaticParams() {
-  try {
-    const jobs = await prisma.jobOffer.findMany({
-      where: { status: JobOfferStatus.PUBLISHED, deletedAt: null },
-      select: { slug: true },
-      take: 1000,
-    });
-    return jobs.map((job) => ({ slug: job.slug }));
-  } catch {
-    logger.error("Failed to generate static params for jobs");
-    return [];
-  }
+// No job pages are prebuilt: a build must never need database access (a dev
+// checkout's `.env` may point at production, and CI has no database). With
+// `dynamicParams = true` and `revalidate`, each job page is rendered on its
+// first request and then served from the ISR cache.
+export async function generateStaticParams(): Promise<Array<{ slug: string }>> {
+  return [];
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
@@ -190,23 +66,54 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const job = await getPublishedJob(slug);
 
   if (!job) {
-    return { title: 'Job Not Found | CXJobs' };
+    return { title: 'Job Not Found | CXJobs', robots: { index: false } };
   }
 
+  const title = `${job.title} at ${job.company.name} | CXJobs`;
+  const description = (job.description || job.company.description || `Apply for ${job.title} at ${job.company.name}`)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200);
   return {
-    title: `${job.title} at ${job.company.name} | CXJobs`,
-    description: job.company.description || `Apply for ${job.title} at ${job.company.name}`,
+    title,
+    description,
+    alternates: { canonical: `/jobs/${job.slug}` },
+    openGraph: {
+      type: 'website',
+      siteName: 'CXJobs',
+      title,
+      description,
+      url: `/jobs/${job.slug}`,
+      ...(job.company.logoUrl ? { images: [{ url: job.company.logoUrl, alt: job.company.name }] } : {}),
+    },
   };
 }
 
+/**
+ * The public job page is identical for every visitor (launch plan A10): it
+ * never reads the session, so it is served from the ISR cache. Only publicly
+ * visible jobs exist here (published, not deleted, not expired, active
+ * company: P5); anything else is a 404. Owners, admins and candidates with
+ * an application use /jobs/[slug]/preview for non-public jobs.
+ */
 export default async function JobDetailPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
-  const session = await auth();
-  const result = await getJob(slug, session?.user?.id, session?.user?.role);
+  const job = await getPublishedJob(slug);
 
-  if (!result) {
+  if (!job) {
     notFound();
   }
 
-  return <JobDetailClient job={result.job} isHistorical={result.isHistorical} />;
+  const jsonLd = buildJobPostingJsonLd(job);
+
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        // Escaped by serializeJsonLd: job text cannot close the element.
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(jsonLd) }}
+      />
+      <JobDetailClient job={job} isHistorical={false} />
+    </>
+  );
 }

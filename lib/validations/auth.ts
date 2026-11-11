@@ -1,4 +1,11 @@
 import { z } from "zod";
+import { optionalSafeUrlSchema, optionalStorageImageUrlSchema } from "@/lib/security/safe-url";
+
+/**
+ * Email identity field: trimmed and lowercased BEFORE validation, so every
+ * stored/looked-up address is canonical (see lib/server/user-email.ts).
+ */
+export const emailSchema = z.string().trim().toLowerCase().email("Invalid email address");
 
 export const passwordSchema = z
   .string()
@@ -8,19 +15,19 @@ export const passwordSchema = z
   .regex(/[0-9]/, "Password must contain at least one number");
 
 export const registerSchema = z.object({
-  email: z.string().email("Invalid email address"),
+  email: emailSchema,
   password: passwordSchema,
   name: z.string().min(2, "Name must be at least 2 characters"),
   invitationToken: z.string().optional(),
 });
 
 export const loginSchema = z.object({
-  email: z.string().email("Invalid email address"),
+  email: emailSchema,
   password: z.string().min(1, "Password is required"),
 });
 
 export const forgotPasswordSchema = z.object({
-  email: z.string().email("Invalid email address"),
+  email: emailSchema,
 });
 
 export const resetPasswordSchema = z.object({
@@ -37,7 +44,7 @@ export const resetPasswordSchema = z.object({
 export const adminUpdateUserSchema = z
   .object({
     name: z.string().min(2, "Name must be at least 2 characters").optional(),
-    email: z.string().email("Invalid email address").optional(),
+    email: emailSchema.optional(),
     isActive: z.boolean().optional(),
   })
   .refine((data) => Object.keys(data).length > 0, {
@@ -55,18 +62,18 @@ export const adminUpdateCompanySchema = z.object({
     .min(2, "Slug must be at least 2 characters")
     .regex(/^[a-z0-9-]+$/, "Slug must contain only lowercase letters, numbers, and hyphens")
     .optional(),
-  logoUrl: z.string().url("Invalid logo URL").optional().nullable(),
-  coverImageUrl: z.string().url("Invalid cover image URL").optional().nullable(),
+  logoUrl: optionalStorageImageUrlSchema(),
+  coverImageUrl: optionalStorageImageUrlSchema(),
   companySize: z.string().optional().nullable(),
   location: z.string().optional().nullable(),
-  website: z.string().url("Invalid website URL").optional().or(z.literal("")).nullable(),
+  website: optionalSafeUrlSchema(undefined, "Invalid website URL"),
   foundedYear: z.number().min(1800).max(new Date().getFullYear()).optional().nullable(),
   description: z.string().max(5000, "Description must be 5000 characters or less").optional().nullable(),
   isRemoteFriendly: z.boolean().optional().nullable(),
   isHybridFriendly: z.boolean().optional().nullable(),
-  linkedinUrl: z.string().optional().nullable(),
-  twitterUrl: z.string().optional().nullable(),
-  facebookUrl: z.string().optional().nullable(),
+  linkedinUrl: optionalSafeUrlSchema(undefined, "Invalid LinkedIn URL"),
+  twitterUrl: optionalSafeUrlSchema(undefined, "Invalid Twitter/X URL"),
+  facebookUrl: optionalSafeUrlSchema(undefined, "Invalid Facebook URL"),
   isVerified: z.boolean().optional().nullable(),
   emailCompany: z.string().email("Invalid company contact email").max(254, "Email must be 254 characters or less").optional().nullable(),
 });

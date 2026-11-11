@@ -132,6 +132,23 @@
   }
 }
 
+
+/* Brand palette (launch plan U1). Use these instead of hard-coded hex values.
+ * Contrast on white (WCAG AA needs 4.5:1 for normal text):
+ *   brand-navy 12.8:1 · brand-green-strong / brand-green-text 5.3:1 ·
+ *   brand-muted 6.5:1. brand-green (#47d79d) is only 1.8:1 on white: use it
+ *   for decoration or on dark backgrounds (9.7:1 on brand-navy-deep), never
+ *   for text on light backgrounds or behind white text. */
+@theme {
+  --color-brand-navy: #162f67;
+  --color-brand-navy-deep: #071738;
+  --color-brand-green: #47d79d;
+  --color-brand-green-strong: #1f7a52;
+  --color-brand-green-strong-hover: #186343;
+  --color-brand-green-text: #1f7a52;
+  --color-brand-muted: #4d5f7c;
+}
+
 /* Theme mapping for Tailwind */
 @theme inline {
   /* Primary colors - Teal */

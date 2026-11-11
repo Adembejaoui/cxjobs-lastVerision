@@ -314,7 +314,7 @@ export default async function CandidateDashboardPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-[#47d79d] hover:text-[#0d224d]"
+                    className="text-brand-green-text hover:text-[#0d224d]"
                   >
                     <Calendar className="mr-2 h-4 w-4" />
                     View All Applications

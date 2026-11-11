@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Providers } from "./providers";
 import { assertEnv } from "@/lib/env";
+import { siteUrl } from "@/lib/seo/site-url";
 import "./globals.css";
 
 assertEnv();
@@ -19,8 +20,17 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  // Resolves relative canonical / Open Graph URLs (U3). Configuration only.
+  metadataBase: new URL(siteUrl()),
   title: "CXJobs - Find Your Dream Job",
-  description: "Find the best jobs and career opportunities",
+  description: "Find the best jobs and career opportunities in the customer experience industry",
+  openGraph: {
+    type: "website",
+    siteName: "CXJobs",
+    title: "CXJobs - Find Your Dream Job",
+    description: "Find the best jobs and career opportunities in the customer experience industry",
+  },
+  twitter: { card: "summary_large_image" },
 };
 
 export default function RootLayout({

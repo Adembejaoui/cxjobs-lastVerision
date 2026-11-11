@@ -1,8 +1,14 @@
 import http from 'k6/http';
 import { check, sleep, group } from 'k6';
 import { Trend, Rate, Counter } from 'k6/metrics';
+import { resolveStagingTarget } from './lib/target-guard.mjs';
 
-const BASE_URL = __ENV.K6_BASE_URL || 'https://cxjobs-last-verision.vercel.app';
+// Explicit staging/preview/local target required; production is always refused
+// (see ./lib/target-guard.mjs). The script aborts in k6's init stage otherwise.
+const BASE_URL = resolveStagingTarget(__ENV.K6_BASE_URL, {
+  productionHosts: __ENV.K6_PRODUCTION_HOSTS,
+  allowedHosts: __ENV.K6_ALLOWED_HOSTS,
+});
 const SESSION_COOKIE = __ENV.K6_SESSION_COOKIE;
 
 if (!SESSION_COOKIE) {
@@ -18,7 +24,7 @@ const sessionCookieHeader = `${COOKIE_NAME}=${SESSION_COOKIE}`;
 
 const defaultHeaders = {
   'Accept': 'application/json, text/html, */*',
-  'User-Agent': 'k6-load-test/1.0 (CXJobs production read-only)',
+  'User-Agent': 'k6-load-test/1.0 (CXJobs staging read-only)',
 };
 
 const latencyTrend = new Trend('request_latency', true);
@@ -63,7 +69,7 @@ export const options = {
     'checks': ['rate>0.95'],
   },
   noConnectionReuse: false,
-  userAgent: 'k6-load-test/1.0 (CXJobs production read-only)',
+  userAgent: 'k6-load-test/1.0 (CXJobs staging read-only)',
 };
 
 function buildHeaders(extra = {}) {

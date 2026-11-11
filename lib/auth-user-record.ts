@@ -26,6 +26,8 @@ export const getAuthUserRecord = cache(async (userId: string) =>
       role: true,
       isActive: true,
       isOnboarded: true,
+      emailVerified: true,
+      sessionVersion: true,
     },
   })
 );

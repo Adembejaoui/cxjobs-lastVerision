@@ -1,0 +1,127 @@
+name: CI
+
+# Quality gate for every push and pull request.
+#
+# Safety: this workflow uses NO repository secrets. Every service variable is
+# an unroutable placeholder (127.0.0.1:9), so neither the build nor the tests
+# can reach a real database, Redis, storage bucket, email provider or OAuth
+# app. The test suites mock Prisma/Supabase/AI and fake the Upstash REST API.
+
+on:
+  push:
+    branches: [main, develop, "hardening/**"]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+  DATABASE_URL: postgresql://placeholder:placeholder@127.0.0.1:9/placeholder
+  DIRECT_DATABASE_URL: postgresql://placeholder:placeholder@127.0.0.1:9/placeholder
+  AUTH_SECRET: ci-placeholder-secret-not-real-0123456789
+  NEXTAUTH_URL: http://127.0.0.1:3000
+  NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
+  GOOGLE_CLIENT_ID: placeholder
+  GOOGLE_CLIENT_SECRET: placeholder
+  # Format-valid all-zero key (base64 of 32 bytes); required at module load.
+  INVITATION_TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+  EMAIL_PROVIDER: disabled
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      # postinstall runs `prisma generate` (offline; needs no database URL).
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint (warning ratchet)
+        run: npm run lint:ci
+
+      - name: Security tests
+        run: npm run test:security
+        env:
+          NODE_ENV: test
+
+      - name: Integration tests
+        run: npm run test:integration
+        env:
+          NODE_ENV: test
+
+      - name: Build
+        run: npm run build
+        env:
+          # Production-mode modules require these to be present; the values
+          # are unroutable, and the build performs no database access.
+          UPSTASH_REDIS_REST_URL: http://127.0.0.1:9
+          UPSTASH_REDIS_REST_TOKEN: placeholder
+          NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:9
+          SUPABASE_SERVICE_ROLE_KEY: placeholder
+
+      - name: Audit production dependencies (critical only)
+        run: npm audit --omit=dev --audit-level=critical
+
+  # Replays the WHOLE migration history on a throwaway Postgres and checks
+  # that the result matches prisma/schema.prisma (audit F-02: drift between
+  # migrations and schema was never verified on a real database). The
+  # database is a service container that exists only for this job: no
+  # secrets, no external database.
+  migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: cxjobs_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d cxjobs_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://ci:ci-only-password@127.0.0.1:5432/cxjobs_ci
+      DIRECT_DATABASE_URL: postgresql://ci:ci-only-password@127.0.0.1:5432/cxjobs_ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Apply every migration to an empty database
+        run: npx prisma migrate deploy
+
+      - name: Migrated database matches schema.prisma (no drift)
+        run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+
+      - name: Trigram search indexes exist after migrate deploy (H1)
+        run: |
+          count=$(psql "$DATABASE_URL" -tAc "select count(*) from pg_indexes where indexname like '%_trgm'")
+          echo "trigram indexes: $count"
+          test "$count" -ge 5

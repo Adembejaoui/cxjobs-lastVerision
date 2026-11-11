@@ -13,6 +13,11 @@ import {
   type SkillInput,
 } from "@/lib/validations/profile";
 import { logger } from "@/lib/logger";
+import { normalizeOwnCvReference, supabaseHostFromEnv } from "@/lib/security/cv-access";
+import type { Prisma } from "@/app/generated/prisma/client";
+import { emailIsTaken, type EmailLookupDb } from "@/lib/server/user-email";
+import { isCompanySlugAvailable, recordCompanySlugChange } from "@/lib/server/company-slug";
+import { revalidateCompanies, revalidateJobOffers } from "@/lib/cache";
 
 type InteractiveTx = Omit<typeof prisma, "$connect" | "$disconnect" | "$on" | "$transaction" | "$extends">;
 
@@ -604,6 +609,21 @@ async function upsertCandidateProfile(userId: string, data: unknown, alreadyOnbo
   // server alone.
   const { skills, experiences, languages, education, ...profileData } = validationResult.data;
 
+  // The CV reference must be an object path inside THIS user's folder of the
+  // private `cv` bucket (a legacy Supabase storage URL is converted back to
+  // its path). Arbitrary URLs or another user's object are rejected, and a
+  // bearer/signed URL is never persisted.
+  if (profileData.resumeUrl !== undefined) {
+    const cvRef = normalizeOwnCvReference(profileData.resumeUrl, userId, supabaseHostFromEnv());
+    if (!cvRef.ok) {
+      return NextResponse.json(
+        { success: false, error: "Invalid CV reference", code: "INVALID_CV_REFERENCE" },
+        { status: 400 }
+      );
+    }
+    profileData.resumeUrl = cvRef.path;
+  }
+
   // Transform profileData to convert null to undefined for Prisma compatibility
   // Prisma's create input types don't accept null for array fields or boolean
   const cleanedProfileData = {
@@ -744,16 +764,31 @@ async function upsertCompanyProfile(userId: string, data: unknown) {
 
   const { slug, benefits, culture, ...profileData } = validationResult.data;
 
-  // Check if slug is already taken by another company
-  const existingSlug = await prisma.companies.findFirst({
-    where: {
-      slug,
-      NOT: { userId },
-    },
-    select: { id: true },
+  const existing = await prisma.companies.findUnique({
+    where: { userId },
+    select: { id: true, slug: true },
   });
 
-  if (existingSlug) {
+  // Creating the profile needs a name and a slug; an update may send any
+  // subset of fields (A6: fields that are not sent stay unchanged).
+  if (!existing && (!profileData.name || !slug)) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Validation failed",
+        details: {
+          ...(!profileData.name ? { name: ["Company name is required"] } : {}),
+          ...(!slug ? { slug: ["Slug is required"] } : {}),
+        },
+      },
+      { status: 400 }
+    );
+  }
+
+  // A slug in use by another company, or one another company used before
+  // (old links redirect there), cannot be claimed.
+  const slugChanged = slug !== undefined && slug !== existing?.slug;
+  if (slugChanged && !(await isCompanySlugAvailable(prisma, slug, existing?.id ?? null))) {
     return NextResponse.json(
       { success: false, error: "This slug is already taken", code: "SLUG_TAKEN" },
       { status: 400 }
@@ -763,12 +798,8 @@ async function upsertCompanyProfile(userId: string, data: unknown) {
   // Validate emailCompany uniqueness against User.email if provided
   if (profileData.emailCompany !== undefined && profileData.emailCompany !== null) {
     const normalizedEmailCompany = profileData.emailCompany.trim().toLowerCase();
-    const existingUser = await prisma.user.findUnique({
-      where: { email: normalizedEmailCompany },
-      select: { id: true },
-    });
-
-    if (existingUser) {
+    // Any case variant counts (legacy rows may be mixed-case, audit F-31).
+    if (await emailIsTaken(prisma.user as unknown as EmailLookupDb<{ email: string }>, normalizedEmailCompany)) {
       return NextResponse.json(
         {
           success: false,
@@ -778,61 +809,64 @@ async function upsertCompanyProfile(userId: string, data: unknown) {
         { status: 409 }
       );
     }
-    // Normalize emailCompany for storage
     profileData.emailCompany = normalizedEmailCompany;
   }
 
-  // Transform culture array to JSON string for storage
-  const cultureJson = culture && culture.length > 0 ? JSON.stringify(culture) : null;
-
-    // Build company data object with properly typed fields
-    const companyData = {
-      name: profileData.name!,
-      description: profileData.description || null,
-      logoUrl: profileData.logoUrl || null,
-      coverImageUrl: profileData.coverImageUrl || null,
-      website: profileData.website || null,
-      linkedinUrl: profileData.linkedinUrl || null,
-      twitterUrl: profileData.twitterUrl || null,
-      facebookUrl: profileData.facebookUrl || null,
-      companySize: profileData.companySize || null,
-      location: profileData.location || null,
-      foundedYear: profileData.foundedYear || null,
-      isRemoteFriendly: profileData.isRemoteFriendly ?? false,
-      isHybridFriendly: profileData.isHybridFriendly ?? false,
-      culture: cultureJson,
-      emailCompany: profileData.emailCompany || null,
-    };
+  // Only the fields present in the request are written. `null` / "" clear a
+  // field explicitly; an omitted field keeps its stored value.
+  const companyData: Prisma.companiesUncheckedUpdateInput = {};
+  const set = <K extends keyof typeof profileData>(key: K, value: Prisma.companiesUncheckedUpdateInput[K & keyof Prisma.companiesUncheckedUpdateInput]) => {
+    if (profileData[key] !== undefined) (companyData as Record<string, unknown>)[key] = value;
+  };
+  set("name", profileData.name);
+  set("description", profileData.description || null);
+  set("logoUrl", profileData.logoUrl || null);
+  set("coverImageUrl", profileData.coverImageUrl || null);
+  set("website", profileData.website || null);
+  set("linkedinUrl", profileData.linkedinUrl || null);
+  set("twitterUrl", profileData.twitterUrl || null);
+  set("facebookUrl", profileData.facebookUrl || null);
+  set("companySize", profileData.companySize || null);
+  set("location", profileData.location || null);
+  set("foundedYear", profileData.foundedYear || null);
+  set("isRemoteFriendly", profileData.isRemoteFriendly ?? false);
+  set("isHybridFriendly", profileData.isHybridFriendly ?? false);
+  set("emailCompany", profileData.emailCompany || null);
+  if (culture !== undefined) {
+    companyData.culture = culture && culture.length > 0 ? JSON.stringify(culture) : null;
+  }
+  if (slug !== undefined) companyData.slug = slug;
 
   const company = await prisma.$transaction(async (tx: InteractiveTx) => {
-    const existingCompany = await tx.companies.findUnique({
-      where: { userId },
-    });
-
     let company;
-    if (existingCompany) {
+    if (existing) {
       company = await tx.companies.update({
         where: { userId },
-        data: {
-          ...companyData,
-          slug,
-          updatedAt: new Date(),
-        },
+        data: { ...companyData, updatedAt: new Date() },
       });
+      if (slugChanged) {
+        await recordCompanySlugChange(tx as unknown as Prisma.TransactionClient, existing.id, existing.slug, company.slug);
+      }
     } else {
       company = await tx.companies.create({
         data: {
+          ...(companyData as Prisma.companiesUncheckedCreateInput),
           userId,
-          ...companyData,
-          slug,
+          name: profileData.name!,
+          slug: slug!,
         },
       });
     }
 
     // Benefits are reconciled by id so that benefits the user did not touch keep
     // their rows, and with them the JobOfferBenefit links pointing at them.
-    // Omitted `benefits` keeps its existing meaning of "empty list".
-    await syncCompanyBenefits(tx, company.id, benefits ?? []);
+    // An OMITTED `benefits` field means "leave unchanged" (NF-12): treating it
+    // as an empty list let any partial update (e.g. a logo-only save) delete
+    // every benefit and, via onDelete: Cascade, every job's benefit links.
+    // An explicit `[]` (or null) still clears the list.
+    if (benefits !== undefined) {
+      await syncCompanyBenefits(tx, company.id, benefits ?? []);
+    }
 
     // Mark user as onboarded
     await tx.user.update({
@@ -846,6 +880,11 @@ async function upsertCompanyProfile(userId: string, data: unknown) {
       include: { benefits: true },
     });
   });
+
+  // A6: the public company page and every job page embedding the company
+  // (name, logo, benefits) show the change on the next request.
+  revalidateCompanies();
+  revalidateJobOffers();
 
   return NextResponse.json({
     success: true,

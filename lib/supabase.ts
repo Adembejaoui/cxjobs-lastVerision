@@ -1,5 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { logger } from "./logger";
+import { randomUUID } from "crypto";
+import { checkCvFile, checkImageFile, type CvFormat, type ImageFormat } from "./security/file-type";
 
 /**
  * Supabase client configuration for file storage
@@ -108,89 +110,51 @@ export const MAX_FILE_SIZES: Record<string, number> = {
   [STORAGE_BUCKETS.CULTURE]: 5 * 1024 * 1024, // 5MB
 };
 
-/**
- * Expected file signatures (magic bytes) for each MIME type.
- * SVG is excluded — it is XML-based and has no reliable magic bytes.
- */
-const FILE_SIGNATURES: Record<string, number[]> = {
-  "application/pdf": [0x25, 0x50, 0x44, 0x46], // %PDF
-  "application/msword": [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1], // OLE2
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [0x50, 0x4B, 0x03, 0x04], // PK\x03\x04 (ZIP/OOXML)
-  "image/jpeg": [0xFF, 0xD8, 0xFF],
-  "image/png": [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A],
-  "image/gif": [0x47, 0x49, 0x46, 0x38], // GIF8
-  "image/webp": [0x52, 0x49, 0x46, 0x46, 0x57, 0x45, 0x42, 0x50], // RIFF + WEBP
+const BUCKET_FORMATS: Record<string, { kind: "cv"; formats: CvFormat[] } | { kind: "image"; formats: ImageFormat[] }> = {
+  [STORAGE_BUCKETS.CV]: { kind: "cv", formats: ["pdf", "doc", "docx"] },
+  [STORAGE_BUCKETS.AVATAR]: { kind: "image", formats: ["jpeg", "png", "webp", "gif"] },
+  [STORAGE_BUCKETS.LOGO]: { kind: "image", formats: ["jpeg", "png", "webp"] },
+  [STORAGE_BUCKETS.BLOG]: { kind: "image", formats: ["jpeg", "png", "webp", "gif"] },
+  [STORAGE_BUCKETS.COVER]: { kind: "image", formats: ["jpeg", "png", "webp", "gif"] },
+  [STORAGE_BUCKETS.CULTURE]: { kind: "image", formats: ["jpeg", "png", "webp", "gif"] },
 };
 
-function matchesSignature(bytes: Uint8Array, signature: number[]): boolean {
-  if (bytes.length < signature.length) return false;
-  for (let i = 0; i < signature.length; i++) {
-    if (bytes[i] !== signature[i]) return false;
-  }
-  return true;
-}
-
-function matchesWebP(bytes: Uint8Array): boolean {
-  if (bytes.length < 12) return false;
-  const riff = bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46;
-  const webp = bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50;
-  return riff && webp;
-}
-
-async function readFileSignature(file: File): Promise<Uint8Array> {
-  const slice = file.slice(0, 16);
-  const buffer = await slice.arrayBuffer();
-  return new Uint8Array(buffer);
-}
-
 /**
- * Generates a unique file path for storage
+ * Generates a server-controlled object path. The client filename is never
+ * used: the extension comes from content detection and the name is random,
+ * so path traversal or misleading extensions (".html") are impossible.
  */
 export function generateFilePath(
-  bucket: string,
+  _bucket: string,
   userId: string,
-  originalName: string
+  extension: string
 ): string {
-  const timestamp = Date.now();
-  const randomString = Math.random().toString(36).substring(2, 8);
-  const extension = originalName.split(".").pop()?.toLowerCase() || "bin";
-  
-  return `${userId}/${timestamp}-${randomString}.${extension}`;
+  const safeExt = /^[a-z0-9]{1,5}$/.test(extension) ? extension : "bin";
+  return `${userId}/${Date.now()}-${randomUUID()}.${safeExt}`;
 }
 
+export type FileValidation =
+  | { valid: true; mime: string; extension: string; buffer: Buffer }
+  | { valid: false; error: string };
+
 /**
- * Validates file before upload
+ * Validates an upload by CONTENT. The declared MIME type and filename are
+ * attacker-controlled: they are only required to be consistent with the
+ * detected format. The returned mime/extension are what must be stored.
  */
 export async function validateFile(
   file: File,
   bucket: string
-): Promise<{ valid: boolean; error?: string }> {
-  const allowedTypes = ALLOWED_MIME_TYPES[bucket];
+): Promise<FileValidation> {
+  const policy = BUCKET_FORMATS[bucket];
   const maxSize = MAX_FILE_SIZES[bucket];
 
-  if (!allowedTypes || !maxSize) {
+  if (!policy || !maxSize) {
     return { valid: false, error: "Invalid bucket" };
   }
 
-  if (!allowedTypes.includes(file.type)) {
-    return {
-      valid: false,
-      error: `Invalid file type. Allowed types: ${allowedTypes.join(", ")}`,
-    };
-  }
-
-  const signature = FILE_SIGNATURES[file.type];
-  if (signature) {
-    const bytes = await readFileSignature(file);
-    const valid = file.type === "image/webp"
-      ? matchesWebP(bytes)
-      : matchesSignature(bytes, signature);
-    if (!valid) {
-      return {
-        valid: false,
-        error: "File content does not match its declared type",
-      };
-    }
+  if (file.size === 0) {
+    return { valid: false, error: "File is empty" };
   }
 
   if (file.size > maxSize) {
@@ -201,13 +165,44 @@ export async function validateFile(
     };
   }
 
-  return { valid: true };
+  const allowedTypes = ALLOWED_MIME_TYPES[bucket] ?? [];
+  if (file.type && !allowedTypes.includes(file.type)) {
+    return {
+      valid: false,
+      error: `Invalid file type. Allowed types: ${allowedTypes.join(", ")}`,
+    };
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const check =
+    policy.kind === "cv"
+      ? checkCvFile(buffer, file.name, policy.formats)
+      : checkImageFile(buffer, file.name, policy.formats);
+
+  if (!check.ok) {
+    return { valid: false, error: check.error };
+  }
+  // A declared type that disagrees with the real content is rejected rather
+  // than silently corrected.
+  if (file.type && file.type !== check.mime) {
+    return { valid: false, error: "File content does not match its declared type" };
+  }
+
+  return { valid: true, mime: check.mime, extension: check.extension, buffer };
 }
 
 /**
  * Gets the public URL for a file
  */
+/** Buckets that must never be exposed through a public URL. */
+export const PRIVATE_BUCKETS: ReadonlySet<string> = new Set([STORAGE_BUCKETS.CV]);
+
 export function getPublicUrl(bucket: string, path: string): string {
+  // Structural guard: a CV must only ever be reached through an authorized,
+  // short-lived signed URL, even if a caller is changed by mistake later.
+  if (PRIVATE_BUCKETS.has(bucket)) {
+    throw new Error("Public URLs are not allowed for private buckets");
+  }
   if (!supabase) {
     throw new Error("Supabase is not configured");
   }
@@ -251,7 +246,9 @@ export async function deleteFile(
   const { error } = await supabase.storage.from(bucket).remove([path]);
 
   if (error) {
-    return { success: false, error: error.message };
+    // Provider error details stay server-side.
+    logger.error("Storage delete failed", { bucket, error: error.name });
+    return { success: false, error: "Failed to delete file" };
   }
 
   return { success: true };

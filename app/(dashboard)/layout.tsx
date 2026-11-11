@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth-helpers";
+import { resolveDashboardShellRedirect } from "@/lib/security/dashboard-access";
 import prisma from "@/lib/prisma";
 import { DashboardSidebar } from "@/components/dashboard/sidebar";
 import { MobileSidebar } from "@/components/dashboard/sidebar";
@@ -19,12 +20,12 @@ export default async function DashboardLayout({
 
   const user = authResult.user;
 
-  if (user.role !== "ADMIN" && !user.isOnboarded) {
-    if (user.role === "CANDIDATE") {
-      redirect("/onboarding/candidate");
-    } else if (user.role === "COMPANY") {
-      redirect("/onboarding/company");
-    }
+  // DB-derived decision (lib/security/dashboard-access.ts). A not-onboarded
+  // COMPANY is let in: the company area layout sends it to the profile page,
+  // where onboarding is completed.
+  const target = resolveDashboardShellRedirect(user);
+  if (target) {
+    redirect(target);
   }
   const userRole = user.role;
 

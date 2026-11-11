@@ -4,14 +4,17 @@ import prisma from "@/lib/prisma";
 import { resetPasswordSchema } from "@/lib/validations/auth";
 import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
+import { getClientIp } from "@/lib/utils";
+import { consumeOneTimeToken } from "@/lib/security/one-time-token";
+import { bumpSessionVersion, publishSessionVersion } from "@/lib/server/session-revocation";
 
 const RESETPW_LIMIT = { windowMs: 60_000, max: 5 };
 
+type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
 export async function POST(request: NextRequest) {
   try {
-
-    const ip = request.headers.get("x-forwarded-for") || "unknown";
-    const rl = await checkRateLimitAsync(`reset-pw:${ip}`, RESETPW_LIMIT);
+    const rl = await checkRateLimitAsync(`reset-pw:${getClientIp(request)}`, RESETPW_LIMIT);
     if (!rl.allowed) {
       return NextResponse.json(
         { success: false, error: "Too many requests. Please try again later.", code: "RATE_LIMITED" },
@@ -19,9 +22,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
+    const body = await request.json().catch(() => null);
 
-    // Validate input
     const validationResult = resetPasswordSchema.safeParse(body);
     if (!validationResult.success) {
       return NextResponse.json(
@@ -36,72 +38,48 @@ export async function POST(request: NextRequest) {
 
     const { token, password } = validationResult.data;
 
-    // Find valid reset token
-    const resetToken = await prisma.passwordResetToken.findUnique({
-      where: { token },
-      include: { user: true },
-    });
-
-    if (!resetToken) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid or expired reset token",
-          code: "INVALID_TOKEN",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Check if token is expired
-    if (resetToken.expires < new Date()) {
-      // Delete expired token
-      await prisma.passwordResetToken.delete({
-        where: { id: resetToken.id },
-      });
-
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Reset token has expired",
-          code: "TOKEN_EXPIRED",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Check if userId exists
-    if (!resetToken.userId || !resetToken.user) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Invalid reset token - no associated user",
-          code: "INVALID_TOKEN",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Hash new password
+    // Hash before touching the token row so the transaction stays short.
     const passwordHash = await bcrypt.hash(password, 12);
 
-    // Update user password and delete the used token
-    await prisma.$transaction([
-      prisma.user.update({
-        where: { id: resetToken.userId },
-        data: { passwordHash },
-      }),
-      prisma.passwordResetToken.delete({
-        where: { id: resetToken.id },
-      }),
-    ]);
+    let revokedVersion: number | null = null;
+    const result = await consumeOneTimeToken<Tx>(token, {
+      transaction: (fn) => prisma.$transaction(fn),
+      findByHash: (tx, tokenHash) =>
+        tx.passwordResetToken.findUnique({
+          where: { token: tokenHash },
+          select: { id: true, userId: true, expires: true },
+        }),
+      deleteIfValid: async (tx, id, now) =>
+        (await tx.passwordResetToken.deleteMany({ where: { id, expires: { gt: now } } })).count,
+      isUserActive: async (tx, userId) =>
+        !!(await tx.user.findFirst({ where: { id: userId, isActive: true }, select: { id: true } })),
+      apply: async (tx, userId) => {
+        await tx.user.update({ where: { id: userId }, data: { passwordHash } });
+        // Revoke any other outstanding reset tokens for this account.
+        await tx.passwordResetToken.deleteMany({ where: { userId } });
+        // Sign out every existing session, in the same transaction as the change.
+        revokedVersion = await bumpSessionVersion(tx, userId);
+      },
+    });
+
+    if (result.ok && revokedVersion !== null) {
+      await publishSessionVersion(result.userId, revokedVersion);
+    }
+
+    if (!result.ok) {
+      // Same response for unknown, reused, expired, or inactive-account tokens.
+      return NextResponse.json(
+        { success: false, error: "Invalid or expired reset token", code: "INVALID_TOKEN" },
+        { status: 400 }
+      );
+    }
 
     return NextResponse.json({
       success: true,
       message: "Password has been reset successfully",
     });
   } catch (error) {
-    logger.error("Reset password error", { error });
+    logger.error("Reset password error", { error: error instanceof Error ? error.name : "unknown" });
     return NextResponse.json(
       {
         success: false,

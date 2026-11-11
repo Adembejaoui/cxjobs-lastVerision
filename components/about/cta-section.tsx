@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function CTASection() {
   return (
     <section className="px-6 pb-16 pt-6 md:px-10 lg:px-14 lg:pb-24">
@@ -10,12 +12,12 @@ export default function CTASection() {
           Whether you&apos;re a high-potential agent or a global BPO partner, we&apos;re here to help you grow.
         </p>
         <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-          <button className="rounded-xl bg-[#47ca8b] px-8 py-4 text-sm font-extrabold text-[#153864] shadow-[0_10px_24px_rgba(71,202,139,0.28)] md:px-10 md:text-base">
+          <Link href="/jobs" className="rounded-xl bg-[#47ca8b] px-8 py-4 text-sm font-extrabold text-[#153864] shadow-[0_10px_24px_rgba(71,202,139,0.28)] md:px-10 md:text-base">
             Apply for Jobs
-          </button>
-          <button className="rounded-xl border border-white/40 bg-transparent px-8 py-4 text-sm font-extrabold text-white md:px-10 md:text-base">
-            Partner With Us
-          </button>
+          </Link>
+          <Link href="/companies" className="rounded-xl border border-white/40 bg-transparent px-8 py-4 text-sm font-extrabold text-white md:px-10 md:text-base">
+            Discover Employers
+          </Link>
         </div>
       </div>
     </section>

@@ -11,6 +11,7 @@ import {
   Bookmark
 } from 'lucide-react'
 import { DynamicIcon } from "@/lib/icon-map";
+import { toSafeHref } from "@/lib/security/safe-url";
 import Link from 'next/link'
 import { useState, useEffect } from 'react'
 import { logger } from "@/lib/logger";
@@ -69,6 +70,7 @@ export interface JobOffer {
   softSkills: string[]
   status: string
   publishedAt: Date | null
+  expiresAt?: Date | string | null
   createdAt: Date
   applicationType: string
   externalApplyUrl: string | null
@@ -152,12 +154,27 @@ export function JobDetailClient({ job, isHistorical = false }: JobDetailClientPr
   const [checkingApplication, setCheckingApplication] = useState(true)
 
   const isCandidate = user?.role === 'CANDIDATE'
+  // Stored URLs are re-validated at the point of use: an unsafe value yields an
+  // inert anchor (no href) instead of a navigable javascript:/data: link.
+  const safeExternalApplyHref = toSafeHref(job.externalApplyUrl)
   const isCompany = user?.role === 'COMPANY'
 
   // A job is "available for new applications" only when it is PUBLISHED.
   // Historical jobs (CLOSED, EXPIRED, ARCHIVED, DRAFT) reached through an
   // existing application must not expose apply actions.
-  const isJobAvailable = job.status === 'PUBLISHED'
+  // A job reached only through the candidate's own history (e.g. its company
+  // was suspended: F-04) is read-only even if its status is still PUBLISHED.
+  // P5: a cached page may outlive the job's expiry date; hide apply actions
+  // the moment it passes (the API refuses the application anyway).
+  const [expired, setExpired] = useState(false)
+  useEffect(() => {
+    if (!job.expiresAt) return
+    const ms = new Date(job.expiresAt).getTime() - Date.now()
+    if (Number.isNaN(ms)) return
+    const t = setTimeout(() => setExpired(true), Math.max(0, Math.min(ms, 2 ** 31 - 1)))
+    return () => clearTimeout(t)
+  }, [job.expiresAt])
+  const isJobAvailable = job.status === 'PUBLISHED' && !isHistorical && !expired
   const showApplyActions = isCandidate && isJobAvailable && !hasApplied
   const showAlreadyApplied = isCandidate && hasApplied
 
@@ -169,8 +186,8 @@ export function JobDetailClient({ job, isHistorical = false }: JobDetailClientPr
       }
 
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-        const res = await fetch(`${baseUrl}/api/application?jobId=${job.id}`)
+        // Same-origin relative URL so the session cookie is always sent.
+        const res = await fetch(`/api/application?jobId=${encodeURIComponent(job.id)}`, { cache: 'no-store' })
         const data = await res.json()
 
         if (data.success && data.data && data.data.length > 0) {
@@ -292,7 +309,7 @@ const salaryDisplay = job.salary || (
                 </button>
               ) : isCandidate && job.applicationType === "EXTERNAL" ? (
                 <a
-                  href={job.externalApplyUrl || "#"}
+                  href={safeExternalApplyHref}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex h-14  items-center justify-center rounded-[18px] bg-[#162f67] px-8 text-[17px] font-semibold text-white shadow-[0_10px_20px_rgba(22,47,103,0.18)] transition hover:opacity-95"
@@ -487,7 +504,7 @@ const salaryDisplay = job.salary || (
                   ) : isCompany ? null
                     : isCandidate && job.applicationType === "EXTERNAL" ? (
                     <a
-                      href={job.externalApplyUrl || "#"}
+                      href={safeExternalApplyHref}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex h-14.5 w-full items-center justify-center rounded-[18px] bg-[#162f67] text-[16px] font-semibold uppercase tracking-[0.03em] text-white shadow-[0_10px_20px_rgba(22,47,103,0.18)] transition hover:opacity-95"
@@ -525,7 +542,7 @@ const salaryDisplay = job.salary || (
                   ) : isCompany ? null
                     : isCandidate && job.applicationType === "EXTERNAL" ? (
                     <a
-                      href={job.externalApplyUrl || "#"}
+                      href={safeExternalApplyHref}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex h-14.5 w-full items-center justify-center rounded-[18px] bg-[#162f67] text-[16px] font-semibold uppercase tracking-[0.03em] text-white shadow-[0_10px_20px_rgba(22,47,103,0.18)] transition hover:opacity-95"
@@ -561,7 +578,7 @@ const salaryDisplay = job.salary || (
                   <div className="flex items-center gap-3">
                     {job.company.website && (
                       <a
-                        href={job.company.website.startsWith('http') ? job.company.website : `https://${job.company.website}`}
+                        href={toSafeHref(job.company.website.startsWith('http') ? job.company.website : `https://${job.company.website}`)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex h-10 w-10 items-center justify-center rounded-full border border-[#dde5ee] bg-[#fafcff] text-[#50607d] hover:text-[#162f67] transition-colors"

@@ -25,7 +25,7 @@ export function FeaturedBPOCard() {
           "Night Differential Pay",
         ].map((item) => (
           <div key={item} className="flex items-center gap-3">
-            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-[#45c68d] text-[12px] font-bold text-white">
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-green-strong text-[12px] font-bold text-white">
               ✓
             </div>
             <span>{item}</span>
@@ -33,7 +33,7 @@ export function FeaturedBPOCard() {
         ))}
       </div>
 
-      <button className="w-full rounded-[14px] bg-[#45c68d] py-4 text-[16px] font-extrabold text-white shadow-lg transition hover:translate-y-[-1px]">
+      <button className="w-full rounded-[14px] bg-brand-green-strong py-4 text-[16px] font-extrabold text-white shadow-lg transition hover:translate-y-[-1px]">
         Apply Now
       </button>
     </div>

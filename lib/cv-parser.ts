@@ -1,5 +1,7 @@
 import { parseCVWithAI, isAIConfigured, CVParseOutput } from "./ai-service";
 import { logger } from "./logger";
+import { AI_ROUTE_DEADLINE_MS } from "./ai-errors";
+import { extractPdfTextInWorker, PdfTimeoutError, type PdfExtractOptions } from "./server/pdf-text-worker";
 
 /**
  * Common skills to look for in CVs
@@ -34,50 +36,38 @@ const COMMON_SKILLS = [
   "Data Analysis", "Data Science", "DevOps", "UI/UX", "Figma", "Sketch",
 ];
 
+/** Resource bounds for untrusted CV PDFs (unchanged). */
+const MAX_PDF_PAGES = 30;
+const MAX_EXTRACTED_CHARS = 200_000;
+/** Total budget for the optional AI step; basic parsing is used past it. */
+const AI_CV_PARSE_DEADLINE_MS = 25_000;
+// Never give the AI step less than this, even after a slow PDF extraction.
+const AI_CV_PARSE_MIN_BUDGET_MS = 5_000;
+
 /**
- * Extract text from a PDF buffer using pdfjs-dist
- * Using older version that doesn't require canvas
+ * Extract text from a PDF buffer using pdfjs-dist (v6, Node "legacy" build),
+ * inside an isolated worker thread with a wall-clock timeout and a heap cap
+ * (see lib/server/pdf-text-worker.ts). Page count and extracted text size
+ * remain bounded. Every failure — malformed file, timeout, worker crash —
+ * surfaces as the same generic error.
  */
-export async function extractTextFromPDF(buffer: Buffer): Promise<string> {
+export async function extractTextFromPDF(
+  buffer: Buffer,
+  options: Pick<PdfExtractOptions, "timeoutMs" | "workerSource"> = {}
+): Promise<string> {
   try {
-    // Use pdfjs-dist v2 which doesn't require canvas
-    const pdfjsLib = await import("pdfjs-dist/build/pdf");
-    
-    // Set up the workerSrc to avoid loading issues
-    if (pdfjsLib.GlobalWorkerOptions) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = "";
-    }
-    
     logger.debug("Loading PDF", { bufferLength: buffer.length });
-    
-    // Load the PDF document
-    const loadingTask = pdfjsLib.getDocument({
-      data: new Uint8Array(buffer),
+    const text = await extractPdfTextInWorker(buffer, {
+      ...options,
+      maxPages: MAX_PDF_PAGES,
+      maxChars: MAX_EXTRACTED_CHARS,
     });
-    
-    const pdf = await loadingTask.promise;
-    logger.debug("PDF loaded", { numPages: pdf.numPages });
-    
-    // Extract text from all pages
-    let fullText = "";
-    
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      const page = await pdf.getPage(pageNum);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items
-        .map((item: { str?: string }) => item.str || "")
-        .join(" ");
-      fullText += pageText + "\n";
-    }
-    
-    logger.debug("PDF text extracted", { textLength: fullText.length });
-    return fullText;
+    logger.debug("PDF text extracted", { textLength: text.length });
+    return text;
   } catch (error) {
-    if (error instanceof Error) {
-      logger.error("PDF parsing error", { error: error.message });
-    } else {
-      logger.error("PDF parsing unknown error", { error });
-    }
+    logger.error("PDF parsing error", {
+      error: error instanceof PdfTimeoutError ? "timeout" : error instanceof Error ? error.name : "unknown",
+    });
     throw new Error("Failed to parse PDF file");
   }
 }
@@ -252,8 +242,11 @@ export async function parseCV(
   options?: {
     useAI?: boolean;
     language?: "en" | "fr";
+    /** Reports whether the AI step succeeded (only called when it ran). */
+    onAIOutcome?: (ok: boolean) => void;
   }
 ): Promise<CVParseOutput> {
+  const startedAt = Date.now();
   const useAI = options?.useAI !== false && isAIConfigured();
   const language = options?.language || "en";
   
@@ -269,7 +262,17 @@ export async function parseCV(
   // If AI is available, use it for better extraction
   if (useAI) {
     try {
-      const aiResult = await parseCVWithAI({ text, language });
+      // Bounded: on timeout we fall back to basic parsing below instead of
+      // holding the upload request open (H4).
+      // A12: the whole request (PDF extraction + AI) stays within
+      // AI_ROUTE_DEADLINE_MS (< 30 s); the AI step gets what is left.
+      const remaining = AI_ROUTE_DEADLINE_MS - (Date.now() - startedAt);
+      const aiBudget = Math.min(AI_CV_PARSE_DEADLINE_MS, Math.max(AI_CV_PARSE_MIN_BUDGET_MS, remaining));
+      const aiResult = await parseCVWithAI(
+        { text, language },
+        { signal: AbortSignal.timeout(aiBudget) }
+      );
+      options?.onAIOutcome?.(true);
 
       logger.debug("CV parsing (AI)", {
         skillsCount: aiResult.skills.length,
@@ -292,7 +295,11 @@ export async function parseCV(
         languages: aiResult.languages,
       };
     } catch (error) {
-      logger.warn("AI CV parsing failed, falling back to basic parsing", { error });
+      options?.onAIOutcome?.(false);
+      logger.warn("AI CV parsing failed, falling back to basic parsing", {
+        error: error instanceof Error ? error.name : "unknown",
+        kind: (error as { kind?: string })?.kind,
+      });
     }
   }
 

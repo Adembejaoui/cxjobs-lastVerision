@@ -6,6 +6,7 @@ import { Download, Loader2, AlertCircle, Clock, CheckCircle2 } from "lucide-reac
 import { useCVPDF } from "@/hooks/use-cv-pdf";
 import { toast } from "sonner";
 import { Candidate } from "./cv-pdf-document";
+import { CV_WATERMARK_SRC } from "@/lib/cv/watermark";
 import {
   Dialog,
   DialogContent,
@@ -32,7 +33,9 @@ interface PDFDownloadButtonProps {
 type ModalState = "closed" | "cooldown" | "confirm";
 
 export function PDFDownloadButton({ candidate }: PDFDownloadButtonProps) {
-  const watermarkSrc = "https://hvbbactmgfhecqbetlhg.supabase.co/storage/v1/object/public/cv/logo%20cxjob.png";
+  // Same-origin static asset (public/brand/). Never load anything from the
+  // private `cv` storage bucket by public URL.
+  const watermarkSrc = CV_WATERMARK_SRC;
 
   const {
     checkEligibility,

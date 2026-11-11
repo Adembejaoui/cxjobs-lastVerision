@@ -7,8 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useUser } from "@/components/auth/user-provider";
+import { useUserState } from "@/components/auth/user-provider";
+import { candidateCompleteness } from "@/lib/candidate-profile-completeness";
 import { ArrowLeft, MapPin, CheckCircle, Loader2, AlertCircle, User, FileText, Languages } from 'lucide-react';
+import { toSafeHref } from "@/lib/security/safe-url";
 
 interface JobLanguage {
   id: string
@@ -80,12 +82,16 @@ interface CandidateProfile {
 export default function JobApplyPage() {
   const params = useParams();
   const router = useRouter();
-  const user = useUser();
+  const { user, status: userStatus } = useUserState();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [job, setJob] = useState<JobOffer | null>(null);
   const [candidate, setCandidate] = useState<CandidateProfile | null>(null);
+  // F4: a load failure (job gone) and a submit failure are different states;
+  // a failed submit must never replace the form with "Job Not Found".
   const [error, setError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [alreadyApplied, setAlreadyApplied] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [profileComplete, setProfileComplete] = useState(0);
   const [missingFields, setMissingFields] = useState<string[]>([]);
@@ -95,9 +101,13 @@ export default function JobApplyPage() {
 
   useEffect(() => {
     async function fetchData() {
+      // Wait until the client session is known: acting on a still-loading
+      // (null) user would bounce a signed-in candidate to the login page.
+      if (userStatus === 'loading') return;
+
       // Check auth and role
       if (!user) {
-        router.push(`/login?callbackUrl=/jobs/${params.slug}/apply`);
+        router.push(`/login?callbackUrl=${encodeURIComponent(`/jobs/${params.slug}/apply`)}`);
         return;
       }
       
@@ -125,43 +135,43 @@ export default function JobApplyPage() {
           if (jobData.success) {
             const jobDataRecord = jobData.data;
             setJob(jobDataRecord);
+
+            // F4: show "already applied" on load, not only after a failed submit.
+            try {
+              const appliedRes = await fetch(`/api/application?jobId=${encodeURIComponent(jobDataRecord.id)}`, { cache: 'no-store' });
+              const appliedData = await appliedRes.json();
+              if (appliedData.success && Array.isArray(appliedData.data) && appliedData.data.length > 0) {
+                setAlreadyApplied(true);
+              }
+            } catch {
+              // Non-fatal: the API still refuses a duplicate on submit.
+            }
             
             // Check if this is an EXTERNAL application - redirect if so
-            if (jobDataRecord.applicationType === "EXTERNAL" && jobDataRecord.externalApplyUrl) {
-              window.open(jobDataRecord.externalApplyUrl, '_blank', 'noopener,noreferrer');
+            const safeExternalUrl = toSafeHref(jobDataRecord.externalApplyUrl);
+            if (jobDataRecord.applicationType === "EXTERNAL" && safeExternalUrl) {
+              // Re-validated at point of use; noopener/noreferrer severs window.opener.
+              window.open(safeExternalUrl, '_blank', 'noopener,noreferrer');
               router.push(`/jobs/${jobDataRecord.slug}`);
               return;
             }
           } else {
-            setError(jobData.error || 'Job not found');
+            setError(jobRes.status === 404 ? 'This job is no longer accepting applications.' : (jobData.error || 'Job not found'));
           }
 
           if (profileData.success && profileData.data.candidate) {
             const cand = profileData.data.candidate;
             setCandidate(cand);
 
-            // Calculate profile completion
-            const fields = {
-              firstName: !!cand.firstName,
-              lastName: !!cand.lastName,
-              phone: !!cand.phone,
-              location: !!cand.location,
-              headline: !!cand.headline,
-              resumeUrl: !!cand.resumeUrl,
-              skills: cand.skills?.length > 0,
-              languages: cand.languages?.length > 0,
-              experience: cand.experiences?.length > 0,
-            };
-            
-            const completed = Object.values(fields).filter(Boolean).length;
-            const completion = Math.round((completed / Object.keys(fields).length) * 100);
-            setProfileComplete(completion);
-
-            // Check required fields
-            const required = [];
-            if (!cand.phone) required.push('phone');
-            if (!cand.location) required.push('location');
-            setMissingFields(required);
+            // Same rule as the API (A1): lib/candidate-profile-completeness.ts
+            const completeness = candidateCompleteness({
+              ...cand,
+              skillsCount: cand.skills?.length ?? 0,
+              languagesCount: cand.languages?.length ?? 0,
+              experiencesCount: cand.experiences?.length ?? 0,
+            });
+            setProfileComplete(completeness.percent);
+            setMissingFields(completeness.missingRequired);
           }
         } catch {
           setError('Failed to load data');
@@ -172,7 +182,7 @@ export default function JobApplyPage() {
     }
 
     fetchData();
-  }, [params.slug, router, user]);
+  }, [params.slug, router, user, userStatus]);
 
   const handleCoverLetterChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const text = e.target.value;
@@ -187,6 +197,7 @@ export default function JobApplyPage() {
     if (!job) return;
 
     setSubmitting(true);
+    setSubmitError(null);
     try {
       const response = await fetch('/api/application', {
         method: 'POST',
@@ -201,11 +212,22 @@ export default function JobApplyPage() {
       
       if (data.success) {
         setSubmitted(true);
+      } else if (data.code === 'DUPLICATE_APPLICATION') {
+        setAlreadyApplied(true);
+      } else if (data.code === 'PROFILE_INCOMPLETE') {
+        setMissingFields(data.details?.missingRequired ?? []);
+        setProfileComplete(typeof data.details?.percent === 'number' ? data.details.percent : 0);
+      } else if (response.status === 401) {
+        router.push(`/login?callbackUrl=${encodeURIComponent(`/jobs/${params.slug}/apply`)}`);
+      } else if (data.code === 'NOT_FOUND') {
+        setSubmitError('This job is no longer accepting applications.');
+      } else if (response.status === 429) {
+        setSubmitError('Too many attempts. Please wait a minute and try again.');
       } else {
-        setError(data.error || 'Failed to submit application');
+        setSubmitError(data.error || 'We could not submit your application. Please try again.');
       }
     } catch {
-      setError('Failed to submit application');
+      setSubmitError('We could not reach the server. Check your connection and try again.');
     } finally {
       setSubmitting(false);
     }
@@ -271,7 +293,33 @@ const formatSalary = (job: JobOffer): string => {
     );
   }
 
-  // Block if profile incomplete
+  if (alreadyApplied && !submitted) {
+    return (
+      <main className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+        <div className="container mx-auto px-4 py-8">
+          <Button variant="ghost" onClick={() => router.push(`/jobs/${job.slug}`)} className="mb-6">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Job
+          </Button>
+          <Card className="max-w-lg mx-auto p-8 text-center bg-white rounded-2xl shadow-sm" role="status">
+            <div className="flex justify-center mb-6">
+              <CheckCircle className="h-14 w-14 text-green-700" aria-hidden="true" />
+            </div>
+            <h2 className="text-xl font-bold text-slate-900 mb-3">You already applied to this job</h2>
+            <p className="text-slate-600 mb-6">
+              Your application for <strong>{job.title}</strong> at <strong>{job.company.name}</strong> was received.
+              You can follow its status from your applications.
+            </p>
+            <Button onClick={() => router.push('/dashboard/candidate/applications')} className="w-full h-12 rounded-xl bg-gradient-to-r from-[#162f67] to-[#1e4d9c]">
+              View My Applications
+            </Button>
+          </Card>
+        </div>
+      </main>
+    );
+  }
+
+  // Block if profile incomplete (same rule as the API, A1)
   if (missingFields.length > 0 || profileComplete < 50) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -434,17 +482,19 @@ const formatSalary = (job: JobOffer): string => {
 
               {/* Cover Letter Input */}
               <div>
-                <label className="text-sm font-medium text-slate-700 mb-2 block">
-                  Cover Letter <span className="text-slate-400 font-normal">(optional)</span>
+                <label htmlFor="cover-letter" className="text-sm font-medium text-slate-700 mb-2 block">
+                  Cover Letter <span className="text-slate-500 font-normal">(optional)</span>
                 </label>
                 <Textarea
+                  id="cover-letter"
+                  aria-describedby="cover-letter-count"
                   value={coverLetter}
                   onChange={handleCoverLetterChange}
                   placeholder="Introduce yourself and explain why you're a great fit for this position..."
                   className="min-h-48 bg-slate-50 border-slate-200 focus:bg-white focus:border-[#162f67] rounded-xl transition-all resize-none"
                 />
                 <div className="flex justify-between mt-2">
-                  <p className="text-xs text-slate-400">
+                  <p id="cover-letter-count" className="text-xs text-slate-500">
                     {charCount === 0 ? 'Max 2000 characters' : `${2000 - charCount} characters remaining`}
                   </p>
                   {charCount > 1900 && charCount <= 2000 && (
@@ -453,6 +503,13 @@ const formatSalary = (job: JobOffer): string => {
                 </div>
               </div>
             </Card>
+
+            {submitError && (
+              <div role="alert" className="mt-6 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" aria-hidden="true" />
+                <span>{submitError}</span>
+              </div>
+            )}
 
             {/* Submit Button */}
             <div className="mt-6">

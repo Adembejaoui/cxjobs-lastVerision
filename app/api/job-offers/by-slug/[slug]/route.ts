@@ -6,16 +6,14 @@ import { unstable_cache } from "next/cache";
 import { logger } from "@/lib/logger";
 import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
 import { getClientIp } from "@/lib/utils";
+import { publicJobWhere } from "@/lib/security/company-activity";
 
 // Cached function for fetching a single published job offer by slug
 const getPublicJobOfferBySlug = unstable_cache(
   async (slug: string) => {
     return prisma.jobOffer.findFirst({
-      where: { 
-        slug,
-        deletedAt: null,
-        status: "PUBLISHED"
-      },
+      // F-04: published, not deleted, not expired, active company.
+      where: { slug, ...publicJobWhere() },
       include: {
         company: {
           select: {
@@ -54,7 +52,8 @@ export async function GET(
 ) {
   try {
     const ip = getClientIp(request);
-    const GET_SINGLE_LIMIT = { windowMs: 60_000, max: 120 };
+    // Public read: fail open on limiter outage (NF-10).
+    const GET_SINGLE_LIMIT = { windowMs: 60_000, max: 120, failOpen: true };
     const rl = await checkRateLimitAsync(`job-offer-single:${ip}`, GET_SINGLE_LIMIT);
     if (!rl.allowed) {
       return NextResponse.json(

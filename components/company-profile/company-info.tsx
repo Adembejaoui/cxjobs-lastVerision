@@ -1,8 +1,7 @@
 import React from 'react'
-import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Heart, MapPin, Calendar, Users } from 'lucide-react'
+import { MapPin, Calendar, Users } from 'lucide-react'
 
 /* eslint-disable @next/next/no-img-element */
 
@@ -12,22 +11,15 @@ interface CompanyInfoProps {
   location?: string | null
   companySize?: string | null
   foundedYear?: number | null
-  showActions?: boolean
 }
 
 export function CompanyInfo({ 
   name, 
   logoUrl, 
   location, 
-  companySize, 
-
-
+  companySize,
   foundedYear,
-  showActions = true 
 }: CompanyInfoProps) {
-  const getCompanySizeDisplay = (size: string | null | undefined): string => {
-    return size || '50+';
-  }
 
   return (
     <Card className="px-6 py-6 border border-border shadow-sm  relative z-10 mx-4 md:mx-8 lg:mx-auto lg:max-w-7xl">
@@ -61,10 +53,12 @@ export function CompanyInfo({
                 </div>
               )}
               
-              <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
-              <Users className="h-4 w-4 text-muted-foreground mr-1" />
-                {getCompanySizeDisplay(companySize)} employees
-              </Badge>
+              {companySize && (
+                <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
+                  <Users className="h-4 w-4 text-muted-foreground mr-1" aria-hidden="true" />
+                  {companySize} employees
+                </Badge>
+              )}
               {foundedYear && (
                 
                 <Badge variant="secondary" className="bg-primary/10 text-primary border-primary/20">
@@ -76,18 +70,6 @@ export function CompanyInfo({
           </div>
         </div>
 
-        {/* Action Buttons */}
-        {showActions && (
-          <div className="flex gap-3 mt-4 md:mt-0">
-            <Button variant="outline" size="icon" className="hover:bg-primary/10">
-              <Heart className="h-5 w-5" />
-            </Button>
-        
-            <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
-              Follow Company
-            </Button>
-          </div>
-        )}
       </div>
     </Card>
   )

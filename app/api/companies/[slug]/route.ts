@@ -2,6 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import  prisma  from "@/lib/prisma";
 import { JobOfferStatus } from "@/app/generated/prisma/client";
 import { logger } from "@/lib/logger";
+import { activeCompanyWhere } from "@/lib/security/company-activity";
+import { resolveCompanySlugRedirect } from "@/lib/server/company-slug"
+
+/** Jobs that are publicly visible right now. */
+function liveJobsWhere() {
+  return {
+    status: JobOfferStatus.PUBLISHED,
+    deletedAt: null,
+    OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+  };
+}
 
 interface RouteParams {
   params: Promise<{
@@ -14,8 +25,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     const { slug } = await params
 
-    const company = await prisma.companies.findUnique({
-      where: { slug, deletedAt: null },
+    // F-04: a suspended or deleted company has no public profile (404).
+    const company = await prisma.companies.findFirst({
+      where: { slug, ...activeCompanyWhere() },
       select: {
         id: true,
         name: true,
@@ -42,11 +54,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         },
         culture: true,
         createdAt: true,
+        // Public endpoint: count and list only live jobs (counting every row
+        // revealed how many drafts/deleted jobs a company has).
         _count: {
-          select: { jobs: true },
+          select: { jobs: { where: liveJobsWhere() } },
         },
         jobs: {
-          where: { status: JobOfferStatus.PUBLISHED },
+          where: liveJobsWhere(),
           select: {
             id: true,
             title: true,
@@ -68,6 +82,11 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     })
 
     if (!company) {
+      // A6: an old slug redirects to the company's current one.
+      const current = await resolveCompanySlugRedirect(slug)
+      if (current) {
+        return NextResponse.redirect(new URL(`/api/companies/${encodeURIComponent(current)}`, request.url), 308)
+      }
       return NextResponse.json(
         { success: false, error: "Company not found", code: "NOT_FOUND" },
         { status: 404 }

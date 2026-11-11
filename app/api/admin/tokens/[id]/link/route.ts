@@ -4,6 +4,7 @@ import prisma from "@/lib/prisma";
 import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
 import { isValidUuid } from "@/lib/utils";
 import { logger } from "@/lib/logger";
+import { buildInvitationLink } from "@/lib/security/invitation-link";
 import { decryptToken } from "@/lib/server/invitation-token-crypto";
 
 const APP_BASE_URL =
@@ -109,7 +110,8 @@ export async function POST(
     }
 
     const rawToken = decryptToken(invitation.tokenEncrypted);
-    const link = `${APP_BASE_URL}/onboarding/company?token=${rawToken}`;
+    // Token in the URL fragment, never the query string (H3).
+    const link = buildInvitationLink(APP_BASE_URL, rawToken);
 
     logger.info("COMPANY_INVITATION_LINK_COPIED", {
       invitationId: invitation.id,
@@ -123,7 +125,8 @@ export async function POST(
           link,
         },
       },
-      { status: 200 }
+      // Carries a live bearer secret: never store in any cache.
+      { status: 200, headers: { "Cache-Control": "no-store" } }
     );
   } catch (error) {
     logger.error("Failed to retrieve company invitation link", { error });

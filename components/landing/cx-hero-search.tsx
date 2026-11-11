@@ -86,7 +86,7 @@ export default function CXHeroSearch() {
         <div className="text-center">
           <h1 className="mx-auto max-w-[800px] text-balance text-3xl font-black leading-[1] tracking-[-0.04em] text-[#1f3d73] md:text-4xl lg:text-5xl">
             Connect with Top
-            <span className="mt-1 block text-[#42ba80]">CX Opportunities</span>
+            <span className="mt-1 block text-brand-green-text">CX Opportunities</span>
           </h1>
 
           <div className="mx-auto mt-3 h-[5px] w-[200px] max-w-full rounded-full bg-[#bbe9d2]" />

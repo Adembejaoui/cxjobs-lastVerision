@@ -1,7 +1,10 @@
 import "dotenv/config";
 import { PrismaClient, Prisma } from "../app/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { assertSeedTargetAllowed } from "./seed-guard";
 
+// Gate 0 / N1: seeds never run against production; remote targets need explicit confirmation.
+assertSeedTargetAllowed(process.env.DATABASE_URL);
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
 

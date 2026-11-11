@@ -6,7 +6,7 @@
  * Prisma schema/migrations, routes, or authentication.
  *
  * Dataset (deterministic and rerunnable):
- *   - 105 users  : 100 CANDIDATE (user1@gmail.com .. user100@gmail.com)
+ *   - 105 users  : 100 CANDIDATE (candidate1@cxjobs.test .. candidate100@cxjobs.test)
  *                  +   5 COMPANY   (company1@cxjobs.test .. company5@cxjobs.test)
  *   - 100 Candidate profiles, each satisfying the CURRENT onboarding rules in
  *     lib/validations/profile.ts (firstName, lastName, phone, location,
@@ -25,7 +25,7 @@
  *    @@unique([candidateId, jobOfferId]) constraint.
  *
  * Identity map (deterministic):
- *   Candidate N      -> userN@gmail.com        -> Candidate row (firstName "Candidate", lastName "N")
+ *   Candidate N      -> candidateN@cxjobs.test -> Candidate row (firstName "Candidate", lastName "N")
  *   Test Company C   -> companyC@cxjobs.test   -> companies row (slug "k6-test-company-C")
  *   Test Job N       -> slug "k6-test-job-N"   -> company ((N-1) % 5) + 1
  *   Candidate N app  -> jobs ((N-1)*3 + a) mod 12, a in {0,1,2}
@@ -62,6 +62,7 @@ import {
   LanguageLevel,
 } from "../app/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { assertSeedTargetAllowed, requireSeedPassword } from "./seed-guard";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
@@ -70,12 +71,15 @@ if (!connectionString) {
   );
 }
 
+// N1: never production; non-local targets must be confirmed explicitly.
+assertSeedTargetAllowed(connectionString);
+
 const adapter = new PrismaPg({ connectionString });
 const prisma = new PrismaClient({ adapter });
 
-// Deterministic test credential. Hashed with bcryptjs exactly like lib/auth.ts
-// verifies it; the plaintext is never printed.
-const TEST_PASSWORD = "12345678";
+// Test credential from SEED_TEST_PASSWORD (never stored in the repository).
+// Hashed with bcryptjs exactly like lib/auth.ts verifies it; never printed.
+const TEST_PASSWORD = requireSeedPassword();
 const BCRYPT_SALT_ROUNDS = 10;
 
 const CANDIDATE_COUNT = 100;
@@ -87,7 +91,7 @@ const JOB_VALIDITY_MONTHS = 6;
 
 const candidateEmails = Array.from(
   { length: CANDIDATE_COUNT },
-  (_, i) => `user${i + 1}@gmail.com`
+  (_, i) => `candidate${i + 1}@cxjobs.test`
 );
 
 const companyEmails = Array.from(
@@ -403,7 +407,7 @@ async function main() {
   const candidateIds: string[] = [];
 
   for (let n = 1; n <= CANDIDATE_COUNT; n++) {
-    const email = `user${n}@gmail.com`;
+    const email = `candidate${n}@cxjobs.test`;
     const userId = userIdByEmail.get(email)!; 
 
     const candidateData = {
@@ -732,7 +736,7 @@ async function main() {
   console.log(`Elapsed                    : ${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
   console.log("------------------------------------------------------------");
   console.log("Deterministic identities:");
-  console.log("  Candidate N  -> userN@gmail.com (N = 1..100)");
+  console.log("  Candidate N  -> candidateN@cxjobs.test (N = 1..100)");
   console.log("  Test Company C -> companyC@cxjobs.test, slug k6-test-company-C (C = 1..5)");
   console.log("  Test Job N     -> slug k6-test-job-N, company ((N-1) % 5) + 1 (N = 1..12)");
   console.log("============================================================");

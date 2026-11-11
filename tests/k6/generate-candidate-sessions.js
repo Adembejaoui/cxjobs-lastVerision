@@ -3,8 +3,15 @@ const https = require('https');
 const { URL } = require('url');
 const fs = require('fs');
 
-const BASE_URL = process.env.K6_BASE_URL || 'http://localhost:3000';
-const TEST_PASSWORD = process.env.K6_TEST_PASSWORD || '12345678';
+// No default target: K6_BASE_URL must name a staging/preview/local deployment
+// (validated by ./lib/target-guard.mjs at the start of main()).
+const BASE_URL = process.env.K6_BASE_URL || '';
+// N1: no default password in the repository; must match SEED_TEST_PASSWORD.
+const TEST_PASSWORD = process.env.K6_TEST_PASSWORD;
+if (!TEST_PASSWORD) {
+  console.error('K6_TEST_PASSWORD is required (the password the staging seed used).');
+  process.exit(1);
+}
 const CANDIDATE_COUNT = parseInt(
   process.env.K6_CANDIDATE_COUNT || '100',
   10
@@ -13,10 +20,8 @@ const CANDIDATE_START = parseInt(
   process.env.K6_CANDIDATE_START || '1',
   10
 );
-const ALLOW_PRODUCTION =
-  process.env.K6_ALLOW_PRODUCTION_SESSION_GENERATION === 'true';
 
-const BASE_URL_OBJ = new URL(BASE_URL);
+const BASE_URL_OBJ = new URL(BASE_URL || 'http://unset.invalid');
 const IS_HTTPS = BASE_URL_OBJ.protocol === 'https:';
 
 const COOKIE_NAME = IS_HTTPS
@@ -27,22 +32,6 @@ const OUTPUT_FILE =
   process.env.K6_CANDIDATE_COOKIES_FILE ||
   '.k6-candidate-cookies.txt';
 
-/**
- * Check whether the supplied URL should be considered production.
- */
-function isProductionUrl(url) {
-  try {
-    const hostname = new URL(url).hostname;
-
-    return ![
-      'localhost',
-      '127.0.0.1',
-      '::1',
-    ].includes(hostname) && !hostname.endsWith('.local');
-  } catch {
-    return true;
-  }
-}
 
 /**
  * Perform a Node.js HTTP/HTTPS request.
@@ -428,36 +417,18 @@ async function main() {
   console.log('');
 
   /**
-   * Safety protection against accidentally
-   * generating production sessions.
+   * Target safety (H2): refuse production and any unrecognised host. There
+   * is deliberately no override. Runs before any request is sent.
    */
-  if (
-    isProductionUrl(BASE_URL) &&
-    !ALLOW_PRODUCTION
-  ) {
-    console.error(
-      'ERROR: K6_BASE_URL appears to be a production URL.'
-    );
-
-    console.error(
-      'Set K6_ALLOW_PRODUCTION_SESSION_GENERATION=true to proceed.'
-    );
-
-    console.error(
-      'This protection prevents accidental production session generation.'
-    );
-
+  const { resolveStagingTarget } = await import('./lib/target-guard.mjs');
+  try {
+    resolveStagingTarget(BASE_URL, {
+      productionHosts: process.env.K6_PRODUCTION_HOSTS,
+      allowedHosts: process.env.K6_ALLOWED_HOSTS,
+    });
+  } catch (error) {
+    console.error(`ERROR: ${error.message}`);
     process.exit(1);
-  }
-
-  if (isProductionUrl(BASE_URL)) {
-    console.warn(
-      'WARNING: Generating authenticated sessions against production.'
-    );
-
-    console.warn(
-      'Make sure this is intentional and that these are test accounts.\n'
-    );
   }
 
   const results = {
@@ -477,7 +448,7 @@ async function main() {
     i < CANDIDATE_START + CANDIDATE_COUNT;
     i++
   ) {
-    const email = `user${i}@gmail.com`;
+    const email = `candidate${i}@cxjobs.test`;
 
     process.stdout.write(
       `  ${email} ... `

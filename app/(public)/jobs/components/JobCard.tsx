@@ -59,7 +59,7 @@ export function JobCard({ job, isCompany = false }: JobCardProps) {
             {!isCompany && (
               <Link
                 href={`/jobs/${job.slug}/apply`}
-                className="min-w-[170px] rounded-[18px] bg-[#45c68d] px-7 py-4 text-center text-[18px] font-extrabold text-white shadow-[0_12px_22px_rgba(69,198,141,0.28)] transition hover:translate-y-[-1px]"
+                className="min-w-[170px] rounded-[18px] bg-brand-green-strong px-7 py-4 text-center text-[18px] font-extrabold text-white shadow-lg transition hover:translate-y-[-1px]"
               >
                 Quick Apply
               </Link>

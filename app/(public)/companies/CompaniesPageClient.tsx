@@ -306,12 +306,12 @@ export default function CompaniesPageClient({ initialCompanies = [], totalCompan
                       applyFilters()
                     }
                   }}
-                  className="w-full rounded-[16px] border border-[#d7e0ea] bg-white px-4 py-3 text-[16px] font-semibold text-[#344865] placeholder:text-[#95a5be] focus:border-[#45c68d] focus:outline-none focus:ring-2 focus:ring-[#45c68d]/20"
+                  className="w-full rounded-[16px] border border-[#d7e0ea] bg-white px-4 py-3 text-[16px] font-semibold text-[#344865] placeholder:text-slate-500 focus:border-[#45c68d] focus:outline-none focus:ring-2 focus:ring-[#45c68d]/20"
                 />
                 {pendingSearch && (
                   <button
                     onClick={() => setPendingSearch("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#95a5be] hover:text-[#344865] transition-colors"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-[#344865] transition-colors"
                   >
                     ×
                   </button>
@@ -348,7 +348,7 @@ export default function CompaniesPageClient({ initialCompanies = [], totalCompan
                 <button
                   onClick={applyFilters}
                   disabled={isLoading}
-                  className="rounded-[16px] border border-[#45c68d] bg-[#45c68d] px-4 py-3 text-[14px] font-bold text-white hover:bg-[#38b073] transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-[16px] border border-brand-green-strong bg-brand-green-strong px-4 py-3 text-[14px] font-bold text-white hover:bg-brand-green-strong-hover transition-colors disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Apply Filters
                 </button>
@@ -387,7 +387,7 @@ export default function CompaniesPageClient({ initialCompanies = [], totalCompan
               <p className="mt-1 text-[18px] font-semibold text-[#70839c]">
                 Showing {transformedCompanies.length} of {total} companies
                 {hasActiveFilters && (
-                  <span className="ml-1 text-[#45c68d]">
+                  <span className="ml-1 text-brand-green-text">
                     ({checkedCount + (appliedSearch ? 1 : 0)} filters active)
                   </span>
                 )}
@@ -428,12 +428,12 @@ export default function CompaniesPageClient({ initialCompanies = [], totalCompan
                   🔍
                 </div>
                 <p className="text-[20px] font-bold text-[#7b8ca3]">No companies found matching your filters</p>
-                <p className="mt-2 text-[16px] text-[#95a5be]">
+                <p className="mt-2 text-[16px] text-slate-500">
                   Try adjusting your filter criteria or clear all filters
                 </p>
                 <button
                   onClick={clearAllFilters}
-                  className="mt-4 rounded-[18px] bg-[#45c68d] px-6 py-3 text-[16px] font-extrabold text-white shadow-lg transition hover:translate-y-[-1px]"
+                  className="mt-4 rounded-[18px] bg-brand-green-strong px-6 py-3 text-[16px] font-extrabold text-white shadow-lg transition hover:translate-y-[-1px]"
                 >
                   Clear Filters
                 </button>

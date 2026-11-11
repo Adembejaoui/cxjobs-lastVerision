@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { getRequiredFields } from "../job-role-config";
 import { linkedinUrlSchema } from "./linkedin";
+import { optionalSafeUrlSchema, optionalStorageImageUrlSchema } from "@/lib/security/safe-url";
 
 // ==================== Candidate Schemas ====================
 
@@ -110,7 +111,7 @@ export const candidateProfileSchema = z.object({
   location: z.string().optional().nullable(),
   headline: z.string().optional().nullable(),
   summary: z.string().max(2000, "Summary must be 2000 characters or less").optional().nullable(),
-  avatarUrl: z.string().optional().nullable(),
+  avatarUrl: optionalStorageImageUrlSchema(),
   resumeUrl: z.string().optional().nullable(),
   linkedinUrl: linkedinUrlSchema,
   preferredJobTypes: z.array(z.string()).optional().nullable(),
@@ -401,30 +402,36 @@ export const benefitItemSchema = z.object({
 export const cultureItemSchema = z.object({
   title: z.string().min(1, "Title is required"),
   description: z.string().optional().default(""),
-  imageUrl: z.string().optional().nullable(),
+  imageUrl: optionalStorageImageUrlSchema(),
   icon: z.string().optional().nullable(),
 });
 
+// Every field is optional so a save can update just what it sends (launch
+// plan A6: fields that are not sent stay unchanged). `name` and `slug` are
+// still required when the company profile is first created (enforced by
+// POST /api/profile).
 export const companyProfileSchema = z.object({
-  name: z.string().min(2, "Company name must be at least 2 characters"),
+  name: z.string().trim().min(2, "Company name must be at least 2 characters").max(200, "Company name must be 200 characters or less").optional(),
   slug: z
     .string()
     .min(2, "Slug must be at least 2 characters")
-    .regex(/^[a-z0-9-]+$/, "Slug must contain only lowercase letters, numbers, and hyphens"),
+    .max(100, "Slug must be 100 characters or less")
+    .regex(/^[a-z0-9-]+$/, "Slug must contain only lowercase letters, numbers, and hyphens")
+    .optional(),
   description: z.string().max(5000, "Description must be 5000 characters or less").optional().nullable(),
-  logoUrl: z.string().optional().nullable(),
-  coverImageUrl: z.string().optional().nullable(),
-  website: z.string().url("Invalid website URL").optional().or(z.literal("")).nullable(),
+  logoUrl: optionalStorageImageUrlSchema(),
+  coverImageUrl: optionalStorageImageUrlSchema(),
+  website: optionalSafeUrlSchema(undefined, "Invalid website URL"),
   companySize: companySizeSchema.optional().nullable(),
-  location: z.string().optional().nullable(),
+  location: z.string().max(200, "Location must be 200 characters or less").optional().nullable(),
   foundedYear: z.number().min(1800).max(new Date().getFullYear()).optional().nullable(),
   isRemoteFriendly: z.boolean().optional().nullable(),
   isHybridFriendly: z.boolean().optional().nullable(),
   benefits: z.array(benefitItemSchema).optional().nullable(),
   culture: z.array(cultureItemSchema).optional().nullable(),
-  linkedinUrl: z.string().optional().nullable(),
-  twitterUrl: z.string().optional().nullable(),
-  facebookUrl: z.string().optional().nullable(),
+  linkedinUrl: optionalSafeUrlSchema(undefined, "Invalid LinkedIn URL"),
+  twitterUrl: optionalSafeUrlSchema(undefined, "Invalid Twitter/X URL"),
+  facebookUrl: optionalSafeUrlSchema(undefined, "Invalid Facebook URL"),
   emailCompany: z.string().email("Invalid company contact email").max(254, "Email must be 254 characters or less").optional().nullable(),
 });
 

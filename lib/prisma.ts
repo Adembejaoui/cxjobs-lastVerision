@@ -3,6 +3,7 @@ import { attachDatabasePool } from "@vercel/functions";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { logger } from "./logger";
 import { PrismaClient } from "@/app/generated/prisma/client";
+import { assertNotProductionDatabase } from "./security/production-db-guard";
 
 const globalForPrisma = global as unknown as {
   prisma: PrismaClient;
@@ -16,6 +17,10 @@ const globalForPrisma = global as unknown as {
  *
  * Pool -> attachDatabasePool() -> PrismaPg -> PrismaClient
  */
+// Gate 0: a local process (dev server, local build/start, scripts) must
+// never reach the production database by accident. No effect on Vercel.
+assertNotProductionDatabase(process.env.DATABASE_URL, "DATABASE_URL");
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   idleTimeoutMillis: 2000,

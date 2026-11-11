@@ -172,27 +172,66 @@ export function createErrorResponse(
 // ==================== Request Utilities ====================
 
 /**
- * Extracts client IP address from request headers
- * Works with various proxy configurations
+ * Client IP for rate-limit keys.
+ *
+ * Proxy headers are client-forgeable unless a trusted proxy overwrites them,
+ * so the first X-Forwarded-For entry (which the client controls) is never
+ * trusted on its own:
+ *  - On Vercel (`VERCEL=1`, set by the platform) the edge overwrites
+ *    `x-real-ip` / `x-forwarded-for` with the real client address.
+ *  - Elsewhere we assume exactly one trusted reverse proxy that APPENDS the
+ *    peer address, and use the right-most X-Forwarded-For entry.
+ * The value must parse as an IP; anything else collapses to "unknown" so a
+ * forged header cannot mint unlimited fresh rate-limit buckets.
  */
 export function getClientIp(request: Request): string {
-  const forwarded = request.headers.get("x-forwarded-for");
-  const realIp = request.headers.get("x-real-ip");
-  const cfConnectingIp = request.headers.get("cf-connecting-ip"); // Cloudflare
+  const headers = request.headers;
+  const candidates: (string | null | undefined)[] = [];
 
-  if (forwarded) {
-    return forwarded.split(",")[0].trim();
-  }
-  
-  if (realIp) {
-    return realIp;
-  }
-  
-  if (cfConnectingIp) {
-    return cfConnectingIp;
+  if (process.env.VERCEL === "1") {
+    candidates.push(headers.get("x-real-ip"));
+    candidates.push(headers.get("x-forwarded-for")?.split(",")[0]);
+  } else {
+    const xff = headers.get("x-forwarded-for");
+    if (xff) {
+      const parts = xff.split(",");
+      candidates.push(parts[parts.length - 1]);
+    }
   }
 
+  for (const raw of candidates) {
+    const ip = raw?.trim();
+    if (ip && isIpLiteral(ip)) return ip.toLowerCase();
+  }
   return "unknown";
+}
+
+const IPV4_RE = /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/;
+const HEXTET_RE = /^[0-9a-f]{1,4}$/i;
+
+function isIpv6Literal(value: string): boolean {
+  const halves = value.split("::");
+  if (halves.length > 2) return false;
+  const groups = halves.flatMap((h) => (h === "" ? [] : h.split(":")));
+  let units = 0;
+  for (let i = 0; i < groups.length; i++) {
+    const g = groups[i];
+    if (i === groups.length - 1 && g.includes(".")) {
+      if (!IPV4_RE.test(g)) return false; // embedded IPv4 tail
+      units += 2;
+    } else if (HEXTET_RE.test(g)) {
+      units += 1;
+    } else {
+      return false;
+    }
+  }
+  return halves.length === 2 ? units <= 7 : units === 8;
+}
+
+function isIpLiteral(value: string): boolean {
+  if (value.length > 45) return false;
+  if (IPV4_RE.test(value)) return true;
+  return value.includes(":") && isIpv6Literal(value);
 }
 
 /**

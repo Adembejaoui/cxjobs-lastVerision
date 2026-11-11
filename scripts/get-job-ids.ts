@@ -1,7 +1,10 @@
 import "dotenv/config";
 import { Client } from "pg";
+import { assertNotProductionDatabase } from "../lib/security/production-db-guard";
 
 const connStr = process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL  || "";
+// Gate 0: never the production database by accident (explicit override only).
+assertNotProductionDatabase(connStr, "DIRECT_DATABASE_URL/DATABASE_URL");
 console.log("Using connection string (masked):", connStr.replace(/:[^:]+@/, ":****@"));
 
 const client = new Client({

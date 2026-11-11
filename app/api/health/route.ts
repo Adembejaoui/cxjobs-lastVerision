@@ -4,6 +4,12 @@ import { redis } from "@/lib/redis";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { isAIConfigured } from "@/lib/ai-service";
 import { logger } from "@/lib/logger";
+import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
+import { getClientIp } from "@/lib/utils";
+
+// A4: public endpoint, so cap per-IP polling. Fail-open: a limiter outage
+// must never make the health check itself report the site as down.
+const HEALTH_IP_LIMIT = { windowMs: 60_000, max: 30, failOpen: true };
 
 interface HealthCheckResult {
   service: string;
@@ -77,17 +83,39 @@ async function checkOpenAI(): Promise<HealthCheckResult> {
     };
   }
 
-  return { service: "openai", status: "healthy" };
+  // Configuration only: the provider is not called (that would cost money and
+  // let anyone trigger outbound requests). Reported as such (audit F-28).
+  return { service: "openai", status: "healthy", details: "configured (not probed)" };
 }
 
-export async function GET() {
+// The endpoint is public and unauthenticated, and every deep check pings the
+// database, Redis and Supabase. Results are shared for a short window per
+// instance (NF-18), so request volume cannot be amplified onto the backends.
+const CHECK_CACHE_MS = 15_000;
+let cachedChecks: { at: number; promise: Promise<HealthCheckResult[]> } | null = null;
+
+function runChecks(): Promise<HealthCheckResult[]> {
+  const now = Date.now();
+  if (cachedChecks && now - cachedChecks.at < CHECK_CACHE_MS) return cachedChecks.promise;
+  const promise = Promise.all([checkDatabase(), checkRedis(), checkSupabase(), checkOpenAI()]);
+  cachedChecks = { at: now, promise };
+  // A rejected run must not be served from the cache.
+  promise.catch(() => {
+    cachedChecks = null;
+  });
+  return promise;
+}
+
+export async function GET(request: Request) {
+  const rl = await checkRateLimitAsync(`health-ip:${getClientIp(request)}`, HEALTH_IP_LIMIT);
+  if (!rl.allowed) {
+    return NextResponse.json(
+      { status: "rate_limited", error: "Too many requests" },
+      { status: 429, headers: getRateLimitHeaders(rl) }
+    );
+  }
   try {
-    const checks = await Promise.all([
-      checkDatabase(),
-      checkRedis(),
-      checkSupabase(),
-      checkOpenAI(),
-    ]);
+    const checks = await runChecks();
 
     const criticalServices = checks.filter(
       (c) => c.status === "unhealthy"

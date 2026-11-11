@@ -1,13 +1,64 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { createApplicationSchema } from "@/lib/validations/job";
+import { z } from "zod";
+import { createApplicationSchema, applicationStatusSchema } from "@/lib/validations/job";
 import { parsePaginationParams } from "@/lib/utils";
 import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
+import { getClientIp } from "@/lib/utils";
 import { invalidateCompanyAnalytics } from "@/lib/local-cache";
+import { COMPANY_ACTIVITY_SELECT, isCompanyActive, type CompanyActivityState } from "@/lib/security/company-activity";
+import { candidateCompleteness } from "@/lib/candidate-profile-completeness";
+import { notifyNewApplication } from "@/lib/server/notifications";
 
 const APPLICATION_LIMIT = { windowMs: 60_000, max: 10 };
+
+type JobAvailability = {
+  deletedAt: Date | null;
+  status: string;
+  expiresAt: Date | null;
+  applicationType: string;
+  company: CompanyActivityState | null;
+};
+
+/** What `rejectionFor` needs, read from the DB at the time of the request. */
+const JOB_AVAILABILITY_SELECT = {
+  companyId: true,
+  deletedAt: true,
+  status: true,
+  expiresAt: true,
+  applicationType: true,
+  company: { select: COMPANY_ACTIVITY_SELECT },
+} as const;
+
+/**
+ * Server-side gate for internal applications. The UI redirects EXTERNAL jobs
+ * to their external URL, but the API must not rely on that: EXTERNAL jobs,
+ * expired jobs (before the expiry job flips their status) and unpublished or
+ * deleted jobs never accept an internal application.
+ */
+function rejectionFor(job: JobAvailability | null, now: Date): "NOT_FOUND" | "EXTERNAL_APPLICATION" | null {
+  if (!job || job.deletedAt || job.status !== "PUBLISHED") return "NOT_FOUND";
+  if (job.expiresAt && job.expiresAt <= now) return "NOT_FOUND";
+  // F-04: a suspended or deleted company receives no new applications. The
+  // generic NOT_FOUND does not reveal the suspension.
+  if (!isCompanyActive(job.company)) return "NOT_FOUND";
+  if (job.applicationType === "EXTERNAL") return "EXTERNAL_APPLICATION";
+  return null;
+}
+
+function rejectionResponse(reason: "NOT_FOUND" | "EXTERNAL_APPLICATION") {
+  return reason === "EXTERNAL_APPLICATION"
+    ? NextResponse.json(
+        { success: false, error: "This job accepts applications on the employer's website only", code: "EXTERNAL_APPLICATION" },
+        { status: 400 }
+      )
+    : NextResponse.json(
+        { success: false, error: "Job offer not found or no longer available", code: "NOT_FOUND" },
+        { status: 404 }
+      );
+}
 
 // GET /api/application - List applications (role-filtered)
 export async function GET(request: NextRequest) {
@@ -22,8 +73,25 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const status = searchParams.get("status");
+    const rawStatus = searchParams.get("status");
     const jobId = searchParams.get("jobId");
+
+    // Enum and UUID filters are validated here: an arbitrary string reaching
+    // Prisma raises a validation error that used to surface as a 500.
+    const statusResult = rawStatus ? applicationStatusSchema.safeParse(rawStatus) : null;
+    if (statusResult && !statusResult.success) {
+      return NextResponse.json(
+        { success: false, error: "Invalid status parameter", code: "INVALID_PARAM" },
+        { status: 400 }
+      );
+    }
+    const status = statusResult?.data;
+    if (jobId && !z.string().uuid().safeParse(jobId).success) {
+      return NextResponse.json(
+        { success: false, error: "Invalid jobId parameter", code: "INVALID_PARAM" },
+        { status: 400 }
+      );
+    }
     // The total row count is opt-in. The candidate applications client and the
     // job detail "already applied" check both read only `data`, and the client
     // derives page counts from the server-rendered `initialTotal`. Running the
@@ -190,7 +258,7 @@ export async function GET(request: NextRequest) {
 // POST /api/application - Submit application (candidate only)
 export async function POST(request: NextRequest) {
   try {
-    const ip = request.headers.get("x-forwarded-for") || "unknown";
+    const ip = getClientIp(request);
     const rl = await checkRateLimitAsync(`application:${ip}`, APPLICATION_LIMIT);
     if (!rl.allowed) {
       return NextResponse.json(
@@ -218,6 +286,7 @@ export async function POST(request: NextRequest) {
     // Get candidate profile
     const candidate = await prisma.candidate.findUnique({
       where: { userId: session.user.id },
+      include: { _count: { select: { skills: true, languages: true, experiences: true } } },
     });
 
     if (!candidate) {
@@ -243,16 +312,15 @@ export async function POST(request: NextRequest) {
 
     const { jobOfferId, coverLetter } = validationResult.data;
 
-    // Check if job offer exists and is published
+    // Check if job offer exists, is published and its company is active
     const jobOffer = await prisma.jobOffer.findUnique({
       where: { id: jobOfferId },
+      select: JOB_AVAILABILITY_SELECT,
     });
 
-    if (!jobOffer || jobOffer.deletedAt || jobOffer.status !== "PUBLISHED") {
-      return NextResponse.json(
-        { success: false, error: "Job offer not found or no longer available", code: "NOT_FOUND" },
-        { status: 404 }
-      );
+    const preCheck = rejectionFor(jobOffer, new Date());
+    if (preCheck || !jobOffer) {
+      return rejectionResponse(preCheck ?? "NOT_FOUND");
     }
 
     // Check for duplicate application
@@ -268,6 +336,27 @@ export async function POST(request: NextRequest) {
     if (existingApplication) {
       return NextResponse.json(
         { success: false, error: "You have already applied to this job", code: "DUPLICATE_APPLICATION" },
+        { status: 409 }
+      );
+    }
+
+    // A1: the completed-profile requirement is enforced here, not only in
+    // the apply page (which shows the same rule). Checked after the job and
+    // duplicate checks so "job gone" / "already applied" take precedence.
+    const completeness = candidateCompleteness({
+      ...candidate,
+      skillsCount: candidate._count.skills,
+      languagesCount: candidate._count.languages,
+      experiencesCount: candidate._count.experiences,
+    });
+    if (!completeness.canApply) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Please complete your profile before applying",
+          code: "PROFILE_INCOMPLETE",
+          details: { missingRequired: completeness.missingRequired, percent: completeness.percent },
+        },
         { status: 400 }
       );
     }
@@ -275,18 +364,21 @@ export async function POST(request: NextRequest) {
     // Submit atomically inside a transaction to prevent race conditions.
     // The unique constraint on [candidateId, jobOfferId] is the final guard;
     // P2002 is handled as an idempotent duplicate response.
-    let application: Awaited<ReturnType<typeof prisma.application.create>>;
+    let application;
     try {
       application = await prisma.$transaction(async (tx) => {
-        // Re-validate job availability inside the transaction
+        // Re-validate job availability (incl. company activity) inside the
+        // transaction, immediately before the insert.
         const job = await tx.jobOffer.findUnique({
           where: { id: jobOfferId },
+          select: JOB_AVAILABILITY_SELECT,
         });
-        if (!job || job.deletedAt || job.status !== "PUBLISHED") {
-          throw new Error("JOB_NOT_AVAILABLE");
+        const reason = rejectionFor(job, new Date());
+        if (reason) {
+          throw new Error(reason === "EXTERNAL_APPLICATION" ? "JOB_EXTERNAL" : "JOB_NOT_AVAILABLE");
         }
 
-        return tx.application.create({
+        const created = await tx.application.create({
           data: {
             candidateId: candidate.id,
             jobOfferId,
@@ -310,30 +402,40 @@ export async function POST(request: NextRequest) {
             },
           },
         });
+
+        // A7: the history starts with the submission, and the company is
+        // notified in the same transaction.
+        await tx.applicationStatusHistory.create({
+          data: { applicationId: created.id, fromStatus: null, toStatus: "NOUVEAU", changedById: session.user.id },
+        });
+        if (created.jobOffer.company?.userId) {
+          await notifyNewApplication(tx, {
+            companyUserId: created.jobOffer.company.userId,
+            jobOfferId,
+            jobTitle: created.jobOffer.title,
+          });
+        }
+
+        // The owner's user id is internal; it is not part of the response.
+        const { userId: _ownerId, ...company } = created.jobOffer.company;
+        void _ownerId;
+        return { ...created, jobOffer: { ...created.jobOffer, company } };
       });
     } catch (e: unknown) {
       const err = e as { code?: string; message?: string };
       if (err.code === "P2002") {
         return NextResponse.json(
           { success: false, error: "You have already applied to this job", code: "DUPLICATE_APPLICATION" },
-          { status: 400 }
+          { status: 409 }
         );
       }
       if (err.message === "JOB_NOT_AVAILABLE") {
-        return NextResponse.json(
-          { success: false, error: "Job offer not found or no longer available", code: "NOT_FOUND" },
-          { status: 404 }
-        );
+        return rejectionResponse("NOT_FOUND");
+      }
+      if (err.message === "JOB_EXTERNAL") {
+        return rejectionResponse("EXTERNAL_APPLICATION");
       }
       throw e;
-    }
-
-    // Send notification to company
-    try {
-      // TODO: Implement notification
-    } catch (notificationError) {
-      // Log but don't fail the request
-      logger.warn("Failed to send notification", { error: notificationError });
     }
 
     // The application is committed. jobOffer.companyId is the owning company

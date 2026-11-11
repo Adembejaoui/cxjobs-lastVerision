@@ -2,19 +2,31 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import  prisma  from "@/lib/prisma";
 import { BenefitScope } from "@/app/generated/prisma/client";
-import { updateJobOfferSchema, isValidStatusTransition, getInvalidTransitionError } from "@/lib/validations/job";
+import {
+  updateJobOfferSchema,
+  isValidStatusTransition,
+  getInvalidTransitionError,
+  validateEffectiveJobState,
+  mergeJobState,
+  type EffectiveJobState,
+} from "@/lib/validations/job";
 import { unstable_cache } from "next/cache";
 import { revalidateJobOffers } from "@/lib/cache";
 import { invalidateCompanyAnalytics } from "@/lib/local-cache";
 import { logger } from "@/lib/logger";
 import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
 import { getClientIp } from "@/lib/utils";
+import { validateBenefitOwnership, stripCompanyProtectedJobFields } from "@/lib/security/benefits";
+import { publicJobWhere, isCompanyActive, COMPANY_ACTIVITY_SELECT } from "@/lib/security/company-activity";
+import { companySuspendedResponse } from "@/lib/server/company-guard";
 
 // Cached function for fetching a single published job offer
+// F-04: only publicly visible jobs (published, not deleted, not expired,
+// active company). Anything else is "not found" for the public.
 const getPublicJobOffer = unstable_cache(
   async (jobId: string) => {
-    return prisma.jobOffer.findUnique({
-      where: { id: jobId },
+    return prisma.jobOffer.findFirst({
+      where: { id: jobId, ...publicJobWhere() },
       include: {
         company: {
           select: {
@@ -53,7 +65,8 @@ export async function GET(
 ) {
   try {
     const ip = getClientIp(request);
-    const GET_SINGLE_LIMIT = { windowMs: 60_000, max: 120 };
+    // Public read: fail open on limiter outage (NF-10).
+    const GET_SINGLE_LIMIT = { windowMs: 60_000, max: 120, failOpen: true };
     const rl = await checkRateLimitAsync(`job-offer-single:${ip}`, GET_SINGLE_LIMIT);
     if (!rl.allowed) {
       return NextResponse.json(
@@ -163,8 +176,12 @@ export async function GET(
       });
     }
 
-    // If company doesn't own this job, only show if PUBLISHED
-    if (jobOffer.status !== "PUBLISHED") {
+    // If company doesn't own this job, apply the public visibility rules
+    // (published, not expired, active company: F-04), read from the DB.
+    const publiclyVisible =
+      jobOffer.status === "PUBLISHED" &&
+      (await prisma.jobOffer.count({ where: { id: jobId, ...publicJobWhere() } })) > 0;
+    if (!publiclyVisible) {
       return NextResponse.json(
         { success: false, error: "Job offer not found", code: "NOT_FOUND" },
         { status: 404 }
@@ -217,7 +234,6 @@ export async function PUT(
       logger.error("PUT /api/job-offers/[jobId] validation failed", {
         jobId,
         fieldErrors: validationResult.error.flatten().fieldErrors,
-        body,
         userId: session.user.id,
       });
       return NextResponse.json(
@@ -230,7 +246,13 @@ export async function PUT(
       );
     }
 
-    const updateData = validationResult.data;
+    // Protected columns (promotion flags, lifecycle timestamps) are never
+    // client-assignable by a company; lifecycle timestamps are derived from
+    // status transitions below.
+    const updateData =
+      session.user.role === "ADMIN"
+        ? validationResult.data
+        : stripCompanyProtectedJobFields(validationResult.data as Record<string, unknown>) as typeof validationResult.data;
     const benefitIds = (updateData as Record<string, unknown>).benefitIds as string[] | undefined;
     const languages = (updateData as Record<string, unknown>).languages as { language: string; level: string }[] | undefined;
     delete (updateData as Record<string, unknown>).benefitIds;
@@ -247,6 +269,20 @@ export async function PUT(
       return NextResponse.json(
         { success: false, error: "Job offer not found", code: "NOT_FOUND" },
         { status: 404 }
+      );
+    }
+
+    // Cross-field rules apply to the job as it will be AFTER this partial
+    // update (stored row + payload), so e.g. a status-only change can never
+    // invalidate an EXTERNAL job and a lone salaryMax cannot undercut the
+    // stored salaryMin.
+    const effectiveErrors = validateEffectiveJobState(
+      mergeJobState(existingJob, updateData as EffectiveJobState)
+    );
+    if (effectiveErrors) {
+      return NextResponse.json(
+        { success: false, error: "Validation failed", details: effectiveErrors },
+        { status: 400 }
       );
     }
 
@@ -287,7 +323,9 @@ export async function PUT(
     type TxResult =
       | { kind: "data"; data: unknown }
       | { kind: "not_found" }
-      | { kind: "forbidden" };
+      | { kind: "forbidden" }
+      | { kind: "suspended" }
+      | { kind: "invalid_benefits" };
 
     const txResult: TxResult = await prisma.$transaction(async (tx): Promise<TxResult> => {
       const isAdmin = session.user.role === "ADMIN";
@@ -295,10 +333,29 @@ export async function PUT(
         ? null
         : await tx.companies.findFirst({
             where: { userId: session.user.id, id: existingJob.companyId },
+            select: { id: true, ...COMPANY_ACTIVITY_SELECT },
           });
 
       if (!isAdmin && !userCompany) {
         return { kind: "forbidden" } as const;
+      }
+
+      // F-04: a suspended company cannot edit or (re)publish its jobs. Read
+      // inside the transaction, together with the ownership check.
+      if (!isAdmin && !isCompanyActive(userCompany)) {
+        return { kind: "suspended" } as const;
+      }
+
+      // Benefits must belong to the company that OWNS THE JOB (also when an
+      // admin edits it). Validated inside the transaction, before any write,
+      // so check and use cannot diverge.
+      let validatedBenefitIds: string[] | undefined;
+      if (benefitIds !== undefined) {
+        const check = await validateBenefitOwnership(tx, existingJob.companyId, benefitIds);
+        if (!check.ok) {
+          return { kind: "invalid_benefits" } as const;
+        }
+        validatedBenefitIds = check.benefitIds;
       }
 
       await tx.jobOffer.update({
@@ -316,11 +373,11 @@ export async function PUT(
         },
       });
 
-      if (benefitIds !== undefined) {
+      if (validatedBenefitIds !== undefined) {
         await tx.jobOfferBenefit.deleteMany({ where: { jobOfferId: jobId } });
-        if (benefitIds.length > 0) {
+        if (validatedBenefitIds.length > 0) {
           await tx.jobOfferBenefit.createMany({
-            data: benefitIds.map((benefitId) => ({ jobOfferId: jobId, benefitId })),
+            data: validatedBenefitIds.map((benefitId) => ({ jobOfferId: jobId, benefitId })),
           });
         }
       }
@@ -352,6 +409,17 @@ export async function PUT(
         { success: false, error: "Job offer not found", code: "NOT_FOUND" },
         { status: 404 }
       );
+    }
+
+    if (txResult.kind === "invalid_benefits") {
+      return NextResponse.json(
+        { success: false, error: "One or more benefits are invalid or do not belong to this company", code: "INVALID_BENEFITS" },
+        { status: 400 }
+      );
+    }
+
+    if (txResult.kind === "suspended") {
+      return companySuspendedResponse();
     }
 
     if (txResult.kind === "forbidden") {

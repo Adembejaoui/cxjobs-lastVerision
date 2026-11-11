@@ -3,16 +3,18 @@
     "collect": {
       "numberOfRuns": 3,
       "startServerCommand": "npm run start",
+      "startServerReadyPattern": "Ready",
+      "startServerReadyTimeout": 60000,
       "url": [
-        "http://localhost:3000/",
+        "http://localhost:3000/login",
+        "http://localhost:3000/register",
         "http://localhost:3000/jobs",
-        "http://localhost:3000/dashboard/company",
-        "http://localhost:3000/dashboard/candidate"
+        "http://localhost:3000/about",
+        "http://localhost:3000/terms"
       ],
       "settings": {
         "headless": true,
-        "preset": "desktop",
-        "staticDistDir": "./.next/server"
+        "preset": "desktop"
       }
     },
     "assert": {
@@ -30,7 +32,8 @@
       }
     },
     "upload": {
-      "target": "temporary-public-storage"
+      "target": "filesystem",
+      "outputDir": "./.lighthouseci"
     }
   }
 }

@@ -1,15 +1,22 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { signIn } from 'next-auth/react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
+import { safeCallbackPath } from '@/lib/security/safe-redirect';
+import { oauthErrorMessage } from '@/lib/security/oauth-error-message';
 
 export default function LoginForm() {
   const router = useRouter();
+  // Where to go after sign-in (e.g. back to the job application). Validated
+  // as a same-origin path, so it can never be used as an open redirect.
+  const searchParams = useSearchParams();
+  const callbackPath = safeCallbackPath(searchParams.get('callbackUrl'));
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // A refused Google sign-in comes back as /login?error=<code>.
+  const [error, setError] = useState<string | null>(() => oauthErrorMessage(searchParams.get('error')));
   
   const [formData, setFormData] = useState({
     email: '',
@@ -37,10 +44,17 @@ export default function LoginForm() {
       });
 
       if (result?.error) {
-        throw new Error('Invalid email or password');
+        if (result.code === 'rate_limited') {
+          setError('Too many sign-in attempts. Please wait a few minutes and try again.');
+        } else if (result.code === 'email_not_verified') {
+          setError('Please verify your email address before signing in.');
+        } else {
+          setError('Invalid email or password. Please try again.');
+        }
+        return;
       }
 
-      router.push('/dashboard');
+      router.push(callbackPath);
       router.refresh();
     } catch {
       setError('Invalid email or password. Please try again.');
@@ -50,7 +64,7 @@ export default function LoginForm() {
   };
 
   const handleGoogleSignIn = () => {
-    signIn('google', { callbackUrl: '/dashboard' });
+    signIn('google', { callbackUrl: callbackPath });
   };
 
   return (

@@ -4,6 +4,8 @@ import prisma from "@/lib/prisma";
 import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
 import { parsePaginationParams } from "@/lib/utils";
 import { logger } from "@/lib/logger";
+import { z } from "zod";
+import { jobStatusSchema } from "@/lib/validations/job";
 
 /**
  * GET /api/admin/job-offers
@@ -51,8 +53,23 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    if (!z.string().uuid().safeParse(rawCompanyId).success) {
+      return NextResponse.json(
+        { success: false, error: "Invalid companyId", code: "BAD_REQUEST" },
+        { status: 400 },
+      );
+    }
+
     const search = searchParams.get("search")?.trim() || undefined;
-    const status = searchParams.get("status")?.trim().toUpperCase() || undefined;
+    const rawStatus = searchParams.get("status")?.trim().toUpperCase() || undefined;
+    const statusResult = rawStatus ? jobStatusSchema.safeParse(rawStatus) : null;
+    if (statusResult && !statusResult.success) {
+      return NextResponse.json(
+        { success: false, error: "Invalid status parameter", code: "INVALID_PARAM" },
+        { status: 400 },
+      );
+    }
+    const status = statusResult?.data;
     const sort = searchParams.get("sort") ?? "createdAt-desc";
 
     // Verify the target company exists. Admin has global access, but we still

@@ -477,12 +477,13 @@ export function CandidateProfileForm({ candidate }: CandidateProfileFormProps) {
         throw new Error(data.error || "Failed to upload CV");
       }
 
-      const url = data.data?.url;
+      // Persist the private object path, never the short-lived signed URL.
+      const cvPath = data.data?.path;
 
       await fetch(`/api/profile`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resumeUrl: url }),
+        body: JSON.stringify({ resumeUrl: cvPath }),
       });
 
       setSuccess("CV uploaded successfully!");
@@ -748,7 +749,7 @@ export function CandidateProfileForm({ candidate }: CandidateProfileFormProps) {
                   <div className="flex items-center gap-3">
                     <p className="text-sm text-green-600">Current CV uploaded</p>
                     <a 
-                      href={candidate.resumeUrl} 
+                      href="/api/profile/cv"
                       target="_blank" 
                       rel="noopener noreferrer"
                       className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800"

@@ -1,4 +1,7 @@
+"use client"
+
 import Link from "next/link"
+import { useUser } from "@/components/auth/user-provider"
 
 type FooterUser = {
   role?: string
@@ -17,7 +20,10 @@ function getDashboardLink(user: FooterUser) {
   }
 }
 
-export function Footer({ user }: { user?: FooterUser }) {
+/** Omit `user` to read the signed-in user from the client session (A10). */
+export function Footer({ user: userProp }: { user?: FooterUser }) {
+  const sessionUser = useUser()
+  const user = userProp !== undefined ? userProp : sessionUser
   const accountHref = user ? getDashboardLink(user) : "/login"
   const accountLabel = user ? "Dashboard" : "Log In"
 

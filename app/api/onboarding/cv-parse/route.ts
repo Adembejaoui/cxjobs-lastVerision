@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUser } from "@/lib/auth-helpers";
 import { parseCV, isValidPDF, getFileSizeMB } from "@/lib/cv-parser";
-import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
+import { checkRateLimitsAsync, getRateLimitHeaders } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
+import { checkCvFile } from "@/lib/security/file-type";
+import { getClientIp } from "@/lib/utils";
+import { consumeAIQuota, type AIQuotaTicket } from "@/lib/security/ai-quota";
 
-const CV_PARSE_LIMIT = { windowMs: 60_000, max: 10 };
+// Platform ceiling; PDF extraction + AI are bounded to < 30 s inside parseCV.
+export const maxDuration = 60;
+
+const CV_PARSE_LIMIT = { windowMs: 60_000, max: 5 };
+const CV_PARSE_IP_LIMIT = { windowMs: 60_000, max: 10 };
 
 // Maximum file size: 5MB
 const MAX_FILE_SIZE_MB = 5;
@@ -20,15 +27,6 @@ const MAX_FILE_SIZE_MB = 5;
  */
 export async function POST(request: NextRequest) {
   try {
-
-    const ip = request.headers.get("x-forwarded-for") || "unknown";
-    const rl = await checkRateLimitAsync(`cv-parse:${ip}`, CV_PARSE_LIMIT);
-    if (!rl.allowed) {
-      return NextResponse.json(
-        { success: false, error: "Too many requests. Please try again later.", code: "RATE_LIMITED" },
-        { status: 429, headers: getRateLimitHeaders(rl) }
-      );
-    }
 
     // Authentication check
     const authResult = await getAuthenticatedUser({ requireActive: true });
@@ -49,10 +47,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Per-account AND per-IP limits, enforced before the upload is parsed
+    // and before any (paid) AI processing.
+    const rl = await checkRateLimitsAsync([
+      { key: `cv-parse-user:${session.id}`, config: CV_PARSE_LIMIT },
+      { key: `cv-parse-ip:${getClientIp(request)}`, config: CV_PARSE_IP_LIMIT },
+    ]);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { success: false, error: "Too many requests. Please try again later.", code: "RATE_LIMITED" },
+        { status: 429, headers: getRateLimitHeaders(rl) }
+      );
+    }
+
+    // Reject oversized bodies before buffering multipart data.
+    const contentLength = parseInt(request.headers.get("content-length") || "0", 10);
+    if (contentLength > MAX_FILE_SIZE_MB * 1024 * 1024 + 64 * 1024) {
+      return NextResponse.json(
+        { success: false, error: `File size exceeds the maximum limit of ${MAX_FILE_SIZE_MB}MB.`, code: "FILE_TOO_LARGE" },
+        { status: 413 }
+      );
+    }
+
     // Parse form data
     const formData = await request.formData();
     const file = formData.get("cv") as File | null;
-    const language = (formData.get("language") as "en" | "fr") || "en";
+    const language: "en" | "fr" = formData.get("language") === "fr" ? "fr" : "en";
     const useAI = formData.get("useAI") !== "false"; // Default to true
 
     if (!file) {
@@ -62,13 +82,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file type
-    if (file.type !== "application/pdf") {
+    // Size check BEFORE buffering the upload.
+    if (file.size === 0 || file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
       return NextResponse.json(
         {
           success: false,
-          error: "Only PDF files are supported. Please upload your CV in PDF format.",
-          code: "INVALID_FORMAT",
+          error: `File size must be between 1 byte and ${MAX_FILE_SIZE_MB}MB.`,
+          code: "FILE_TOO_LARGE",
         },
         { status: 400 }
       );
@@ -77,35 +97,51 @@ export async function POST(request: NextRequest) {
     // Convert to buffer
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
+    const fileSizeMB = getFileSizeMB(buffer);
 
-    // Validate PDF
-    if (!isValidPDF(buffer)) {
+    // Content-based check: only a structurally plausible PDF reaches the
+    // parser. The browser-declared type is not trusted.
+    const check = checkCvFile(buffer, file.name, ["pdf"]);
+    if (!check.ok || !isValidPDF(buffer)) {
       return NextResponse.json(
         {
           success: false,
-          error: "Invalid PDF file. Please upload a valid PDF document.",
-          code: "INVALID_PDF",
+          error: "Only PDF files are supported. Please upload a valid PDF document.",
+          code: "INVALID_FORMAT",
         },
         { status: 400 }
       );
     }
 
-    // Check file size
-    const fileSizeMB = getFileSizeMB(buffer);
-    if (fileSizeMB > MAX_FILE_SIZE_MB) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: `File size exceeds the maximum limit of ${MAX_FILE_SIZE_MB}MB. Your file is ${fileSizeMB.toFixed(2)}MB.`,
-          code: "FILE_TOO_LARGE",
-        },
-        { status: 400 }
-      );
+    // Daily per-user AI allowance (S7). An exhausted allowance does not
+    // block onboarding: the CV is still parsed, without AI.
+    let quota: AIQuotaTicket | null = null;
+    let aiQuotaExceeded = false;
+    const wantsAI = useAI && !!process.env.OPENAI_API_KEY;
+    if (wantsAI) {
+      quota = await consumeAIQuota(session.id);
+      if (!quota.result.allowed) {
+        aiQuotaExceeded = true;
+        quota = null;
+      }
     }
 
     // Parse CV
-    const parsedCV = await parseCV(buffer, { useAI, language });
-  
+    let aiSucceeded = false;
+    let parsedCV;
+    try {
+      parsedCV = await parseCV(buffer, {
+        useAI: wantsAI && !aiQuotaExceeded,
+        language,
+        onAIOutcome: (ok) => {
+          aiSucceeded = ok;
+        },
+      });
+    } finally {
+      // The user is not charged when the AI step failed or never ran.
+      if (quota && !aiSucceeded) await quota.refund();
+    }
+
 
     return NextResponse.json({
       success: true,
@@ -113,7 +149,8 @@ export async function POST(request: NextRequest) {
       data: parsedCV,
       meta: {
         fileSizeMB: fileSizeMB.toFixed(2),
-        usedAI: useAI && !!process.env.OPENAI_API_KEY,
+        usedAI: aiSucceeded,
+        ...(aiQuotaExceeded ? { aiQuotaExceeded: true } : {}),
       },
     });
   } catch (error) {

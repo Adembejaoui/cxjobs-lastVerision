@@ -235,8 +235,8 @@ export function CandidateApplicationsClient({
                 {formatStatus(app.status)}
               </span>
 
-              <Link href={`/jobs/${app.jobOffer?.slug}`}>
-                <Button variant="ghost" size="icon">
+              <Link href={`/jobs/${app.jobOffer?.slug}/preview`} aria-label={`View job: ${app.jobOffer?.title ?? "job"}`}>
+                <Button variant="ghost" size="icon" tabIndex={-1} aria-hidden="true">
                   <ExternalLink className="h-4 w-4" />
                 </Button>
               </Link>

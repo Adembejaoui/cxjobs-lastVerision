@@ -65,11 +65,24 @@ export function revalidateCachePath(path: string): void {
   revalidatePath(path);
 }
 
+/**
+ * Job and company data must disappear or change on the very next request
+ * after a close, delete, suspension or profile edit (launch plan P5/A6).
+ * The "max" profile would serve the stale copy once more (stale-while-
+ * revalidate); `{ expire: 0 }` makes the next request a blocking refresh.
+ */
+const IMMEDIATE = { expire: 0 } as const;
+
 // Revalidates all job-related caches
 export function revalidateJobOffers(): void {
-  revalidateTag("job-offers", "max");
-  revalidateTag("job-offer", "max");
+  revalidateTag("job-offers", IMMEDIATE);
+  revalidateTag("job-offer", IMMEDIATE);
   revalidatePath("/api/job-offers");
+  // Company pages are ISR (revalidate = 600) and list the company's jobs
+  // without a cache tag, so a job edit/publish/delete must refresh them too
+  // or they keep showing stale (even deleted) jobs for up to 10 minutes.
+  revalidatePath("/companies/[slug]", "page");
+  revalidatePath("/companies", "page");
 }
 
 // Revalidates all blog-related caches
@@ -87,6 +100,8 @@ export function revalidateStats(): void {
 
 // Revalidates company caches
 export function revalidateCompanies(): void {
-  revalidateTag("companies", "max");
+  revalidateTag("companies", IMMEDIATE);
   revalidatePath("/api/profile/allCompanies");
+  revalidatePath("/companies/[slug]", "page");
+  revalidatePath("/companies", "page");
 }

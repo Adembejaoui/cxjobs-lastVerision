@@ -1,38 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import prisma from "@/lib/prisma";
 import { isValidUuid } from "@/lib/utils";
-import { z } from "zod";
-import { getCachedDashboardStats, setCachedDashboardStats, invalidateCache } from "@/lib/local-cache";
+import { getCachedDashboardStats, setCachedDashboardStats } from "@/lib/local-cache";
 import { logger } from "@/lib/logger";
-import { benefitCategorySchema, benefitScopeSchema } from "@/lib/validations/profile";
 
 const COMPANY_STATS_KEY = (userId: string) => `dashboard:company:${userId}`;
 const CACHE_TTL = 60;
-
-// Validation schema for company profile update
-const updateCompanySchema = z.object({
-  name: z.string().min(2).optional(),
-  description: z.string().optional().nullable(),
-  companySize: z.string().optional().nullable(),
-  location: z.string().optional().nullable(),
-  website: z.string().url().optional().or(z.literal("")).nullable(),
-  linkedinUrl: z.string().optional().nullable(),
-  foundedYear: z.number().min(1800).max(new Date().getFullYear()).optional().nullable(),
-  benefits: z.array(z.object({
-    name: z.string().min(1),
-    description: z.string().optional(),
-    icon: z.string().optional(),
-    category: benefitCategorySchema.optional().default("OTHER"),
-    scope: benefitScopeSchema.optional().default("ADDITIONAL"),
-  })).optional().nullable(),
-  culture: z.array(z.object({
-    title: z.string(),
-    description: z.string()
-  })).optional().nullable(),
-  logoUrl: z.string().url().optional().or(z.literal("")).nullable(),
-  coverImageUrl: z.string().url().optional().or(z.literal("")).nullable(),
-});
 
 // GET /api/dashboard/company - Company dashboard data
 export async function GET() {
@@ -263,124 +237,7 @@ export async function GET() {
   }
 }
 
-// PUT /api/dashboard/company - Update company profile
-// Only the company that owns the profile can update it
-export async function PUT(request: NextRequest) {
-  try {
-    const session = await auth();
-
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized", code: "UNAUTHORIZED" },
-        { status: 401 }
-      );
-    }
-
-    if (session.user.role !== "COMPANY") {
-      return NextResponse.json(
-        { success: false, error: "Access denied", code: "FORBIDDEN" },
-        { status: 403 }
-      );
-    }
-
-    // Get company profile
-    const company = await prisma.companies.findUnique({
-      where: { userId: session.user.id },
-      select: { id: true },
-    });
-
-    if (!company) {
-      return NextResponse.json(
-        { success: false, error: "Company profile not found", code: "PROFILE_NOT_FOUND" },
-        { status: 404 }
-      );
-    }
-
-    // Parse and validate request body
-    const body = await request.json();
-    const validationResult = updateCompanySchema.safeParse(body);
-
-    if (!validationResult.success) {
-      return NextResponse.json(
-        { 
-          success: false, 
-          error: "Validation failed", 
-          code: "VALIDATION_ERROR",
-          details: validationResult.error.issues 
-        },
-        { status: 400 }
-      );
-    }
-
-    const { 
-      name, 
-      description, 
-      companySize, 
-      location, 
-      website, 
-      linkedinUrl, 
-      foundedYear,
-      benefits,
-      culture,
-      logoUrl,
-      coverImageUrl
-    } = validationResult.data;
-
-    // Build update data - only include fields that are defined
-    const updateData: Record<string, unknown> = {}
-
-    if (name) updateData.name = name
-    if (description !== undefined) updateData.description = description
-    if (companySize) updateData.companySize = companySize
-    if (location !== undefined) updateData.location = location
-    if (website !== undefined) updateData.website = website || null
-    if (linkedinUrl !== undefined) updateData.linkedinUrl = linkedinUrl
-    if (foundedYear !== undefined) updateData.foundedYear = foundedYear
-    if (culture !== undefined) updateData.culture = JSON.stringify(culture)
-    if (logoUrl !== undefined) updateData.logoUrl = logoUrl || null
-    if (coverImageUrl !== undefined) updateData.coverImageUrl = coverImageUrl || null
-
-    // Update company profile and benefits in a transaction
-    const updatedCompany = await prisma.$transaction(async (tx) => {
-      const updated = await tx.companies.update({
-        where: { id: company.id },
-        data: updateData,
-      });
-
-      // Manage benefits relationally — replace all existing benefits
-      if (benefits !== undefined) {
-        await tx.companyBenefit.deleteMany({
-          where: { companyId: company.id },
-        });
-
-        if (benefits && benefits.length > 0) {
-          await tx.companyBenefit.createMany({
-            data: benefits.map((b: { name: string; description?: string; icon?: string; category?: string; scope?: string }) => ({
-              companyId: company.id,
-              name: b.name,
-              description: b.description || null,
-              icon: b.icon || null,
-              category: (b.category as "HEALTH" | "FINANCIAL" | "WORK_ENVIRONMENT" | "CAREER_GROWTH" | "WORK_LIFE_BALANCE" | "OTHER") || "OTHER",
-              scope: (b.scope as "CORE" | "ADDITIONAL") || "ADDITIONAL",
-            })),
-          });
-        }
-      }
-
-      return updated;
-    });
-
-    await invalidateCache(COMPANY_STATS_KEY(session.user.id));
-
-    return NextResponse.json({
-      success: true,
-      data: updatedCompany,
-    });
-  } catch (error) {
-    logger.error("Update company profile error", { error });
-    return NextResponse.json(
-      { success: false, error: "Failed to update profile", code: "INTERNAL_ERROR" },
-      { status: 500 }
-    );
-  }
-}
+// PUT was removed (launch plan F3/A6, audit F-19): it was an unused second
+// write path that replaced every company benefit (cascading to job links).
+// Company profiles are edited only through POST /api/profile. Next.js answers
+// 405 Method Not Allowed for PUT requests.

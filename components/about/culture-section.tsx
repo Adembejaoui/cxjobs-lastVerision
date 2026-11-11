@@ -10,13 +10,10 @@ export default function CultureSection() {
             <h2 className="mt-4 text-3xl font-black tracking-[-0.04em] text-[#19345e] md:text-5xl">
               Our Office Culture
             </h2>
-            <p className="mt-4 max-w-2xl text-sm leading-7 text-[#728096] md:text-base">
+            <p className="mt-4 max-w-2xl text-sm leading-7 text-brand-muted md:text-base">
               We practice what we preach. Our internal culture is as vibrant and supportive as the ecosystems we build for our partners.
             </p>
           </div>
-          <a className="text-sm font-semibold text-[#22324b] underline-offset-4 hover:underline" href="#">
-            Follow us on Instagram →
-          </a>
         </div>
 
         <div className="mt-10 grid gap-4 lg:grid-cols-[1.05fr_1fr]">

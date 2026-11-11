@@ -1,28 +1,23 @@
-import { auth } from "@/lib/auth";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { UserProvider } from "@/components/auth/user-provider";
 
-export default async function PublicLayout({
+/**
+ * Public pages are the same for every visitor, so this layout does not read
+ * the session (launch plan A10): reading cookies here made every public page
+ * render per request. The navbar, footer and the job/apply pages read the
+ * signed-in user on the client instead (SessionProvider in app/providers.tsx).
+ */
+export default function PublicLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const session = await auth();
-  const user = session?.user ? {
-    id: session.user.id,
-    name: session.user.name ?? null,
-    email: session.user.email,
-    image: session.user.image ?? null,
-    role: session.user.role,
-    isOnboarded: session.user.isOnboarded,
-  } : null;
-
   return (
-    <UserProvider user={user}>
-      <Navbar user={user} />
+    <UserProvider>
+      <Navbar />
       {children}
-      <Footer user={user} />
+      <Footer />
     </UserProvider>
   );
 }

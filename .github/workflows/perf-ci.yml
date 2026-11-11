@@ -1,14 +1,51 @@
 name: Performance CI
 
+# Lighthouse against a LOCAL production build. Safety:
+#  - No production (or any service) secrets: every service variable is an
+#    unroutable placeholder (127.0.0.1:9), so the build and the local server
+#    can never reach a real database, Redis, storage bucket, email provider or
+#    OAuth app. The build performs no database access by design.
+#  - Only pages that render without a database or a session are audited
+#    (see lighthouserc.json); data-backed pages need a staging environment.
+#  - Reports are kept as a workflow artifact (filesystem upload), never
+#    published to public storage.
+#  - Nothing is deployed and no external URL is load-tested.
+
 on:
   push:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+  DATABASE_URL: postgresql://placeholder:placeholder@127.0.0.1:9/placeholder
+  DIRECT_DATABASE_URL: postgresql://placeholder:placeholder@127.0.0.1:9/placeholder
+  AUTH_SECRET: ci-placeholder-secret-not-real-0123456789
+  NEXTAUTH_URL: http://localhost:3000
+  NEXT_PUBLIC_APP_URL: http://localhost:3000
+  GOOGLE_CLIENT_ID: placeholder
+  GOOGLE_CLIENT_SECRET: placeholder
+  # Format-valid all-zero key (base64 of 32 bytes); required at module load.
+  INVITATION_TOKEN_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+  UPSTASH_REDIS_REST_URL: http://127.0.0.1:9
+  UPSTASH_REDIS_REST_TOKEN: placeholder
+  NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:9
+  SUPABASE_SERVICE_ROLE_KEY: placeholder
+  EMAIL_PROVIDER: disabled
 
 jobs:
   lighthouse:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -16,37 +53,22 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
           cache: "npm"
 
+      # postinstall runs `prisma generate` (offline; needs no database URL).
       - name: Install dependencies
         run: npm ci
 
-      - name: Generate Prisma Client
-        run: npm run db:generate
-
       - name: Build application
         run: npm run build
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          AUTH_SECRET: ${{ secrets.AUTH_SECRET }}
-          NEXTAUTH_URL: http://localhost:3000
-          UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL }}
-          UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
-      - name: Start server
-        run: |
-          npm run start &
-          sleep 10
-          curl -f http://localhost:3000/ || exit 1
-
+      # Lighthouse CI starts the server itself (startServerCommand in
+      # lighthouserc.json) with the placeholder env above, waits for "Ready",
+      # audits, and stops it. No separate `npm run start` step: that used to
+      # start a second server on the same port, without any env.
       - name: Run Lighthouse CI
         run: npx lhci autorun
-        env:
-          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
 
       - name: Upload Lighthouse results
         if: always()

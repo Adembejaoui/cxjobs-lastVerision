@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import  prisma  from "@/lib/prisma";
 import { parsePaginationParams } from "@/lib/utils";
 import { logger } from "@/lib/logger";
+import { activeCompanyWhere } from "@/lib/security/company-activity";
 
 function getOrderBy(sort?: string | null) {
   switch (sort) {
@@ -34,8 +35,9 @@ export async function GET(request: NextRequest) {
     const companySize = searchParams.get("companySize");
     const sort = searchParams.get("sort");
 
+    // F-04: suspended (inactive owner) and deleted companies are not listed.
     const where: Record<string, unknown> = {
-      deletedAt: null,
+      ...activeCompanyWhere(),
     };
 
     if (location) {
@@ -59,8 +61,19 @@ export async function GET(request: NextRequest) {
           companySize: true,
           location: true,
           createdAt: true,
+          // Public endpoint: count only live jobs, like GET /api/companies/[slug].
+          // Counting every row revealed how many drafts / deleted / expired
+          // jobs each company has (Phase 4A).
           _count: {
-            select: { jobs: true },
+            select: {
+              jobs: {
+                where: {
+                  status: "PUBLISHED",
+                  deletedAt: null,
+                  OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+                },
+              },
+            },
           },
         },
         skip,

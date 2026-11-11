@@ -243,7 +243,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file
+    // Validate file by CONTENT (magic bytes / container structure); the
+    // declared MIME type and filename are only checked for consistency.
     const validation = await validateFile(file, config.bucket);
     if (!validation.valid) {
       return NextResponse.json(
@@ -263,12 +264,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Generate unique file path
-    const filePath = generateFilePath(config.bucket, userId, file.name);
+    // Processed images are re-encoded, so their stored extension follows the
+    // output format; documents keep their detected format.
+    const storedExtension = imageType
+      ? IMAGE_CONFIG[imageType].outputFormat === "png" ? "png" : "webp"
+      : validation.extension;
 
-    // Convert file to buffer
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    // Server-generated object name: random, owner-prefixed, never derived
+    // from the client filename.
+    const filePath = generateFilePath(config.bucket, userId, storedExtension);
+
+    const buffer = validation.buffer;
 
     // Server-side image validation (Sharp metadata + dimensions + format)
     if (imageType) {
@@ -289,7 +295,7 @@ export async function POST(request: NextRequest) {
       ? IMAGE_CONFIG[imageType].outputFormat === "png"
         ? "image/png"
         : "image/webp"
-      : file.type;
+      : validation.mime; // detected type, never the browser-declared one
 
     const { data, error } = await supabase!.storage
       .from(config.bucket)
@@ -306,21 +312,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get URL — use signed URL for CV bucket (private), public URL for image buckets
-    let fileUrl: string;
+    // CVs (private bucket): return only the object path. The path is what
+    // the profile stores; viewing goes through authorized routes that mint a
+    // short-lived signed URL. A brief preview URL is returned for immediate UI
+    // feedback but must not be persisted.
     if (config.bucket === STORAGE_BUCKETS.CV) {
-      const signedUrl = await getSignedUrl(config.bucket, data.path, 3600);
-      if (!signedUrl) {
-        logger.error("Failed to generate signed URL for private file");
-        return NextResponse.json(
-          { success: false, error: "Failed to generate secure file URL", code: "URL_GENERATION_ERROR" },
-          { status: 500 }
-        );
-      }
-      fileUrl = signedUrl;
-    } else {
-      fileUrl = getPublicUrl(config.bucket, data.path);
+      const previewUrl = await getSignedUrl(config.bucket, data.path, 120);
+      return NextResponse.json({
+        success: true,
+        message: "File uploaded successfully",
+        data: {
+          url: previewUrl,
+          path: data.path,
+          bucket: config.bucket,
+        },
+      });
     }
+
+    const fileUrl = getPublicUrl(config.bucket, data.path);
 
     return NextResponse.json({
       success: true,

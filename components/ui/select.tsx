@@ -181,7 +181,7 @@ export function SelectItem({
       className={cn(
         "relative flex w-full cursor-pointer select-none items-center rounded-md py-1.5 pl-8 pr-2 text-sm outline-none hover:bg-slate-100 focus:bg-slate-100",
         disabled && "cursor-not-allowed opacity-50",
-        isSelected && "bg-slate-100 text-[#47d79d]",
+        isSelected && "bg-slate-100 text-brand-green-text",
         className
       )}
       onClick={() => !disabled && onSelect?.()}

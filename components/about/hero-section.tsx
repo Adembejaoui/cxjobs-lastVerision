@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 export default function HeroSection() {
   return (
     <section className="px-6 py-12 md:px-10 lg:px-14 lg:py-16">
@@ -13,17 +15,17 @@ export default function HeroSection() {
             <span className="text-[#45c888] italic">Talent</span> and <br /> BPOs
           </h1>
 
-          <p className="mt-6 max-w-xl text-sm leading-7 text-[#6f7d91] md:text-base md:leading-8">
+          <p className="mt-6 max-w-xl text-sm leading-7 text-brand-muted md:text-base md:leading-8">
             Revolutionizing the CX hiring ecosystem by connecting world-class talent with industry-leading partners through innovation, transparency, and a human-centric approach.
           </p>
 
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <button className="rounded-xl bg-[#183d73] px-6 py-4 text-sm font-extrabold text-white shadow-[0_12px_24px_rgba(24,61,115,0.22)]">
+            <Link href="/jobs" className="rounded-xl bg-[#183d73] px-6 py-4 text-center text-sm font-extrabold text-white shadow-[0_12px_24px_rgba(24,61,115,0.22)]">
               Explore Open Roles
-            </button>
-            <button className="rounded-xl bg-white px-6 py-4 text-sm font-semibold text-[#1c3457] shadow-[0_6px_18px_rgba(10,20,40,0.06)]">
-              How We Help Partners
-            </button>
+            </Link>
+            <Link href="/companies" className="rounded-xl bg-white px-6 py-4 text-center text-sm font-semibold text-[#1c3457] shadow-[0_6px_18px_rgba(10,20,40,0.06)]">
+              Discover Employers
+            </Link>
           </div>
         </div>
 

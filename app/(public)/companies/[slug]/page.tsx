@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Globe, Linkedin, Twitter } from 'lucide-react'
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, permanentRedirect } from 'next/navigation'
 import {
   CoverImage,
   CompanyInfo,
@@ -13,9 +13,19 @@ import {
 } from '@/components/company-profile'
 
 import prisma from '@/lib/prisma'
+import { activeCompanyWhere } from '@/lib/security/company-activity'
+import { toSafeHref } from "@/lib/security/safe-url";
+import { resolveCompanySlugRedirect } from '@/lib/server/company-slug'
 
 // ISR - regenerate every 10 minutes
 export const revalidate = 600
+export const dynamicParams = true
+
+// A10: rendered on first request, then served from the ISR cache. Nothing is
+// prebuilt, so `next build` never needs database access.
+export async function generateStaticParams(): Promise<Array<{ slug: string }>> {
+  return []
+}
 
 interface JobOffer {
   id: string
@@ -94,10 +104,11 @@ function transformBenefitsForDisplay(
 
 async function getCompany(slug: string): Promise<Company | null> {
   // Get company with benefits and culture (without jobs to avoid type issues)
-  const company = await prisma.companies.findUnique({
+  // F-04: a suspended or deleted company has no public page (notFound).
+  const company = await prisma.companies.findFirst({
     where: {
       slug,
-      deletedAt: null
+      ...activeCompanyWhere(),
     },
     select: {
       id: true,
@@ -133,9 +144,13 @@ async function getCompany(slug: string): Promise<Company | null> {
   // Get published jobs (limited to 10) and count in parallel
   const [publishedJobs, publishedJobsCount] = await Promise.all([
     prisma.jobOffer.findMany({
+      // Same visibility rule as the public job catalogue: soft-deleted and
+      // expired jobs are never listed (or counted) on the company page.
       where: {
         companyId: company.id,
-        status: 'PUBLISHED'
+        status: 'PUBLISHED',
+        deletedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
       },
       select: {
         id: true,
@@ -158,9 +173,13 @@ async function getCompany(slug: string): Promise<Company | null> {
       take: 10
     }),
     prisma.jobOffer.count({
+      // Same visibility rule as the public job catalogue: soft-deleted and
+      // expired jobs are never listed (or counted) on the company page.
       where: {
         companyId: company.id,
-        status: 'PUBLISHED'
+        status: 'PUBLISHED',
+        deletedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
       }
     })
   ])
@@ -214,15 +233,24 @@ export async function generateMetadata({ params }: PageProps) {
 
   if (!company) {
     return {
-      title: 'Company Not Found | JobHub'
+      title: 'Company Not Found | CXJobs',
+      robots: { index: false },
     }
   }
 
+  const description = (company.description || `View ${company.name}'s profile and job openings on CXJobs`).slice(0, 300)
   return {
-    title: `${company.name} | JobHub`,
-    description:
-      company.description ||
-      `View ${company.name}'s profile and job openings on JobHub`
+    title: `${company.name} | CXJobs`,
+    description,
+    alternates: { canonical: `/companies/${company.slug}` },
+    openGraph: {
+      type: 'website',
+      siteName: 'CXJobs',
+      title: `${company.name} | CXJobs`,
+      description,
+      url: `/companies/${company.slug}`,
+      ...(company.logoUrl ? { images: [{ url: company.logoUrl, alt: company.name }] } : {}),
+    },
   }
 }
 
@@ -233,6 +261,9 @@ export default async function CompanyDetailPage({
   const company = await getCompany(resolvedParams.slug)
 
   if (!company) {
+    // A6: an old slug of a company that renamed its page redirects (308).
+    const current = await resolveCompanySlugRedirect(resolvedParams.slug)
+    if (current) permanentRedirect(`/companies/${current}`)
     notFound()
   }
 
@@ -308,11 +339,11 @@ export default async function CompanyDetailPage({
                     </p>
 
                     <a
-                      href={
+                      href={toSafeHref(
                         company.website.startsWith('http')
                           ? company.website
                           : `https://${company.website}`
-                      }
+                      )}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-2 text-primary hover:underline"

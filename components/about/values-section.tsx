@@ -34,7 +34,7 @@ export default function ValuesSection() {
           <h2 className="mt-4 text-3xl font-black tracking-[-0.04em] text-[#19345e] md:text-5xl">
             The Principles That Guide Us
           </h2>
-          <p className="mx-auto mt-4 max-w-3xl text-sm leading-7 text-[#7a879a] md:text-base">
+          <p className="mx-auto mt-4 max-w-3xl text-sm leading-7 text-brand-muted md:text-base">
             We believe that a great hiring experience is built on trust, transparency, and a relentless focus on the individual.
           </p>
         </div>
@@ -49,7 +49,7 @@ export default function ValuesSection() {
                 {value.icon}
               </div>
               <h3 className="mt-6 text-xl font-extrabold tracking-[-0.03em] text-[#1a365f]">{value.title}</h3>
-              <p className="mt-3 text-sm leading-7 text-[#758296]">{value.description}</p>
+              <p className="mt-3 text-sm leading-7 text-brand-muted">{value.description}</p>
             </div>
           ))}
         </div>

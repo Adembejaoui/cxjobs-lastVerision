@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { User, LogOut, LayoutDashboard, Menu, X } from "lucide-react"
 import { useState } from "react"
+import { useUser } from "@/components/auth/user-provider"
 
 interface UserData {
   id?: string;
@@ -30,10 +31,13 @@ const navigation = [
 ]
 
 interface NavbarProps {
-  user: UserData | null;
+  /** Omit to read the signed-in user from the client session (A10). */
+  user?: UserData | null;
 }
 
-export function Navbar({ user }: NavbarProps) {
+export function Navbar({ user: userProp }: NavbarProps) {
+  const sessionUser = useUser()
+  const user = userProp !== undefined ? userProp : sessionUser
   const pathname = usePathname()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 

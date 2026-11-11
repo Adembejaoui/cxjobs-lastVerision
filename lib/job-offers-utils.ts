@@ -49,24 +49,20 @@ export function applyJobOfferFilters(
   },
   now: Date
 ) {
+  // Semantics: values WITHIN one filter are alternatives (OR / `in`); different
+  // filters must ALL match (AND). Each group therefore gets its own entry in
+  // `andConditions`. (Previously every group was appended to a single shared
+  // `OR`, so e.g. search=agent&location=Tunis matched jobs satisfying EITHER.)
+  const csv = (value: string) => value.split(",").map((t) => t.trim()).filter(Boolean);
+
   if (filters.contractType) {
-    const types = filters.contractType.split(",").map((t) => t.trim()).filter(Boolean)
-    if (types.length === 1) {
-      (where as Record<string, unknown>).contractType = types[0]
-    } else if (types.length > 1) {
-      const existingOr = Array.isArray(where.OR) ? (where.OR as unknown[]) : []
-      where.OR = [...existingOr, ...types.map((t) => ({ contractType: t }))]
-    }
+    const types = csv(filters.contractType);
+    if (types.length > 0) andConditions.push({ contractType: { in: types } });
   }
 
   if (filters.employmentType) {
-    const levels = filters.employmentType.split(",").map((l) => l.trim()).filter(Boolean)
-    if (levels.length === 1) {
-      (where as Record<string, unknown>).employmentType = levels[0]
-    } else if (levels.length > 1) {
-      const existingOr = Array.isArray(where.OR) ? (where.OR as unknown[]) : []
-      where.OR = [...existingOr, ...levels.map((l) => ({ employmentType: l }))]
-    }
+    const levels = csv(filters.employmentType);
+    if (levels.length > 0) andConditions.push({ employmentType: { in: levels } });
   }
 
   if (filters.isRemote !== undefined) {
@@ -88,41 +84,25 @@ export function applyJobOfferFilters(
     andConditions.push({ AND: salaryAnd });
   }
 
-  if (filters.location) {
-    const locationOr = [
-      { customLocation: { contains: filters.location, mode: "insensitive" } },
-      { company: { location: { contains: filters.location, mode: "insensitive" } } },
-    ];
-    where.OR = [...(Array.isArray(where.OR) ? where.OR : []), ...locationOr];
+  const location = filters.location?.trim();
+  if (location) {
+    andConditions.push({
+      OR: [
+        { customLocation: { contains: location, mode: "insensitive" } },
+        { company: { location: { contains: location, mode: "insensitive" } } },
+      ],
+    });
   }
 
-  if (filters.search) {
-    const trimmedSearch = filters.search.trim();
-    if (trimmedSearch) {
-      where.OR = [
-        ...(Array.isArray(where.OR) ? where.OR : []),
-        {
-          title: {
-            contains: trimmedSearch,
-            mode: "insensitive",
-          },
-        },
-        {
-          description: {
-            contains: trimmedSearch,
-            mode: "insensitive",
-          },
-        },
-        {
-          company: {
-            name: {
-              contains: trimmedSearch,
-              mode: "insensitive",
-            },
-          },
-        },
-      ];
-    }
+  const search = filters.search?.trim();
+  if (search) {
+    andConditions.push({
+      OR: [
+        { title: { contains: search, mode: "insensitive" } },
+        { description: { contains: search, mode: "insensitive" } },
+        { company: { name: { contains: search, mode: "insensitive" } } },
+      ],
+    });
   }
 
   if (filters.language) {
@@ -137,18 +117,8 @@ export function applyJobOfferFilters(
   }
 
   if (filters.activityType) {
-    const types = filters.activityType.split(",").map((t) => t.trim()).filter(Boolean)
-    if (types.length === 1) {
-      (where as Record<string, unknown>).activityType = types[0]
-    } else if (types.length > 1) {
-      const existingOr = Array.isArray(where.OR) ? (where.OR as unknown[]) : []
-      where.OR = [...existingOr, ...types.map((t) => ({ activityType: t }))]
-    }
-  }
-
-  if (where.OR) {
-    andConditions.push({ OR: where.OR });
-    delete where.OR;
+    const types = csv(filters.activityType);
+    if (types.length > 0) andConditions.push({ activityType: { in: types } });
   }
 
   andConditions.push({

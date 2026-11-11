@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import  prisma  from "@/lib/prisma";
 import { logger } from "@/lib/logger";
+import { publicJobWhere } from "@/lib/security/company-activity";
+import { CANDIDATE_APPLICATION_SCALARS } from "@/lib/security/application-fields";
 
 // GET /api/dashboard/candidate - Candidate dashboard data
 export async function GET() {
@@ -68,7 +70,9 @@ export async function GET() {
         where: { candidateId: candidate.id },
         take: 5,
         orderBy: { createdAt: "desc" },
-        include: {
+        // Explicit allow-list keeps recruiter `notes` out of candidate responses.
+        select: {
+          ...CANDIDATE_APPLICATION_SCALARS,
           jobOffer: {
             select: {
               id: true,
@@ -89,8 +93,9 @@ export async function GET() {
       }),
       prisma.jobOffer.findMany({
         where: {
-          status: "PUBLISHED",
-          deletedAt: null,
+          // Recommendations are public jobs only: published, not deleted,
+          // not expired, active company (F-04).
+          ...publicJobWhere(),
           ...(topSkills.length > 0 && {
             OR: topSkills.map((skill: string) => ({
               description: { contains: skill, mode: "insensitive" as const },

@@ -3,6 +3,10 @@ import { requireAdmin } from "@/lib/auth-helpers";
 import prisma from "@/lib/prisma";
 import { adminUpdateUserWithCompanySchema } from "@/lib/validations/auth";
 import { logger } from "@/lib/logger";
+import { revalidateJobOffers, revalidateCompanies } from "@/lib/cache";
+import { isCompanySlugAvailable, recordCompanySlugChange } from "@/lib/server/company-slug";
+import { bumpSessionVersion, publishSessionVersion } from "@/lib/server/session-revocation";
+import { emailIsTaken, normalizeEmail, type EmailLookupDb } from "@/lib/server/user-email";
 
 export async function PATCH(
   request: NextRequest,
@@ -60,7 +64,7 @@ export async function PATCH(
         name: true,
         isActive: true,
         companies: {
-          select: { id: true },
+          select: { id: true, slug: true },
         },
       },
     });
@@ -156,12 +160,7 @@ export async function PATCH(
 
       // Only check if the email is actually changing
       if (!existingCompany || existingCompany.emailCompany !== normalizedEmailCompany) {
-        const existingUser = await prisma.user.findUnique({
-          where: { email: normalizedEmailCompany },
-          select: { id: true },
-        });
-
-        if (existingUser) {
+        if (await emailIsTaken(prisma.user as unknown as EmailLookupDb<{ email: string }>, normalizedEmailCompany)) {
           return NextResponse.json(
             {
               success: false,
@@ -179,15 +178,11 @@ export async function PATCH(
 
 // If company slug is being updated, enforce uniqueness
 if (companyData?.slug !== undefined) {
-  const existingCompanySlug = await prisma.companies.findFirst({
-    where: {
-      slug: { equals: companyData.slug, mode: "insensitive" },
-      userId: { not: id },
-    },
-    select: { id: true },
-  });
+  // Taken by another company now, or formerly (its old links redirect
+  // there: launch plan A6).
+  const slugFree = await isCompanySlugAvailable(prisma, String(companyData.slug), target.companies?.id ?? null);
 
-  if (existingCompanySlug) {
+  if (!slugFree) {
     return NextResponse.json(
       { success: false, error: "Company slug already in use", code: "SLUG_IN_USE" },
       { status: 409 }
@@ -225,9 +220,29 @@ if (companyData?.slug !== undefined) {
     }
 
     // Execute updates in a transaction for atomicity
+    let revokedVersion: number | null = null;
     const result = await prisma.$transaction(async (tx) => {
       let updatedUser = null;
       let updatedCompany = null;
+
+      // Suspension or an identity (email) change signs the user out of every
+      // existing session, atomically with the change itself.
+      const emailChanged = userData.email !== undefined && userData.email !== target.email;
+      if (userData.isActive === false || emailChanged) {
+        revokedVersion = await bumpSessionVersion(tx, id);
+      }
+
+      // A NEW address (not merely a case normalization of the old one) is not
+      // proven to belong to the user, and links already mailed to the OLD
+      // address must stop working: a reset link would otherwise let the old
+      // mailbox owner take over the account for up to an hour (NF-15).
+      const addressChanged =
+        userData.email !== undefined && userData.email !== normalizeEmail(target.email);
+      if (addressChanged) {
+        userData.emailVerified = null;
+        await tx.passwordResetToken.deleteMany({ where: { userId: id } });
+        await tx.emailVerificationToken.deleteMany({ where: { userId: id } });
+      }
 
       // Update user if needed
       if (hasUserUpdates) {
@@ -281,10 +296,29 @@ if (companyData?.slug !== undefined) {
             updatedAt: true,
           },
         });
+        if (target.companies.slug !== updatedCompany.slug) {
+          await recordCompanySlugChange(tx, target.companies.id, target.companies.slug, updatedCompany.slug);
+        }
       }
 
       return { user: updatedUser, company: updatedCompany };
     });
+
+    // F-04: suspending or reactivating a company changes what is public
+    // (catalogue, job pages, company pages and listings). Targeted
+    // invalidation of exactly those caches, after the commit.
+    // A6: an admin edit of the public company profile is visible at once too.
+    if (
+      (target.role === "COMPANY" && updates.isActive !== undefined && updates.isActive !== target.isActive) ||
+      result.company
+    ) {
+      revalidateJobOffers();
+      revalidateCompanies();
+    }
+
+    if (revokedVersion !== null) {
+      await publishSessionVersion(id, revokedVersion);
+    }
 
     return NextResponse.json({
       success: true,

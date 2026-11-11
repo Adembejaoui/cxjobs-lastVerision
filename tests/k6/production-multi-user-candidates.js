@@ -1,8 +1,14 @@
 import http from 'k6/http';
 import { check, sleep, group } from 'k6';
 import { Trend, Rate, Counter, Gauge } from 'k6/metrics';
+import { resolveStagingTarget } from './lib/target-guard.mjs';
 
-const BASE_URL = __ENV.K6_BASE_URL || 'https://cxjobs-last-verision.vercel.app';
+// Explicit staging/preview/local target required; production is always refused
+// (see ./lib/target-guard.mjs). The script aborts in k6's init stage otherwise.
+const BASE_URL = resolveStagingTarget(__ENV.K6_BASE_URL, {
+  productionHosts: __ENV.K6_PRODUCTION_HOSTS,
+  allowedHosts: __ENV.K6_ALLOWED_HOSTS,
+});
 const cookieFile = __ENV.K6_SESSION_COOKIES_FILE;
 const cookieEnv = __ENV.K6_SESSION_COOKIES;
 

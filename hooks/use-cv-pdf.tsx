@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo } from "react";
 import { pdf } from "@react-pdf/renderer";
 import { CVPDFDocument, Candidate } from "@/components/cv/cv-pdf-document";
 import { logger } from "@/lib/logger";
+import { loadWatermarkDataUrl } from "@/lib/cv/watermark";
 
 interface CooldownInfo {
   remainingMs: number;
@@ -81,29 +82,13 @@ export function useCVPDF({ candidate, watermarkSrc }: UseCVPDFOptions): UseCVPDF
     }
   }, []);
 
+  // Best-effort: a missing/unreachable watermark must never block the export.
   const resolveWatermarkSrc = useCallback(async (): Promise<string | null> => {
-    const src = watermarkSrc?.trim();
-    if (!src) return null;
-    if (src.startsWith("data:")) return src;
-
-    const response = await fetch(src, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`Failed to fetch watermark image: ${response.status}`);
+    const dataUrl = await loadWatermarkDataUrl(watermarkSrc);
+    if (watermarkSrc && !dataUrl) {
+      logger.warn("CV watermark unavailable; exporting PDF without it");
     }
-
-    const blob = await response.blob();
-    return await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (typeof reader.result === "string") {
-          resolve(reader.result);
-          return;
-        }
-        reject(new Error("Failed to read watermark image as data URL"));
-      };
-      reader.onerror = () => reject(new Error("Failed to convert watermark image"));
-      reader.readAsDataURL(blob);
-    });
+    return dataUrl;
   }, [watermarkSrc]);
 
   const sanitizedCandidate = useMemo(() => {
@@ -186,7 +171,7 @@ export function useCVPDF({ candidate, watermarkSrc }: UseCVPDFOptions): UseCVPDF
       const profileImageDataUrl = await resolveImageSrc(candidate.avatarUrl).catch(() => null);
 
       const blob = await pdf(
-        <CVPDFDocument candidate={sanitizedCandidate} watermarkSrc={watermarkDataUrl ?? watermarkSrc ?? null} profileImageSrc={profileImageDataUrl} />
+        <CVPDFDocument candidate={sanitizedCandidate} watermarkSrc={watermarkDataUrl} profileImageSrc={profileImageDataUrl} />
       ).toBlob();
 
       if (!blob || blob.size === 0) {
@@ -202,7 +187,7 @@ export function useCVPDF({ candidate, watermarkSrc }: UseCVPDFOptions): UseCVPDF
     } finally {
       setIsGenerating(false);
     }
-  }, [resolveWatermarkSrc, resolveImageSrc, sanitizedCandidate, watermarkSrc, candidate.avatarUrl]);
+  }, [resolveWatermarkSrc, resolveImageSrc, sanitizedCandidate, candidate.avatarUrl]);
 
   const commitExport = useCallback(async () => {
     setIsCommitting(true);

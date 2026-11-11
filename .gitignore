@@ -7,24 +7,48 @@ out/
 build/
 *.tsbuildinfo
 
-# Environment / secrets
+# Environment / secrets (Release Gate 0)
+# Every env file is ignored (.env, .env.local, .env.staging, .env.production,
+# .env.development, .env.test, .env.k6, .env.*.local, ...). Real staging and
+# production credentials belong OUTSIDE the repository; see
+# docs/RELEASE-GATE-0-SECURITY-REVIEW.md.
 .env
-.env.example
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-.env.k6.local
+.env.*
+.env*.local
+# The template is committed on purpose (placeholders only, never real values).
+!.env.example
+# Keys, certificates and credential stores
+*.pem
+*.key
+*.p12
+*.pfx
+.secrets/
+secrets/
+*.secret
+*.secrets.json
+# Database dumps and backups (personal data); scripts/ops writes ./backups
+backups/
+*.dump
+*.dump.age
+*.sql.gz
 
 # Testing / coverage
 coverage/
 playwright-report/
 test-results/
 
-# K6 local test artifacts
-.k6-cookies.txt
-.k6-candidate-cookies.txt
-.k6-company-cookies.txt
+# Load-test / security-test artifacts: session cookies, generated sessions,
+# credentials and results (they can hold raw login tokens or test passwords)
+.k6-*
+*cookies*.txt
+*.cookies
+*session-token*
+k6-sessions*/
+results*.json
+summary.json
+*-idor*
+.auth/
+storageState*.json
 
 # Logs
 npm-debug.log*
@@ -42,7 +66,6 @@ summary.json
 
 # IDE / OS
 .DS_Store
-*.pem
 .vercel
 -p
 

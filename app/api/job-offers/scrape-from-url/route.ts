@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { extractJobFromUrlText, isAIConfigured } from "@/lib/ai-service";
+import { AIServiceError } from "@/lib/ai-errors";
 import { fetchUrlText } from "@/lib/job-scraper";
 import { scrapeJobUrlSchema, type ScrapeJobUrlInput } from "@/lib/validations/job";
-import { checkRateLimitAsync, getRateLimitHeaders } from "@/lib/rate-limit";
+import { checkRateLimitsAsync, getRateLimitHeaders } from "@/lib/rate-limit";
 import { logger } from "@/lib/logger";
+import { getClientIp } from "@/lib/utils";
+import { consumeAIQuota, aiQuotaExceededBody, aiQuotaHeaders, type AIQuotaTicket } from "@/lib/security/ai-quota";
+
+// Platform ceiling; the route gives up at ROUTE_TIMEOUT_MS with a clean 504.
+export const maxDuration = 60;
 
 const SCRAPE_LIMIT = { windowMs: 60_000, max: 5 };
+const SCRAPE_IP_LIMIT = { windowMs: 60_000, max: 10 };
 
 // Hard timeout prevents this route from hanging forever if the target
 // site is slow.  22 seconds leaves headroom before Vercel/edge timeout.
@@ -30,19 +37,10 @@ export async function POST(request: NextRequest) {
   // ─── 1. Enforce overall timeout (hard guard) ───
   const outer = new AbortController();
   const outerTimer = setTimeout(() => outer.abort(), ROUTE_TIMEOUT_MS);
+  let quota: AIQuotaTicket | null = null;
 
   try {
-    // ─── 2. Rate limiting ───
-    const ip = request.headers.get("x-forwarded-for") || "unknown";
-    const rl = await checkRateLimitAsync(`scrape:${ip}`, SCRAPE_LIMIT);
-    if (!rl.allowed) {
-      return NextResponse.json(
-        { success: false, error: "Too many requests. Please try again later.", code: "RATE_LIMITED" },
-        { status: 429, headers: getRateLimitHeaders(rl) }
-      );
-    }
-
-    // ─── 3. Auth guard (company role required) ───
+    // ─── 2. Auth guard (company role required) ───
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json(
@@ -58,6 +56,18 @@ export async function POST(request: NextRequest) {
           code: "FORBIDDEN",
         },
         { status: 403 }
+      );
+    }
+
+    // ─── 3. Rate limiting (per account AND per IP, before any outbound work) ───
+    const rl = await checkRateLimitsAsync([
+      { key: `scrape-user:${session.user.id}`, config: SCRAPE_LIMIT },
+      { key: `scrape-ip:${getClientIp(request)}`, config: SCRAPE_IP_LIMIT },
+    ]);
+    if (!rl.allowed) {
+      return NextResponse.json(
+        { success: false, error: "Too many requests. Please try again later.", code: "RATE_LIMITED" },
+        { status: 429, headers: getRateLimitHeaders(rl) }
       );
     }
 
@@ -89,7 +99,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ─── 5. Fetch page text (server-side, no CORS) ───
-    const pageText = await fetchUrlText(url);
+    const pageText = await fetchUrlText(url, { signal: outer.signal });
     if (!pageText) {
       return NextResponse.json(
         {
@@ -102,11 +112,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ─── 6. Let AI extract structured fields ───
-    const extracted = await extractJobFromUrlText({
-      content: pageText,
-      language: language ?? "en",
-    });
+    // ─── 6. Daily per-user AI allowance (S7), only once there is work to do ───
+    quota = await consumeAIQuota(session.user.id);
+    if (!quota.result.allowed) {
+      return NextResponse.json(aiQuotaExceededBody(), { status: 429, headers: aiQuotaHeaders(quota.result) });
+    }
+
+    // ─── 7. Let AI extract structured fields ───
+    // The route deadline now also bounds the AI call (it previously applied
+    // only to the page fetch).
+    const extracted = await extractJobFromUrlText(
+      { content: pageText, language: language ?? "en" },
+      { signal: outer.signal }
+    );
 
     return NextResponse.json({
       success: true,
@@ -114,8 +132,13 @@ export async function POST(request: NextRequest) {
       data: extracted,
     });
   } catch (error) {
+    // The user is not charged for a failed AI call.
+    await quota?.refund();
     // Distinguish timeout errors from everything else
-    if ((error as Error).name === "AbortError") {
+    if (
+      (error as Error).name === "AbortError" ||
+      (error instanceof AIServiceError && error.kind === "timeout")
+    ) {
       return NextResponse.json(
         {
           success: false,

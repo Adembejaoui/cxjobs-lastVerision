@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useUser } from "@/components/auth/user-provider"
 import {
@@ -82,6 +82,7 @@ interface JobOffer {
   title: string
   slug: string
   salary: string | null
+  salaryMin: number | null
   salaryMax: number | null
   salaryCurrency: string | null
   isRemote: boolean
@@ -106,6 +107,26 @@ interface JobOffer {
 interface JobsPageClientProps {
   initialJobs?: JobOffer[]
   totalJobs?: number
+}
+
+/**
+ * Salary label from the structured salaryMin/salaryMax columns. The free-text
+ * `salary` field is shown verbatim only when no numbers exist: it used to be
+ * parseFloat-ed, so "1500-2000 TND" rendered as a single, wrong figure.
+ */
+function formatSalary(
+  job: Pick<JobOffer, "salary" | "salaryMin" | "salaryMax" | "salaryCurrency">,
+  symbols: Record<string, string>
+): string {
+  const currency = job.salaryCurrency || "USD" // schema default
+  const symbol = symbols[currency] ?? currency
+  const amount = (n: number) => `${symbol}${n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n}`
+  const { salaryMin: min, salaryMax: max } = job
+  if (min && max) return min === max ? `${amount(min)}/mo` : `${amount(min)} – ${amount(max)}/mo`
+  if (max) return `Up to ${amount(max)}/mo`
+  if (min) return `From ${amount(min)}/mo`
+  const text = typeof job.salary === "string" ? job.salary.trim() : ""
+  return text || "Salary TBD"
 }
 
 
@@ -134,7 +155,15 @@ export default function JobsPageClient({ initialJobs = [], totalJobs = 0 }: Jobs
       checked: initialActivityValues.has(item.value),
     })),
     selectedLanguage: searchParams.get("language") ?? "",
-    location: searchParams.get("location") ?? "",
+    // Work modes are written to the URL as isRemote/isHybrid flags (not as
+    // `location`), so read them back too or a reload silently drops them.
+    location:
+      searchParams.get("location") ??
+      (searchParams.get("isRemote") === "true"
+        ? "Remote"
+        : searchParams.get("isHybrid") === "true"
+          ? "Hybrid"
+          : ""),
     searchQuery: searchParams.get("search") ?? "",
   }
 
@@ -198,6 +227,8 @@ export default function JobsPageClient({ initialJobs = [], totalJobs = 0 }: Jobs
     if (appliedLocation) {
       if (appliedLocation === "Remote") {
         params.set('isRemote', 'true')
+      } else if (appliedLocation === "Hybrid") {
+        params.set('isHybrid', 'true')
       } else {
         params.set('location', appliedLocation)
       }
@@ -206,11 +237,20 @@ export default function JobsPageClient({ initialJobs = [], totalJobs = 0 }: Jobs
     return params.toString()
   }, [appliedSearch, appliedActivity, appliedLanguage, appliedLocation])
 
+  // Only the latest request may update the list: when filters or the page
+  // change while a request is in flight, the older one is aborted so a slow
+  // stale response can never overwrite newer results.
+  const inFlight = useRef<AbortController | null>(null)
+  useEffect(() => () => inFlight.current?.abort(), [])
+
   const fetchJobs = useCallback(async (page: number) => {
+    inFlight.current?.abort()
+    const controller = new AbortController()
+    inFlight.current = controller
     setIsLoading(true)
     try {
       const queryParams = buildQueryParams(page)
-      const response = await fetch(`/api/job-offers?${queryParams}`)
+      const response = await fetch(`/api/job-offers?${queryParams}`, { signal: controller.signal })
       const data = await response.json()
 
       if (data.success) {
@@ -219,10 +259,14 @@ export default function JobsPageClient({ initialJobs = [], totalJobs = 0 }: Jobs
       } else {
         logger.error("Failed to fetch jobs", { error: data.error })
       }
-    } catch {
-      logger.error("Failed to fetch jobs");
+    } catch (error) {
+      if (controller.signal.aborted) return
+      logger.error("Failed to fetch jobs", { error: error instanceof Error ? error.name : "unknown" });
     } finally {
-      setIsLoading(false)
+      if (inFlight.current === controller) {
+        inFlight.current = null
+        setIsLoading(false)
+      }
     }
   }, [buildQueryParams])
 
@@ -258,6 +302,16 @@ export default function JobsPageClient({ initialJobs = [], totalJobs = 0 }: Jobs
     router.replace("/jobs", { scroll: false })
   }
 
+  // Removing one applied filter (chip ×) keeps the shareable URL in sync
+  // (P1): the removed parameter is dropped and pagination restarts.
+  const removeUrlFilter = useCallback((...keys: string[]) => {
+    const params = new URLSearchParams(window.location.search)
+    for (const k of keys) params.delete(k)
+    params.set("page", "1")
+    setCurrentPage(1)
+    router.replace(`/jobs?${params.toString()}`, { scroll: false })
+  }, [router])
+
   // Apply the pending filters: copy them into the applied state, reset to
   // page 1, sync the URL, and trigger exactly one fetch.
   const applyFilters = useCallback(() => {
@@ -284,17 +338,15 @@ export default function JobsPageClient({ initialJobs = [], totalJobs = 0 }: Jobs
     } else {
       params.delete("language")
     }
-    if (pendingLocation) {
-      if (pendingLocation === "Remote") {
-        params.set("isRemote", "true")
-        params.delete("location")
-      } else {
-        params.set("location", pendingLocation)
-        params.delete("isRemote")
-      }
-    } else {
-      params.delete("location")
-      params.delete("isRemote")
+    params.delete("location")
+    params.delete("isRemote")
+    params.delete("isHybrid")
+    if (pendingLocation === "Remote") {
+      params.set("isRemote", "true")
+    } else if (pendingLocation === "Hybrid") {
+      params.set("isHybrid", "true")
+    } else if (pendingLocation) {
+      params.set("location", pendingLocation)
     }
     params.set("page", "1")
     router.replace(`/jobs?${params.toString()}`, { scroll: false })
@@ -317,13 +369,7 @@ export default function JobsPageClient({ initialJobs = [], totalJobs = 0 }: Jobs
 }
 
 const transformedJobs: JobData[] = jobs.map((job, index) => {
-    const currencySymbol = CURRENCY_SYMBOLS[job.salaryCurrency || "USD"] || "$"
-    const salaryNum = typeof job.salary === 'string' ? parseFloat(job.salary) : job.salary
-    const salaryFormatted = salaryNum
-      ? `${currencySymbol}${(salaryNum / 1000).toFixed(1)}k/mo`
-      : job.salaryMax
-        ? `${currencySymbol}${(job.salaryMax / 1000).toFixed(1)}k/mo`
-        : "Salary TBD"
+    const salaryFormatted = formatSalary(job, CURRENCY_SYMBOLS)
 
     const workModeLabel = job.isRemote ? "Remote"
       : job.isHybrid ? "Hybrid"
@@ -350,7 +396,7 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
   // the job list itself no longer needs inline banner injection.
   const renderJobList = () => {
     return transformedJobs.map((job) => (
-      <JobCard key={job.title} job={job} isCompany={isCompany} />
+      <JobCard key={job.slug} job={job} isCompany={isCompany} />
     ));
   };
 
@@ -365,7 +411,8 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
               {/* Search */}
               <div className="relative flex-1">
                 <input
-                  type="text"
+                  type="search"
+                  aria-label="Search jobs by title or company name"
                   placeholder="Search by job title or company name..."
                   value={pendingSearch}
                   onChange={(e) => {
@@ -377,12 +424,14 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
                       applyFilters()
                     }
                   }}
-                  className="w-full rounded-2xl border border-[#d7e0ea] bg-white px-4 py-3 text-[16px] font-semibold text-[#344865] placeholder:text-[#95a5be] focus:border-[#45c68d] focus:outline-none focus:ring-2 focus:ring-[#45c68d]/20"
+                  className="w-full rounded-2xl border border-[#d7e0ea] bg-white px-4 py-3 text-[16px] font-semibold text-[#344865] placeholder:text-slate-500 focus:border-[#45c68d] focus:outline-none focus:ring-2 focus:ring-[#45c68d]/20"
                 />
                 {pendingSearch && (
                   <button
+                    type="button"
+                    aria-label="Clear search text"
                     onClick={() => setPendingSearch("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[#95a5be] hover:text-[#344865] transition-colors"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-[#344865] transition-colors"
                   >
                     ×
                   </button>
@@ -400,6 +449,7 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
               >
                 <option value="">All Cities</option>
                 <option value="Remote">Remote</option>
+                <option value="Hybrid">Hybrid</option>
                 {locations.map((city) => (
                   <option key={city} value={city}>{city}</option>
                 ))}
@@ -409,6 +459,7 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
 
                 {/* Activity Type */}
                 <select
+                  aria-label="Activity type"
                   value={pendingActivity.find(e => e.checked)?.value || ""}
                   onChange={(e) => {
                     const val = e.target.value
@@ -429,6 +480,7 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
 
                {/* Language */}
                <select
+                 aria-label="Language"
                  value={pendingLanguage}
                  onChange={(e) => {
                    setPendingLanguage(e.target.value)
@@ -451,7 +503,7 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
                 </button>
                 <button
                   onClick={applyFilters}
-                  className="rounded-2xl border border-[#45c68d] bg-[#45c68d] px-4 py-3 text-[14px] font-bold text-white hover:bg-[#38b073] transition-colors"
+                  className="rounded-2xl border border-brand-green-strong bg-brand-green-strong px-4 py-3 text-[14px] font-bold text-white hover:bg-brand-green-strong-hover transition-colors"
                 >
                   Apply Filters
                 </button>
@@ -464,29 +516,30 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
                  {appliedSearch && (
                    <span className="inline-flex items-center gap-2 rounded-full bg-teal-100 px-3 py-1.5 text-xs font-semibold text-teal-700">
                      &quot;{appliedSearch}&quot;
-                     <button onClick={() => { setPendingSearch(""); setAppliedSearch(""); }} className="hover:text-teal-900 transition-colors">×</button>
+                     <button type="button" aria-label={`Remove filter: ${appliedSearch}`} onClick={() => { setPendingSearch(""); setAppliedSearch(""); removeUrlFilter("search"); }} className="hover:text-teal-900 transition-colors">×</button>
                    </span>
                  )}
                  {appliedLocation && (
                    <span className="inline-flex items-center gap-2 rounded-full bg-blue-100 px-3 py-1.5 text-xs font-semibold text-blue-700">
                      {appliedLocation}
-                     <button onClick={() => { setPendingLocation(""); setAppliedLocation(""); }} className="hover:text-blue-900 transition-colors">×</button>
+                     <button type="button" aria-label={`Remove filter: ${appliedLocation}`} onClick={() => { setPendingLocation(""); setAppliedLocation(""); removeUrlFilter("location", "isRemote", "isHybrid"); }} className="hover:text-blue-900 transition-colors">×</button>
                    </span>
                  )}
 
                  {appliedActivity.filter(item => item.checked).map(item => (
                   <span key={item.value} className="inline-flex items-center gap-2 rounded-full bg-green-100 px-3 py-1.5 text-xs font-semibold text-green-700">
                     {item.label}
-                    <button onClick={() => {
+                    <button type="button" aria-label={`Remove filter: ${item.label}`} onClick={() => {
                       setPendingActivity(prev => prev.map(i => i.label === item.label ? { ...i, checked: false } : i))
                       setAppliedActivity(prev => prev.map(i => i.label === item.label ? { ...i, checked: false } : i))
+                      removeUrlFilter("activityType")
                     }} className="hover:text-green-900 transition-colors">×</button>
                   </span>
                  ))}
                  {appliedLanguage && (
                    <span className="inline-flex items-center gap-2 rounded-full bg-purple-100 px-3 py-1.5 text-xs font-semibold text-purple-700">
                      {appliedLanguage}
-                     <button onClick={() => { setPendingLanguage(""); setAppliedLanguage(""); }} className="hover:text-purple-900 transition-colors">×</button>
+                     <button type="button" aria-label={`Remove filter: ${appliedLanguage}`} onClick={() => { setPendingLanguage(""); setAppliedLanguage(""); removeUrlFilter("language"); }} className="hover:text-purple-900 transition-colors">×</button>
                    </span>
                  )}
                </div>
@@ -497,10 +550,10 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
           <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div>
               <h2 className="text-[28px] font-black tracking-[-0.03em] text-[#163257]">Call Center Jobs</h2>
-              <p className="mt-1 text-[18px] font-semibold text-[#70839c]">
+              <p className="mt-1 text-[18px] font-semibold text-brand-muted" aria-live="polite">
                 Showing {transformedJobs.length} of {total} opportunities
                 {hasActiveFilters && (
-                   <span className="ml-1 text-[#45c68d]">
+                   <span className="ml-1 text-brand-green-text">
                      ({checkedActivityCount + (appliedSearch ? 1 : 0) + (appliedLanguage ? 1 : 0) + (appliedLocation ? 1 : 0)} filters active)
                    </span>
                 )}
@@ -542,12 +595,12 @@ const transformedJobs: JobData[] = jobs.map((job, index) => {
                  🔍
                </div>
                <p className="text-[20px] font-bold text-[#7b8ca3]">No jobs found matching your filters</p>
-               <p className="mt-2 text-[16px] text-[#95a5be]">
+               <p className="mt-2 text-[16px] text-slate-500">
                  Try adjusting your filter criteria or clear all filters
                </p>
                 <button
                   onClick={clearAllFilters}
-                  className="mt-4 rounded-[18px] bg-[#45c68d] px-6 py-3 text-[16px] font-extrabold text-white shadow-lg transition hover:translate-y-[-1px]"
+                  className="mt-4 rounded-[18px] bg-brand-green-strong px-6 py-3 text-[16px] font-extrabold text-white shadow-lg transition hover:translate-y-[-1px]"
                 >
                   Clear Filters
                 </button>

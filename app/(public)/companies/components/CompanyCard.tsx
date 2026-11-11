@@ -74,7 +74,7 @@ export function CompanyCard({
         </div>
 
         {/* Description */}
-        <p className="mb-3 text-center text-[13px] text-[#95a5be] line-clamp-2 flex-1">
+        <p className="mb-3 text-center text-[13px] text-slate-500 line-clamp-2 flex-1">
           {description}
         </p>
 
@@ -93,7 +93,7 @@ export function CompanyCard({
         {/* Action Button */}
         <Link 
           href={`/companies/${slug}`}
-          className="w-full rounded-[14px] bg-[#45c68d] py-3 text-center text-[14px] font-extrabold text-white shadow-[0_6px_12px_rgba(69,198,141,0.25)] transition hover:translate-y-[-1px]"
+          className="w-full rounded-[14px] bg-brand-green-strong py-3 text-center text-[14px] font-extrabold text-white shadow-lg transition hover:translate-y-[-1px]"
         >
           View Company
         </Link>

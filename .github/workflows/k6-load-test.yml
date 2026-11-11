@@ -1,20 +1,22 @@
 name: k6 Load Testing
 
+# Manual only. This used to run on every push/PR to main (and its YAML did not
+# parse). A load test is a deliberate operation against a chosen environment,
+# never an automatic side effect of a commit. Production targets are refused.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
     inputs:
       target-url:
-        description: 'Target URL for load testing (staging/production)'
-        required: false
+        description: 'Target URL for load testing (staging/preview only, never production)'
+        required: true
         default: 'https://cxjobs-staging.vercel.app'
-     vus:
+      vus:
         description: 'Target VUs for load test'
         required: false
         default: '50'
+
+permissions:
+  contents: read
 
 jobs:
   k6-load-test:
@@ -23,12 +25,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Same policy as the scripts themselves (tests/k6/lib/target-guard.mjs):
+      # explicit target, production hosts always refused, staging/preview/local
+      # only. Runs before k6 is even started.
+      - name: Refuse production and unrecognised targets
+        env:
+          TARGET: ${{ github.event.inputs.target-url }}
+        run: |
+          node --input-type=module -e "
+            import { resolveStagingTarget } from './tests/k6/lib/target-guard.mjs';
+            try { console.log('Target accepted:', resolveStagingTarget(process.env.TARGET)); }
+            catch (e) { console.log('::error::' + e.message); process.exit(1); }
+          "
+
       - name: Run k6 load test
         uses: grafana/k6-action@v0.2.0
         with:
           filename: tests/k6/production-authenticated-candidate.js
         env:
-          K6_BASE_URL: ${{ github.event.inputs.target-url || 'https://cxjobs-staging.vercel.app' }}
+          K6_BASE_URL: ${{ github.event.inputs.target-url }}
           K6_TARGET_VUS: ${{ github.event.inputs.vus || '50' }}
           K6_SESSION_COOKIE: ${{ secrets.K6_SESSION_COOKIE }}
           K6_SESSION_COOKIE_NAME: ${{ secrets.K6_SESSION_COOKIE_NAME }}
